@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "807218523754",
+    "project_id": "bsgc-app",
+    "storage_bucket": "bsgc-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:807218523754:android:8e69fd95e0a8d716ca6413",
+        "android_client_info": {
+          "package_name": "com.bsgc.bsgc_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCWzYzEZKibMqTQT0CWvKGryCLrQzuw7Vs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

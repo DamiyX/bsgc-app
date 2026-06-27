@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isMember(groupData) {
+      return request.auth.uid in groupData.members;
+    }
+    
+    match /groups/{groupId} {
+      // Any authenticated user can create a group
+      allow create: if isAuthenticated() 
+                   && request.resource.data.members.size() <= 12
+                   && request.resource.data.members[0] == request.auth.uid;
+                   
+      // Users can read the group if they are a member, or if they are joining
+      allow read: if isAuthenticated();
+      
+      // Prevent a group from having more than 12 members on update
+      allow update: if isAuthenticated() 
+                   && request.resource.data.members.size() <= 12;
+                   
+      allow delete: if false; // Only manual deletion for now
+      
+      match /messages/{messageId} {
+        // Only members of the parent group can read or create messages
+        allow read: if isAuthenticated() && isMember(get(/databases/$(database)/documents/groups/$(groupId)).data);
+        allow create: if isAuthenticated() 
+                     && isMember(get(/databases/$(database)/documents/groups/$(groupId)).data)
+                     && request.resource.data.senderId == request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+  }
+}

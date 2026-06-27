@@ -1,0 +1,280 @@
+import 'package:flutter/material.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:intl/intl.dart';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:file_saver/file_saver.dart';
+import '../theme.dart';
+
+class VoiceMessageBubble extends StatefulWidget {
+  final String audioUrl;
+  final bool isMe;
+  final int durationSeconds;
+  final DateTime timestamp;
+  final bool isDraft;
+
+  const VoiceMessageBubble({
+    super.key,
+    required this.audioUrl,
+    required this.isMe,
+    required this.durationSeconds,
+    required this.timestamp,
+    this.isDraft = false,
+  });
+
+  @override
+  State<VoiceMessageBubble> createState() => _VoiceMessageBubbleState();
+}
+
+class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
+  static AudioPlayer? _currentlyPlayingPlayer;
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  bool _isPlaying = false;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _duration = Duration(seconds: widget.durationSeconds);
+    
+    _audioPlayer.onPlayerStateChanged.listen((state) {
+      if (mounted) {
+        setState(() {
+          _isPlaying = state == PlayerState.playing;
+        });
+      }
+    });
+
+    _audioPlayer.onPositionChanged.listen((pos) {
+      if (mounted) {
+        setState(() {
+          _position = pos;
+        });
+      }
+    });
+
+    _audioPlayer.onDurationChanged.listen((dur) {
+      if (mounted) {
+        setState(() {
+          _duration = dur;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    if (_currentlyPlayingPlayer == _audioPlayer) {
+      _currentlyPlayingPlayer = null;
+    }
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  void _togglePlayPause() async {
+    if (_isPlaying) {
+      await _audioPlayer.pause();
+    } else {
+      if (_currentlyPlayingPlayer != null && _currentlyPlayingPlayer != _audioPlayer) {
+        await _currentlyPlayingPlayer!.pause();
+      }
+      _currentlyPlayingPlayer = _audioPlayer;
+
+      if (widget.audioUrl.startsWith('http')) {
+        await _audioPlayer.play(UrlSource(widget.audioUrl));
+      } else {
+        try {
+          final Uint8List bytes = base64Decode(widget.audioUrl);
+          await _audioPlayer.play(BytesSource(bytes));
+        } catch (e) {
+          debugPrint('Error decoding base64 audio: $e');
+        }
+      }
+    }
+  }
+
+  Future<void> _exportAudio(String action) async {
+    final TextEditingController nameController = TextEditingController(
+      text: 'Voice_Note_${DateFormat('yyyyMMdd_HHmm').format(widget.timestamp)}'
+    );
+
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          title: Text(action == 'download' ? 'Download Audio' : 'Share Audio', style: const TextStyle(fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Enter a name for this recording:', style: TextStyle(fontSize: 14)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                  suffixText: '.m4a',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text('Cancel', style: TextStyle(color: Colors.black54)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, nameController.text.trim()),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
+              child: Text(action == 'download' ? 'Download' : 'Share'),
+            ),
+          ],
+        );
+      }
+    );
+
+    if (newName == null || newName.isEmpty) return;
+
+    try {
+      if (widget.audioUrl.startsWith('http')) {
+        // In a real app we'd download the HTTP URL here. 
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cannot export remote HTTP files yet.')));
+        return;
+      }
+
+      final Uint8List bytes = base64Decode(widget.audioUrl);
+
+      if (action == 'download') {
+        final path = await FileSaver.instance.saveFile(
+          name: newName,
+          bytes: bytes,
+          fileExtension: 'm4a',
+          mimeType: MimeType.aac,
+        );
+        if (mounted && path.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved to: $path')));
+        }
+      } else if (action == 'share') {
+        final tempDir = await getTemporaryDirectory();
+        final filePath = '${tempDir.path}/$newName.m4a';
+        final file = File(filePath);
+        await file.writeAsBytes(bytes);
+        await Share.shareXFiles([XFile(filePath)], text: 'Shared from BSGC App');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error exporting audio: $e')));
+      }
+    }
+  }
+
+  String _formatDuration(Duration d) {
+    final minutes = d.inMinutes;
+    final seconds = d.inSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fgColor = (widget.isMe && !widget.isDraft) ? Colors.white : Colors.black87;
+    final progress = _duration.inMilliseconds > 0 
+        ? _position.inMilliseconds / _duration.inMilliseconds 
+        : 0.0;
+
+    return Container(
+      width: MediaQuery.of(context).size.width * 0.65,
+      padding: const EdgeInsets.fromLTRB(4, 0, 0, 0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          IconButton(
+            icon: Icon(
+              _isPlaying ? Icons.pause : Icons.play_arrow,
+              color: fgColor,
+              size: 24,
+            ),
+            onPressed: _togglePlayPause,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 2,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                    activeTrackColor: fgColor,
+                    inactiveTrackColor: widget.isMe ? Colors.white24 : Colors.black12,
+                    thumbColor: fgColor,
+                  ),
+                  child: Slider(
+                    value: progress.clamp(0.0, 1.0),
+                    onChanged: (value) {
+                      if (_duration.inMilliseconds > 0) {
+                        final newPos = Duration(milliseconds: (value * _duration.inMilliseconds).toInt());
+                        _audioPlayer.seek(newPos);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _isPlaying ? _formatDuration(_position) : _formatDuration(_duration),
+                      style: TextStyle(
+                        color: widget.isMe ? Colors.white70 : Colors.black54, 
+                        fontSize: 10,
+                      ),
+                    ),
+                    Text(
+                      DateFormat('HH:mm').format(widget.timestamp),
+                      style: TextStyle(
+                        color: widget.isMe ? Colors.white70 : Colors.black54, 
+                        fontSize: 9,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          PopupMenuButton<String>(
+            icon: Icon(Icons.more_vert, color: fgColor, size: 20),
+            onSelected: (value) {
+              if (value == 'download') {
+                _exportAudio('download');
+              } else if (value == 'share') {
+                _exportAudio('share');
+              }
+            },
+            itemBuilder: (BuildContext context) {
+              return [
+                const PopupMenuItem<String>(
+                  value: 'download',
+                  child: Text('Download'),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'share',
+                  child: Text('Share'),
+                ),
+              ];
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
