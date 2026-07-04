@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:math';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'dart:io';
 import '../models/group_model.dart';
 import '../services/chat_service.dart';
 import '../theme.dart';
@@ -24,18 +26,13 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
   bool _isLoading = true;
   bool _isProgressExpanded = true;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadMembers();
-    _selectedBook = widget.group.studyBook;
-    _totalChapters = widget.group.totalChapters;
-    _myCompletedChapters = List<int>.from(widget.group.userCompletedChapters[_currentUserId] ?? []);
-  }
-
   String? _selectedBook;
   int _totalChapters = 0;
+  Map<String, dynamic>? _selectedMessage;
+  String? _tappedMemberId;
   List<int> _myCompletedChapters = [];
+
+  bool get _isAdmin => widget.group.members.isNotEmpty && widget.group.members.first == _currentUserId;
 
   final Map<String, int> _bibleChapters = {
     'Genesis': 50, 'Exodus': 40, 'Leviticus': 27, 'Numbers': 36, 'Deuteronomy': 34,
@@ -53,6 +50,15 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     '1 Peter': 5, '2 Peter': 3, '1 John': 5, '2 John': 1, '3 John': 1,
     'Jude': 1, 'Revelation': 22
   };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMembers();
+    _selectedBook = widget.group.studyBook;
+    _totalChapters = widget.group.totalChapters;
+    _myCompletedChapters = List<int>.from(widget.group.userCompletedChapters[_currentUserId] ?? []);
+  }
 
   Future<void> _loadMembers() async {
     final members = await _chatService.getGroupMembersProfiles(widget.group.members);
@@ -112,112 +118,118 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     );
   }
 
-  void _showEditDialog() {
+  void _editGroupDetails() {
+    if (!_isAdmin) return;
+    
     final nameController = TextEditingController(text: widget.group.name);
     final descController = TextEditingController(text: widget.group.description);
-    String currentPhotoUrl = widget.group.photoUrl ?? '';
     
-    final unsplashKeywords = ['bible', 'church', 'prayer', 'worship', 'nature', 'community', 'cross'];
-    final random = Random();
-
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            title: const Text('Edit Group'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (currentPhotoUrl.isNotEmpty) ...[
-                    Container(
-                      width: 100,
-                      height: 150,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        image: DecorationImage(
-                          image: NetworkImage(currentPhotoUrl),
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      TextButton.icon(
-                        onPressed: () async {
-                          final picker = ImagePicker();
-                          final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-                          if (image != null) {
-                            // In a real app we'd upload this to Firebase Storage.
-                            // For prototype, if it's a local file we might have issues sharing it without uploading.
-                            // But let's just pretend we use the local path for now or a mock URL.
-                            // Actually, just set the path. But Image.network won't work for local paths.
-                            // So let's just show a snackbar saying "Uploading..." and then use a mock URL.
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Simulating upload...')));
-                            setState(() {
-                              currentPhotoUrl = 'https://images.unsplash.com/photo-1490730141103-6cac27aaab94?w=400&q=80';
-                            });
-                          }
-                        },
-                        icon: const Icon(Icons.photo_library, size: 18),
-                        label: const Text('Gallery'),
-                      ),
-                      TextButton.icon(
-                        onPressed: () {
-                          final keyword = unsplashKeywords[random.nextInt(unsplashKeywords.length)];
-                          setState(() {
-                            // Using random string to bust cache
-                            currentPhotoUrl = 'https://source.unsplash.com/400x600/?$keyword&${random.nextInt(1000)}';
-                          });
-                        },
-                        icon: const Icon(Icons.shuffle, size: 18),
-                        label: const Text('Random'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: nameController,
-                    decoration: const InputDecoration(labelText: 'Group Name', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: descController,
-                    decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder()),
-                  ),
-                ],
-              ),
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Group Details'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: 'Group Name', border: OutlineInputBorder()),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel', style: TextStyle(color: Colors.black54)),
-              ),
-              TextButton(
-                onPressed: () async {
-                  await _chatService.editGroup(
-                    widget.group.id, 
-                    nameController.text.trim(), 
-                    '', // removed pinned scripture
-                    description: descController.text.trim(),
-                    photoUrl: currentPhotoUrl,
-                  );
-                  if (mounted) {
-                    Navigator.pop(context);
-                    Navigator.pop(context); // Go back to StudyRoom to refresh
-                  }
-                },
-                child: const Text('Save', style: TextStyle(color: Colors.black87)),
-              ),
-            ],
-          );
-        }
+            const SizedBox(height: 16),
+            TextField(
+              controller: descController,
+              decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder()),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.black54)),
+          ),
+          TextButton(
+            onPressed: () async {
+              final newName = nameController.text.trim();
+              final newDesc = descController.text.trim();
+              
+              if (newName.isNotEmpty) {
+                await _chatService.editGroup(
+                  widget.group.id, 
+                  newName, 
+                  widget.group.pinnedScripture,
+                  description: newDesc,
+                  photoUrl: widget.group.photoUrl,
+                );
+                setState(() {
+                  widget.group.name = newName;
+                  widget.group.description = newDesc;
+                });
+              }
+              if (mounted) Navigator.pop(context);
+            },
+            child: const Text('Save', style: TextStyle(color: Colors.black87)),
+          ),
+        ],
       ),
     );
+  }
+
+  void _changeGroupImage() async {
+    if (!_isAdmin) return;
+
+    final picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    
+    if (image != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uploading image...')));
+      
+      try {
+        var bytes = await image.readAsBytes();
+        
+        final compressed = await FlutterImageCompress.compressWithList(
+          bytes,
+          minWidth: 500,
+          minHeight: 500,
+          quality: 70,
+        );
+        bytes = compressed;
+
+        final storageRef = FirebaseStorage.instance.ref().child('group_images/${widget.group.id}_${DateTime.now().millisecondsSinceEpoch}.jpg');
+        final uploadTask = storageRef.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
+        final snapshot = await uploadTask;
+        
+        if (snapshot.state == TaskState.success) {
+          final newUrl = await snapshot.ref.getDownloadURL();
+          
+          await _chatService.editGroup(
+            widget.group.id, 
+            widget.group.name, 
+            widget.group.pinnedScripture,
+            description: widget.group.description,
+            photoUrl: newUrl,
+          );
+          setState(() {
+            widget.group.photoUrl = newUrl;
+          });
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Image updated successfully!')));
+          }
+        } else {
+          throw Exception('Upload did not complete successfully.');
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Upload failed. Please ensure Firebase Storage is initialized in your console. Error: $e'),
+            duration: const Duration(seconds: 5),
+          ));
+        }
+      }
+    }
   }
 
   void _leaveGroup() async {
@@ -247,234 +259,369 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     }
   }
 
+  Color _getAvatarColor(String userId) {
+    if (userId == FirebaseAuth.instance.currentUser?.uid) return Colors.green;
+    final List<Color> colors = [
+      Colors.blue, Colors.orange, Colors.red, Colors.purple,
+      Colors.teal, Colors.pink, Colors.indigo, Colors.amber,
+      Colors.cyan, Colors.deepOrange, Colors.lime, Colors.brown
+    ];
+    int index = widget.group.members.indexOf(userId);
+    if (index < 0) {
+      int asciiSum = 0;
+      for (int i = 0; i < userId.length; i++) asciiSum += userId.codeUnitAt(i);
+      index = asciiSum;
+    }
+    return colors[index % colors.length];
+  }
+  
+  Widget _buildGroupImage() {
+    if (widget.group.photoUrl != null && widget.group.photoUrl!.isNotEmpty) {
+      return Image.network(
+        widget.group.photoUrl!,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return _fallbackGroupGraphic();
+        },
+      );
+    }
+    
+    return _fallbackGroupGraphic();
+  }
+
+  Widget _fallbackGroupGraphic() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.blueGrey.shade800, Colors.blueGrey.shade500],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Center(
+        child: Text(
+          widget.group.name.isNotEmpty ? widget.group.name[0].toUpperCase() : 'G',
+          style: const TextStyle(fontSize: 80, color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFFAFAFA),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black87),
-        title: const Text(
-          'Group Roster',
-          style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w600),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit, size: 20, color: Colors.black87),
-            onPressed: _showEditDialog,
-          ),
-          IconButton(
-            icon: const Icon(Icons.exit_to_app, size: 20, color: Colors.redAccent),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.redAccent,
+              side: const BorderSide(color: Colors.redAccent),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
             onPressed: _leaveGroup,
+            icon: const Icon(Icons.exit_to_app),
+            label: const Text('Exit Group', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
-          const SizedBox(width: 8),
-        ],
+        ),
       ),
-      body: SafeArea(
-        child: _isLoading 
-          ? const Center(child: CircularProgressIndicator(color: Colors.black87))
-          : Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (widget.group.photoUrl != null && widget.group.photoUrl!.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 16.0),
-                          child: Container(
-                            width: 72,
-                            height: 108,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Colors.black12,
-                                  blurRadius: 4,
-                                  offset: Offset(0, 2),
+      body: _isLoading 
+        ? const Center(child: CircularProgressIndicator(color: Colors.black87))
+        : CustomScrollView(
+            slivers: [
+              SliverAppBar(
+                expandedHeight: 220,
+                pinned: true,
+                backgroundColor: Colors.white,
+                surfaceTintColor: Colors.transparent,
+                iconTheme: const IconThemeData(color: Colors.black87),
+                flexibleSpace: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final top = constraints.biggest.height;
+                    final isCollapsed = top <= kToolbarHeight + MediaQuery.of(context).padding.top + 20;
+
+                    return FlexibleSpaceBar(
+                      titlePadding: const EdgeInsets.only(left: 48, bottom: 16, right: 16),
+                      title: isCollapsed 
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ClipOval(
+                                  child: SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: _buildGroupImage(),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    widget.group.name, 
+                                    style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 16),
+                                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
                               ],
-                              image: DecorationImage(
-                                image: NetworkImage(widget.group.photoUrl!),
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                          ),
-                        ),
-                      Expanded(
-                        child: Column(
+                            )
+                          : null,
+                      background: Container(
+                        color: Colors.white,
+                        padding: const EdgeInsets.only(top: 100, left: 16, right: 16),
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              widget.group.name,
-                              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w600, color: Colors.black87),
-                            ),
-                            if (widget.group.description.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                widget.group.description,
-                                style: const TextStyle(fontSize: 14, color: Colors.black54),
-                              ),
-                            ],
-                            if (widget.group.pinnedScripture.isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                widget.group.pinnedScripture,
-                                style: const TextStyle(
-                                  fontFamily: 'Merriweather',
-                                  fontStyle: FontStyle.italic,
-                                  color: Colors.black54,
-                                  fontSize: 14,
+                            Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: SizedBox(
+                                    width: 100,
+                                    height: 100,
+                                    child: _buildGroupImage(),
+                                  ),
                                 ),
+                                if (_isAdmin)
+                                  Positioned(
+                                    bottom: -8,
+                                    right: -8,
+                                    child: IconButton(
+                                      icon: Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                                        child: const Icon(Icons.edit, size: 16, color: Colors.white),
+                                      ),
+                                      onPressed: _changeGroupImage,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(width: 24),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(widget.group.name, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87)),
+                                  const SizedBox(height: 8),
+                                  if (widget.group.description.isNotEmpty)
+                                    Text(widget.group.description, maxLines: 4, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.black54, height: 1.4)),
+                                ],
                               ),
-                            ],
+                            ),
                           ],
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 32),
-                  GestureDetector(
-                    onTap: () => setState(() => _isProgressExpanded = !_isProgressExpanded),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'My Progress',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: Colors.black87),
+                    );
+                  },
+                ),
+                actions: [
+                  if (_isAdmin)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: IconButton(
+                        icon: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.05), shape: BoxShape.circle),
+                          child: const Icon(Icons.edit, size: 20, color: Colors.black87),
                         ),
-                        Icon(_isProgressExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: Colors.black54),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  if (_isProgressExpanded) ...[
-                    // Book Selection
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.03),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.black12),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        isExpanded: true,
-                        hint: const Text('Select a Book to Study'),
-                        value: _selectedBook,
-                        items: _bibleChapters.entries.map((entry) {
-                          return DropdownMenuItem<String>(
-                            value: entry.key,
-                            child: Text(entry.key),
-                          );
-                        }).toList(),
-                        onChanged: _onBookSelected,
+                        onPressed: _editGroupDetails,
+                        tooltip: 'Edit Details',
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  if (_selectedBook != null) ...[
-                    const Text('Chapters', style: TextStyle(fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 8),
-                    Container(
-                      height: 120, // fixed height for chapter grid
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.black12),
-                        borderRadius: BorderRadius.circular(12),
-                        color: Colors.white,
-                      ),
-                      child: GridView.builder(
-                        padding: const EdgeInsets.all(8),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 7,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
-                          childAspectRatio: 1,
-                        ),
-                        itemCount: _totalChapters,
-                        itemBuilder: (context, index) {
-                          final chapter = index + 1;
-                          final isCompleted = _myCompletedChapters.contains(chapter);
-                          return GestureDetector(
-                            onTap: () => _toggleChapter(chapter),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: isCompleted ? Colors.green : Colors.black.withValues(alpha: 0.05),
-                                shape: BoxShape.circle,
-                              ),
-                              alignment: Alignment.center,
-                              child: Text(
-                                '$chapter',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: isCompleted ? Colors.white : Colors.black87,
+                ],
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      
+                      if (widget.group.pinnedScripture.isNotEmpty) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.push_pin, size: 16, color: Colors.deepOrange),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  widget.group.pinnedScripture,
+                                  style: const TextStyle(
+                                    fontFamily: 'Merriweather',
+                                    fontStyle: FontStyle.italic,
+                                    color: Colors.black87,
+                                    fontSize: 14,
+                                  ),
                                 ),
                               ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                  ],
-                  ],
-
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Group Members',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: Colors.black87),
-                      ),
-                      TextButton.icon(
-                        onPressed: _inviteMember,
-                        icon: const Icon(Icons.person_add, size: 18, color: AppColors.primary),
-                        label: const Text('Add', style: TextStyle(color: AppColors.primary)),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: ListView.separated(
-                      itemCount: _members.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 24),
-                      itemBuilder: (context, index) {
-                        final member = _members[index];
-                        final uid = member['uid'] as String;
-                        final name = member['displayName'] as String;
-                        final photo = member['photoURL'] as String?;
-                        final progress = widget.group.readingProgress[uid] ?? 0.0;
-                        final isMe = uid == _currentUserId;
-
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+                      ],
+                      
+                      // Progress Section
+                      GestureDetector(
+                        onTap: () => setState(() => _isProgressExpanded = !_isProgressExpanded),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
+                            const Text(
+                              'My Progress',
+                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+                            ),
+                            Icon(_isProgressExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: Colors.black54),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      
+                      if (_isProgressExpanded) ...[
+                        // Book Selection
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.03),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.black12),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              isExpanded: true,
+                              hint: const Text('Select a Book to Study'),
+                              value: _selectedBook,
+                              items: _bibleChapters.entries.map((entry) {
+                                return DropdownMenuItem<String>(
+                                  value: entry.key,
+                                  child: Text(entry.key),
+                                );
+                              }).toList(),
+                              onChanged: _onBookSelected,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        if (_selectedBook != null) ...[
+                          const Text('Chapters', style: TextStyle(fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 8),
+                          Container(
+                            height: 120, // fixed height for chapter grid
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.black12),
+                              borderRadius: BorderRadius.circular(12),
+                              color: Colors.white,
+                            ),
+                            child: GridView.builder(
+                              padding: const EdgeInsets.all(8),
+                              physics: const BouncingScrollPhysics(),
+                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 7,
+                                crossAxisSpacing: 8,
+                                mainAxisSpacing: 8,
+                                childAspectRatio: 1,
+                              ),
+                              itemCount: _totalChapters,
+                              itemBuilder: (context, index) {
+                                final chapter = index + 1;
+                                final isCompleted = _myCompletedChapters.contains(chapter);
+                                return GestureDetector(
+                                  onTap: () => _toggleChapter(chapter),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: isCompleted ? _getAvatarColor(_currentUserId) : Colors.black.withOpacity(0.05),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      '$chapter',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: isCompleted ? Colors.white : Colors.black87,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                        ],
+                      ],
+
+                      // Group Members Section
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Group Members',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+                          ),
+                          TextButton.icon(
+                            onPressed: _inviteMember,
+                            icon: const Icon(Icons.person_add, size: 18, color: AppColors.primary),
+                            label: const Text('Add', style: TextStyle(color: AppColors.primary)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      
+                      ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _members.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 24),
+                        itemBuilder: (context, index) {
+                          final member = _members[index];
+                          final uid = member['uid']?.toString() ?? widget.group.members[index];
+                          final name = member['displayName']?.toString() ?? 'Unknown';
+                          final photo = member['photoURL']?.toString();
+                          final progress = widget.group.readingProgress[uid] ?? 0.0;
+                          final isMe = uid == _currentUserId;
+                          final isAdmin = uid == widget.group.members.first;
+                          
+                          final avatarColor = _getAvatarColor(uid);
+                          final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+
+                          return GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _tappedMemberId = (_tappedMemberId == uid) ? null : uid;
+                              });
+                            },
+                            child: Row(
                               children: [
                                 Stack(
                                   alignment: Alignment.center,
                                   children: [
                                     SizedBox(
-                                      width: 40,
-                                      height: 40,
+                                      width: 44,
+                                      height: 44,
                                       child: CircularProgressIndicator(
                                         value: progress,
                                         strokeWidth: 3,
                                         backgroundColor: Colors.black12,
-                                        valueColor: AlwaysStoppedAnimation<Color>(isMe ? Colors.green : Colors.blueAccent),
+                                        valueColor: AlwaysStoppedAnimation<Color>(avatarColor),
                                       ),
                                     ),
                                     CircleAvatar(
-                                      radius: 16,
-                                      backgroundColor: Colors.black12,
-                                      backgroundImage: (photo != null && photo.isNotEmpty) ? NetworkImage(photo) : null,
-                                      child: (photo == null || photo.isEmpty) ? const Icon(Icons.person, size: 16, color: Colors.black45) : null,
+                                      radius: 18,
+                                      backgroundColor: avatarColor,
+                                      backgroundImage: (_tappedMemberId != uid && photo != null && photo.isNotEmpty) ? NetworkImage(photo) : null,
+                                      child: _tappedMemberId == uid
+                                        ? Text('${(progress * 100).toInt()}%', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold))
+                                        : ((photo == null || photo.isEmpty) 
+                                          ? Text(initial, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)) 
+                                          : null),
                                     ),
                                   ],
                                 ),
@@ -483,32 +630,43 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        isMe ? '$name (You)' : name,
-                                        style: TextStyle(
-                                          fontSize: 16, 
-                                          fontWeight: isMe ? FontWeight.w600 : FontWeight.w400,
-                                          color: Colors.black87
-                                        ),
-                                      ),
-                                      Text(
-                                        'Completed: ${(progress * 100).toInt()}%',
-                                        style: const TextStyle(fontSize: 13, color: Colors.black54),
+                                      Row(
+                                        children: [
+                                          Text(
+                                            isMe ? '$name (You)' : name,
+                                            style: TextStyle(
+                                              fontSize: 16, 
+                                              fontWeight: isMe ? FontWeight.w600 : FontWeight.w500,
+                                              color: Colors.black87
+                                            ),
+                                          ),
+                                          if (isAdmin) ...[
+                                            const SizedBox(width: 6),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: AppColors.primary.withOpacity(0.1),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: const Text('Admin', style: TextStyle(fontSize: 10, color: AppColors.primary, fontWeight: FontWeight.bold)),
+                                            )
+                                          ]
+                                        ],
                                       ),
                                     ],
                                   ),
                                 ),
                               ],
                             ),
-                          ],
-                        );
-                      },
-                    ),
+                          );
+                        },
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-      ),
+            ],
+          ),
     );
   }
 }

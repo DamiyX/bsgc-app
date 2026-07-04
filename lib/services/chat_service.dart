@@ -140,12 +140,13 @@ class ChatService {
   }
 
   // Stream messages for a specific group
-  Stream<List<MessageModel>> getGroupMessages(String groupId) {
+  Stream<List<MessageModel>> getGroupMessages(String groupId, {int limit = 20}) {
     return _firestore
         .collection('groups')
         .doc(groupId)
         .collection('messages')
         .orderBy('timestamp', descending: true)
+        .limit(limit)
         .snapshots()
         .map((snapshot) {
       return snapshot.docs.map((doc) => MessageModel.fromFirestore(doc)).toList();
@@ -169,6 +170,31 @@ class ChatService {
       'parts': parts.map((p) => p.toMap()).toList(),
       'timestamp': FieldValue.serverTimestamp(),
       'starredBy': [],
+    });
+
+    // Update group's last message time and increment unread count for other members
+    final groupDoc = await _firestore.collection('groups').doc(groupId).get();
+    if (groupDoc.exists) {
+      final members = List<String>.from(groupDoc.data()?['members'] ?? []);
+      Map<String, dynamic> updates = {
+        'lastMessageTime': FieldValue.serverTimestamp(),
+      };
+      for (String memberId in members) {
+        if (memberId != user.uid) {
+          updates['unreadCounts.$memberId'] = FieldValue.increment(1);
+        }
+      }
+      await _firestore.collection('groups').doc(groupId).update(updates);
+    }
+  }
+
+  // Reset unread count for current user
+  Future<void> resetUnreadCount(String groupId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    await _firestore.collection('groups').doc(groupId).update({
+      'unreadCounts.${user.uid}': 0,
     });
   }
 
@@ -223,6 +249,43 @@ class ChatService {
         .update({
       'deletedFor': FieldValue.arrayUnion([user.uid])
     });
+  }
+
+  // Clear all messages for me in a group
+  Future<void> clearChatForMe(String groupId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    // Fetch all messages
+    final querySnapshot = await _firestore
+        .collection('groups')
+        .doc(groupId)
+        .collection('messages')
+        .get();
+
+    WriteBatch batch = _firestore.batch();
+    int count = 0;
+
+    for (var doc in querySnapshot.docs) {
+      final data = doc.data();
+      final deletedFor = List<String>.from(data['deletedFor'] ?? []);
+      if (!deletedFor.contains(user.uid)) {
+        batch.update(doc.reference, {
+          'deletedFor': FieldValue.arrayUnion([user.uid])
+        });
+        count++;
+        // Firestore batches support up to 500 operations
+        if (count == 490) {
+          await batch.commit();
+          batch = _firestore.batch();
+          count = 0;
+        }
+      }
+    }
+
+    if (count > 0) {
+      await batch.commit();
+    }
   }
 
   // Edit a message

@@ -18,8 +18,30 @@ class InsightService {
     });
   }
 
+  Stream<List<InsightModel>> getActiveInsightsForUser(String userId) {
+    return _firestore
+        .collection('insights')
+        .where('authorUid', isEqualTo: userId)
+        .where('expiresAt', isGreaterThan: Timestamp.now())
+        .orderBy('expiresAt', descending: true)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.map((doc) => InsightModel.fromFirestore(doc)).toList();
+    });
+  }
+
   Future<void> createInsight(InsightModel insight) async {
-    await _firestore.collection('insights').add(insight.toMap());
+    await _firestore.collection('insights').doc(insight.id).set(insight.toMap());
+  }
+
+  Future<void> deleteInsight(String insightId) async {
+    await _firestore.collection('insights').doc(insightId).delete();
+  }
+
+  Future<void> markAsSeen(String insightId, String userId) async {
+    await _firestore.collection('insights').doc(insightId).update({
+      'seenBy': FieldValue.arrayUnion([userId])
+    });
   }
 
   Stream<List<InsightCommentModel>> getComments(String insightId) {
@@ -39,6 +61,25 @@ class InsightService {
         .collection('insights')
         .doc(insightId)
         .collection('comments')
-        .add(comment.toMap());
+        .doc(comment.id)
+        .set(comment.toMap());
+  }
+
+  Future<void> toggleCommentLike(String insightId, String commentId, String userId, bool isLiking) async {
+    final docRef = _firestore
+        .collection('insights')
+        .doc(insightId)
+        .collection('comments')
+        .doc(commentId);
+    
+    if (isLiking) {
+      await docRef.update({
+        'likedBy': FieldValue.arrayUnion([userId])
+      });
+    } else {
+      await docRef.update({
+        'likedBy': FieldValue.arrayRemove([userId])
+      });
+    }
   }
 }

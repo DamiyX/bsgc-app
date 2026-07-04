@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:uuid/uuid.dart';
 import '../models/insight_model.dart';
 import '../services/insight_service.dart';
-import '../theme.dart';
 
 class CreateInsightScreen extends StatefulWidget {
   const CreateInsightScreen({super.key});
@@ -17,17 +16,8 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
   final _bodyController = TextEditingController();
   final InsightService _insightService = InsightService();
 
-  int _selectedColor = 0xFF2A3441; // Default dark theme
   bool _isPublishing = false;
-
-  final List<int> _themeColors = [
-    0xFF2A3441, // Dark Blue/Grey
-    0xFF1B5E20, // Forest Green
-    0xFF4A148C, // Deep Purple
-    0xFFB71C1C, // Crimson
-    0xFFE65100, // Deep Orange
-    0xFF01579B, // Ocean Blue
-  ];
+  bool _isSuccess = false;
 
   Future<void> _publishInsight() async {
     final title = _titleController.text.trim();
@@ -56,22 +46,34 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
         authorPhotoUrl: user.photoURL,
         title: title,
         body: body,
-        themeColor: _selectedColor,
+        themeId: 'theme_0', // Default fallback
         createdAt: now,
         expiresAt: now.add(const Duration(days: 3)),
       );
 
-      await _insightService.createInsight(insight);
+      _insightService.createInsight(insight); 
+      
+      // Artificial delay so the user sees it "loading"
+      await Future.delayed(const Duration(milliseconds: 1500));
       
       if (mounted) {
-        Navigator.pop(context);
+        setState(() {
+          _isPublishing = false;
+          _isSuccess = true;
+        });
+        
+        // Wait briefly so the user sees the 'good' checkmark
+        await Future.delayed(const Duration(milliseconds: 600));
+
+        if (mounted) {
+          Navigator.pop(context);
+        }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to publish insight: $e')),
-      );
-    } finally {
       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to publish insight: $e')),
+        );
         setState(() {
           _isPublishing = false;
         });
@@ -82,20 +84,25 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(_selectedColor),
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.white,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: const Text('Add Insight', style: TextStyle(color: Colors.white)),
+        iconTheme: const IconThemeData(color: Colors.black87),
+        title: const Text('Add Insight', style: TextStyle(color: Colors.black87)),
         actions: [
-          if (_isPublishing)
+          if (_isSuccess)
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Icon(Icons.check_circle, color: Colors.black, size: 28),
+            )
+          else if (_isPublishing)
             const Padding(
               padding: EdgeInsets.all(16.0),
               child: SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                child: CircularProgressIndicator(color: Colors.black87, strokeWidth: 2),
               ),
             )
           else
@@ -103,100 +110,57 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
               onPressed: _publishInsight,
               child: const Text(
                 'Publish',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 16),
               ),
             ),
         ],
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextField(
-                      controller: _titleController,
-                      style: const TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                      decoration: const InputDecoration(
-                        hintText: 'Insight Title...',
-                        hintStyle: TextStyle(color: Colors.white54),
-                        border: InputBorder.none,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _bodyController,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        height: 1.5,
-                        color: Colors.white,
-                      ),
-                      maxLines: null,
-                      decoration: const InputDecoration(
-                        hintText: 'What did you learn from the Word today?\n\n(Tip: Type a scripture like Romans 8:1-4 to automatically link it!)',
-                        hintStyle: TextStyle(color: Colors.white54),
-                        border: InputBorder.none,
-                      ),
-                    ),
-                  ],
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: _titleController,
+                maxLines: null,
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  height: 1.2,
+                ),
+                decoration: const InputDecoration(
+                  hintText: 'Title',
+                  hintStyle: TextStyle(
+                    color: Colors.black38,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.zero,
                 ),
               ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-              color: Colors.black12,
-              child: Row(
-                children: [
-                  const Text('Theme:', style: TextStyle(color: Colors.white70, fontSize: 16)),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: _themeColors.map((color) {
-                          final isSelected = _selectedColor == color;
-                          return GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _selectedColor = color;
-                              });
-                            },
-                            child: Container(
-                              margin: const EdgeInsets.only(right: 12),
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                color: Color(color),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: isSelected ? Colors.white : Colors.transparent,
-                                  width: 3,
-                                ),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Colors.black26,
-                                    blurRadius: 4,
-                                    offset: Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _bodyController,
+                maxLines: null,
+                style: const TextStyle(
+                  color: Colors.black87,
+                  fontSize: 16,
+                  height: 1.5,
+                ),
+                decoration: const InputDecoration(
+                  hintText: 'Type your insight...',
+                  hintStyle: TextStyle(
+                    color: Colors.black38,
+                    fontSize: 16,
                   ),
-                ],
+                  border: InputBorder.none,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

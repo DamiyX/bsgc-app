@@ -4,11 +4,18 @@ import '../services/auth_service.dart';
 import '../services/chat_service.dart';
 import '../models/group_model.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'study_room_screen.dart';
 import 'create_group_screen.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../theme.dart';
 import '../widgets/insights_row.dart';
+import 'package:intl/intl.dart';
+
+import '../services/notification_service.dart';
+import '../widgets/profile_hub_sheet.dart';
 
 class MainHallScreen extends StatelessWidget {
   const MainHallScreen({super.key});
@@ -17,152 +24,158 @@ class MainHallScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     final chatService = ChatService();
+    
+    // Initialize push notifications when user enters the main hall
+    NotificationService().init();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
         title: const Text(
-          'Your Groups',
-          style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w600),
+          'BSGC',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 24),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.search, color: Colors.black54),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Search coming soon!')));
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.data_usage, color: Colors.black54),
-            tooltip: 'Seed Mock Data',
-            onPressed: () async {
-              await _seedMockData(context);
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout, color: Colors.black54),
-            onPressed: () async {
-              await AuthService().signOut();
-            },
+          Padding(
+            padding: const EdgeInsets.only(right: 16.0),
+            child: InkWell(
+              onTap: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (context) => const ProfileHubSheet(),
+                );
+              },
+              borderRadius: BorderRadius.circular(20),
+              child: CircleAvatar(
+                radius: 18,
+                backgroundColor: Colors.grey[200],
+                backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
+                child: user?.photoURL == null ? const Icon(Icons.person, size: 20, color: Colors.grey) : null,
+              ),
+            ),
           ),
         ],
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.only(top: 16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              InsightsRow(),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
-                child: Text(
-                  'Your Groups',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: StreamBuilder<List<GroupModel>>(
-                  stream: chatService.getUserGroups(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator(color: Colors.black));
-                    }
-                    if (snapshot.hasError) {
-                      return const Center(child: Text('Error loading groups'));
-                    }
-                    final groups = snapshot.data ?? [];
-                    if (groups.isEmpty) {
-                      return const Center(
-                        child: Text(
-                          'You are not in any groups yet.',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.black54,
-                          ),
-                        ),
-                      );
-                    }
+        child: StreamBuilder<List<GroupModel>>(
+          stream: chatService.getUserGroups(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator(color: Colors.black));
+            }
+            if (snapshot.hasError) {
+              return const Center(child: Text('Error loading groups'));
+            }
+            final groups = snapshot.data ?? [];
 
-                    return ListView.separated(
-                      itemCount: groups.length,
-                      separatorBuilder: (context, index) => const Divider(color: Colors.black12, height: 1),
-                      itemBuilder: (context, index) {
-                        final group = groups[index];
-                        return InkWell(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => StudyRoomScreen(group: group),
-                              ),
-                            );
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  width: 64,
-                                  height: 96,
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.05),
-                                    borderRadius: BorderRadius.circular(8),
-                                    boxShadow: const [
-                                      BoxShadow(
-                                        color: Colors.black12,
-                                        blurRadius: 4,
-                                        offset: Offset(0, 2),
-                                      ),
-                                    ],
-                                    image: group.photoUrl != null && group.photoUrl!.isNotEmpty
-                                        ? DecorationImage(image: NetworkImage(group.photoUrl!), fit: BoxFit.cover)
-                                        : null,
-                                  ),
-                                  child: group.photoUrl == null || group.photoUrl!.isEmpty
-                                      ? const Icon(Icons.book, size: 28, color: Colors.black45)
-                                      : null,
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        group.name,
-                                        style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.black87,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      _buildGroupSubtitle(group),
-                                    ],
-                                  ),
-                                ),
-                                const Padding(
-                                  padding: EdgeInsets.only(top: 8.0),
-                                  child: Icon(Icons.chevron_right, color: Colors.black26),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ).animate().fade(duration: 300.ms, delay: (index * 50).ms).slideY(begin: 0.1, duration: 300.ms, curve: Curves.easeOutQuad);
-                      },
-                    );
-                  },
+            return CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: InsightsRow(),
                 ),
-              ),
-            ],
-          ),
+                if (groups.isNotEmpty)
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+                      child: Text(
+                        'Bible study groups',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (groups.isEmpty)
+                  const SliverFillRemaining(
+                    child: Center(
+                      child: Text(
+                        'You are not in any groups yet.',
+                        style: TextStyle(fontSize: 16, color: Colors.black54),
+                      ),
+                    ),
+                  )
+                else
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final group = groups[index];
+                        return Column(
+                          children: [
+                            InkWell(
+                              onTap: () {
+                                chatService.resetUnreadCount(group.id);
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => StudyRoomScreen(group: group),
+                                  ),
+                                );
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      width: 64,
+                                      height: 96,
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.05),
+                                        borderRadius: BorderRadius.circular(8),
+                                        boxShadow: const [
+                                          BoxShadow(
+                                            color: Colors.black12,
+                                            blurRadius: 4,
+                                            offset: Offset(0, 2),
+                                          ),
+                                        ],
+                                        image: group.photoUrl != null && group.photoUrl!.isNotEmpty
+                                            ? DecorationImage(image: NetworkImage(group.photoUrl!), fit: BoxFit.cover)
+                                            : null,
+                                      ),
+                                      child: group.photoUrl == null || group.photoUrl!.isEmpty
+                                          ? const Icon(Icons.book, size: 28, color: Colors.black45)
+                                          : null,
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            group.name,
+                                            style: const TextStyle(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.black87,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          _buildGroupSubtitle(group),
+                                        ],
+                                      ),
+                                    ),
+                                    _buildTrailingInfo(group, index),
+                                  ],
+                                ),
+                              ),
+                            ).animate().fade(duration: 300.ms, delay: (index * 50).ms).slideY(begin: 0.1, duration: 300.ms, curve: Curves.easeOutQuad),
+                            if (index < groups.length - 1)
+                              const Divider(color: Colors.black12, height: 1),
+                          ],
+                        );
+                      },
+                      childCount: groups.length,
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
       ),
       floatingActionButton: FloatingActionButton(
@@ -176,6 +189,68 @@ class MainHallScreen extends StatelessWidget {
         child: const Icon(Icons.add, color: Colors.white),
       ),
     );
+  }
+
+  void _showProfileOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.image),
+              title: const Text('Change Profile Picture'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await _changeProfilePicture(context);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _changeProfilePicture(BuildContext context) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile == null) return;
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uploading new profile picture...')));
+    }
+
+    try {
+      final bytes = await pickedFile.readAsBytes();
+      final compressed = await FlutterImageCompress.compressWithList(
+        bytes,
+        minWidth: 400,
+        minHeight: 400,
+        quality: 70,
+      );
+
+      final storageRef = FirebaseStorage.instance.ref().child('avatars/${user.uid}.jpg');
+      await storageRef.putData(compressed, SettableMetadata(contentType: 'image/jpeg'));
+      final url = await storageRef.getDownloadURL();
+
+      await user.updatePhotoURL(url);
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+        'photoURL': url,
+      });
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile picture updated successfully!')));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update picture: $e')));
+      }
+    }
   }
 
   Widget _buildGroupSubtitle(GroupModel group) {
@@ -209,6 +284,83 @@ class MainHallScreen extends StatelessWidget {
       style: const TextStyle(
         fontSize: 13,
         color: Colors.black54,
+      ),
+    );
+  }
+
+  Widget _buildTrailingInfo(GroupModel group, int index) {
+    final user = FirebaseAuth.instance.currentUser;
+    int unreadCount = user != null ? (group.unreadCounts[user.uid] ?? 0) : 0;
+    
+    // --- SIMULATION LOGIC ---
+    // If the group has no unread messages, artificially simulate some for testing.
+    if (unreadCount == 0) {
+      if (index % 3 == 0) unreadCount = 5;
+      else if (index % 3 == 1) unreadCount = 1;
+    }
+    // ------------------------
+
+    final hasUnread = unreadCount > 0;
+
+    String timeText = '';
+    if (group.lastMessageTime != null) {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final yesterday = today.subtract(const Duration(days: 1));
+      final msgDate = DateTime(group.lastMessageTime!.year, group.lastMessageTime!.month, group.lastMessageTime!.day);
+
+      if (msgDate == today) {
+        timeText = DateFormat('h:mm a').format(group.lastMessageTime!);
+      } else if (msgDate == yesterday) {
+        timeText = 'Yesterday';
+      } else {
+        timeText = DateFormat('MMM d').format(group.lastMessageTime!);
+      }
+    } 
+    
+    // --- SIMULATION LOGIC ---
+    if (timeText.isEmpty) {
+      if (index % 3 == 0) timeText = '10:45 AM';
+      else if (index % 3 == 1) timeText = 'Yesterday';
+      else timeText = 'Oct 12';
+    }
+    // ------------------------
+
+    if (timeText.isEmpty && !hasUnread) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (timeText.isNotEmpty)
+            Text(
+              timeText,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: hasUnread ? FontWeight.bold : FontWeight.normal,
+                color: hasUnread ? AppColors.primary : Colors.black54,
+              ),
+            ),
+          if (hasUnread) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: const BoxDecoration(
+                color: AppColors.primary,
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                unreadCount.toString(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -455,7 +607,7 @@ class MainHallScreen extends StatelessWidget {
       'authorPhotoUrl': avatars['mock_user_1'],
       'title': 'The Law of the Spirit',
       'body': 'I was studying Romans 8:1-4 today and it hit me how powerful the "law of the Spirit of life" is. It completely overrides the law of sin and death, just like how aerodynamics overrides gravity!',
-      'themeColor': 0xFF1B5E20, // Forest Green
+      'themeId': 'theme_1', // Forest Green
       'createdAt': Timestamp.fromDate(now.subtract(const Duration(hours: 2))),
       'expiresAt': Timestamp.fromDate(now.subtract(const Duration(hours: 2)).add(const Duration(days: 3))),
     });
@@ -468,7 +620,7 @@ class MainHallScreen extends StatelessWidget {
       'authorPhotoUrl': avatars['mock_user_2'],
       'title': 'Light & Creation',
       'body': 'Compare Genesis 1:1 with John 1:1-5. The Word was present at the beginning, and the Word brought light into the darkness. Darkness cannot comprehend it.',
-      'themeColor': 0xFF01579B, // Ocean Blue
+      'themeId': 'theme_5', // Ocean Blue
       'createdAt': Timestamp.fromDate(now.subtract(const Duration(hours: 5))),
       'expiresAt': Timestamp.fromDate(now.subtract(const Duration(hours: 5)).add(const Duration(days: 3))),
     });

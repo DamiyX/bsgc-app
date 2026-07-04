@@ -7,7 +7,8 @@ class InsightModel {
   final String? authorPhotoUrl;
   final String title;
   final String body;
-  final int themeColor;
+  final String themeId;
+  final List<String> seenBy;
   final DateTime createdAt;
   final DateTime expiresAt;
 
@@ -18,7 +19,8 @@ class InsightModel {
     this.authorPhotoUrl,
     required this.title,
     required this.body,
-    required this.themeColor,
+    required this.themeId,
+    this.seenBy = const [],
     required this.createdAt,
     required this.expiresAt,
   });
@@ -32,7 +34,8 @@ class InsightModel {
       authorPhotoUrl: data['authorPhotoUrl'],
       title: data['title'] ?? '',
       body: data['body'] ?? '',
-      themeColor: data['themeColor'] ?? 0xFF000000,
+      themeId: data['themeId'] ?? (data['themeColor'] != null ? data['themeColor'].toString() : 'theme_0'),
+      seenBy: List<String>.from(data['seenBy'] ?? []),
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       expiresAt: (data['expiresAt'] as Timestamp).toDate(),
     );
@@ -45,7 +48,8 @@ class InsightModel {
       'authorPhotoUrl': authorPhotoUrl,
       'title': title,
       'body': body,
-      'themeColor': themeColor,
+      'themeId': themeId,
+      'seenBy': seenBy,
       'createdAt': Timestamp.fromDate(createdAt),
       'expiresAt': Timestamp.fromDate(expiresAt),
     };
@@ -59,6 +63,9 @@ class InsightCommentModel {
   final String authorName;
   final String? authorPhotoUrl;
   final String body;
+  final String? replyToId; // For threaded comments
+  final String? replyToName; // To display "Replying to User" without lookup
+  final List<String> likedBy; // Users who liked this comment
   final DateTime createdAt;
 
   InsightCommentModel({
@@ -68,6 +75,9 @@ class InsightCommentModel {
     required this.authorName,
     this.authorPhotoUrl,
     required this.body,
+    this.replyToId,
+    this.replyToName,
+    this.likedBy = const [],
     required this.createdAt,
   });
 
@@ -80,6 +90,9 @@ class InsightCommentModel {
       authorName: data['authorName'] ?? 'Unknown',
       authorPhotoUrl: data['authorPhotoUrl'],
       body: data['body'] ?? '',
+      replyToId: data['replyToId'],
+      replyToName: data['replyToName'],
+      likedBy: List<String>.from(data['likedBy'] ?? []),
       createdAt: (data['createdAt'] as Timestamp).toDate(),
     );
   }
@@ -91,6 +104,9 @@ class InsightCommentModel {
       'authorName': authorName,
       'authorPhotoUrl': authorPhotoUrl,
       'body': body,
+      'replyToId': replyToId,
+      'replyToName': replyToName,
+      'likedBy': likedBy,
       'createdAt': Timestamp.fromDate(createdAt),
     };
   }

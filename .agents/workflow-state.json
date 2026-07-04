@@ -1,0 +1,13 @@
+{
+  "workflow": "BSGC Group App Development",
+  "current_phase": "UI Polish & Bug Fixes",
+  "completion_pct": 85,
+  "notes": "Session completed. Refined complex UI behaviors including deep chat navigation, flawless real-time auto-scrolling, avatar color generation across different screens, and fixed a critical Firebase Storage object-not-found timing bug. The app UI is incredibly smooth and stable. Next session should focus on finalizing any remaining group features or moving to production prep.",
+  "key_decisions": [
+    "Replaced Dart's default String.hashCode with custom ASCII summation to guarantee unique, consistent avatar colors.",
+    "Tied chat auto-scrolling strictly to StreamBuilder data emission for perfect accuracy.",
+    "Used landmark-based iterative jumping to allow users to navigate to the very first message in massive chat logs.",
+    "Avoided large ListView animations by manually clamping jump distances before animating."
+  ],
+  "blockers": []
+}

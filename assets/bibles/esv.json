@@ -1,0 +1,30 @@
+[
+  {
+    "abbrev": "gn",
+    "chapters": [
+      [
+        "In the beginning, God created the heavens and the earth (ESV dummy)."
+      ]
+    ]
+  },
+  {
+    "abbrev": "jn",
+    "chapters": [
+      [
+        "In the beginning was the Word, and the Word was with God, and the Word was God (ESV dummy)."
+      ]
+    ]
+  },
+  {
+    "abbrev": "ro",
+    "chapters": [
+      [
+        "Paul, a servant of Christ Jesus, called to be an apostle, set apart for the gospel of God (ESV dummy)."
+      ],
+      [], [], [], [], [], [],
+      [
+        "There is therefore now no condemnation for those who are in Christ Jesus (ESV dummy)."
+      ]
+    ]
+  }
+]

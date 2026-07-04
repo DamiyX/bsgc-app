@@ -4,7 +4,6 @@ import '../models/insight_model.dart';
 import '../services/insight_service.dart';
 import '../screens/create_insight_screen.dart';
 import '../screens/view_insight_screen.dart';
-import 'package:intl/intl.dart';
 
 class InsightsRow extends StatelessWidget {
   final InsightService _insightService = InsightService();
@@ -28,7 +27,7 @@ class InsightsRow extends StatelessWidget {
           ),
         ),
         SizedBox(
-          height: 180,
+          height: 110,
           child: StreamBuilder<List<InsightModel>>(
             stream: _insightService.getActiveInsights(),
             builder: (context, snapshot) {
@@ -38,76 +37,132 @@ class InsightsRow extends StatelessWidget {
 
               final insights = snapshot.data ?? [];
               
-              // We'll calculate width such that exactly 3.5 items fit on the screen
-              // (24 padding left + 3.5 * width + 3.5 * spacing = screen width)
-              // This is a rough estimation for "Snapchat style"
-              final screenWidth = MediaQuery.of(context).size.width;
-              // 24 for left padding
-              final boxWidth = (screenWidth - 24) / 3.5;
+              final Map<String, List<InsightModel>> groupedInsights = {};
+              for (var insight in insights) {
+                if (!groupedInsights.containsKey(insight.authorUid)) {
+                  groupedInsights[insight.authorUid] = [];
+                }
+                groupedInsights[insight.authorUid]!.add(insight);
+              }
+
+              final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+              bool hasMyInsights = currentUserId != null && groupedInsights.containsKey(currentUserId);
+              List<InsightModel>? myInsights = hasMyInsights ? groupedInsights[currentUserId] : null;
+              
+              final sortedUserIds = groupedInsights.keys.where((id) => id != currentUserId).toList();
+              sortedUserIds.sort((a, b) {
+                final latestA = groupedInsights[a]!.map((i) => i.createdAt).reduce((x, y) => x.isAfter(y) ? x : y);
+                final latestB = groupedInsights[b]!.map((i) => i.createdAt).reduce((x, y) => x.isAfter(y) ? x : y);
+                return latestB.compareTo(latestA); 
+              });
+
+              List<List<InsightModel>> globalGroupedList = [];
+              if (hasMyInsights) {
+                globalGroupedList.add(myInsights!..sort((a, b) => a.createdAt.compareTo(b.createdAt)));
+              }
+              for (var uId in sortedUserIds) {
+                globalGroupedList.add(groupedInsights[uId]!..sort((a, b) => a.createdAt.compareTo(b.createdAt)));
+              }
 
               return ListView.builder(
                 padding: const EdgeInsets.only(left: 24, right: 8),
                 scrollDirection: Axis.horizontal,
-                itemCount: insights.length + 1, // +1 for the 'Add Insight' box
+                itemCount: sortedUserIds.length + 1, 
                 itemBuilder: (context, index) {
                   if (index == 0) {
-                    return _buildAddInsightBox(context, boxWidth);
+                    return _buildMyInsightBox(context, hasMyInsights, globalGroupedList);
                   }
 
-                  final insight = insights[index - 1];
-                  return _buildInsightBox(context, insight, boxWidth, insights, index - 1);
+                  final userId = sortedUserIds[index - 1];
+                  final userInsights = groupedInsights[userId]!;
+                  final userIndex = hasMyInsights ? index : index - 1;
+                  return _buildUserInsightBubble(context, userInsights, globalGroupedList, userIndex);
                 },
               );
             },
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
       ],
     );
   }
 
-  Widget _buildAddInsightBox(BuildContext context, double width) {
+  Widget _buildMyInsightBox(BuildContext context, bool hasMyInsights, List<List<InsightModel>> globalGroupedList) {
     final user = FirebaseAuth.instance.currentUser;
+    bool hasUnseen = true; // Mocked
     
     return GestureDetector(
       onTap: () {
-        Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateInsightScreen()));
+        if (hasMyInsights) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ViewInsightScreen(
+                userInsightsGroups: globalGroupedList,
+                initialUserIndex: 0,
+              ),
+            ),
+          );
+        } else {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateInsightScreen()));
+        }
       },
       child: Container(
-        width: width,
-        margin: const EdgeInsets.only(right: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.black12),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black12,
-              blurRadius: 4,
-              offset: Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Stack(
+        margin: const EdgeInsets.only(right: 16),
+        child: Column(
           children: [
-            // Middle-top placement for add status
-            Align(
-              alignment: const Alignment(0, -0.4),
-              child: Stack(
-                children: [
-                  CircleAvatar(
-                    radius: 28,
+            if (hasMyInsights)
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: hasUnseen 
+                      ? const LinearGradient(
+                          colors: [Colors.black87, Colors.black45],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        )
+                      : null,
+                  border: hasUnseen ? null : Border.all(color: Colors.black26, width: 2),
+                ),
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white,
+                  ),
+                  child: CircleAvatar(
+                    radius: 30,
                     backgroundColor: Colors.grey[200],
                     backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
-                    child: user?.photoURL == null ? const Icon(Icons.person, color: Colors.black45) : null,
+                    child: user?.photoURL == null ? const Icon(Icons.person, color: Colors.black45, size: 30) : null,
+                  ),
+                ),
+              )
+            else
+              Stack(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.black12, width: 2),
+                    ),
+                    child: CircleAvatar(
+                      radius: 32,
+                      backgroundColor: Colors.grey[200],
+                      backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
+                      child: user?.photoURL == null ? const Icon(Icons.person, color: Colors.black45, size: 32) : null,
+                    ),
                   ),
                   Positioned(
                     bottom: 0,
                     right: 0,
                     child: Container(
-                      decoration: const BoxDecoration(
-                        color: Colors.green,
+                      decoration: BoxDecoration(
+                        color: Colors.black87,
                         shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
                       ),
                       padding: const EdgeInsets.all(2),
                       child: const Icon(Icons.add, color: Colors.white, size: 16),
@@ -115,20 +170,10 @@ class InsightsRow extends StatelessWidget {
                   ),
                 ],
               ),
-            ),
-            const Align(
-              alignment: Alignment.bottomCenter,
-              child: Padding(
-                padding: EdgeInsets.only(bottom: 16.0),
-                child: Text(
-                  'Add Insight',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
-                ),
-              ),
+            const SizedBox(height: 6),
+            Text(
+              hasMyInsights ? 'My Insight' : 'Add Insight',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87),
             ),
           ],
         ),
@@ -136,70 +181,71 @@ class InsightsRow extends StatelessWidget {
     );
   }
 
-  Widget _buildInsightBox(BuildContext context, InsightModel insight, double width, List<InsightModel> allInsights, int index) {
+  Widget _buildUserInsightBubble(BuildContext context, List<InsightModel> userInsights, List<List<InsightModel>> globalGroupedList, int userIndex) {
+    final authorName = userInsights.first.authorName;
+    final authorPhotoUrl = userInsights.first.authorPhotoUrl;
+    
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    bool hasUnseen = false;
+    if (currentUserId != null) {
+      hasUnseen = userInsights.any((insight) => !insight.seenBy.contains(currentUserId));
+    }
+
     return GestureDetector(
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => ViewInsightScreen(
-              insights: allInsights,
-              initialIndex: index,
+              userInsightsGroups: globalGroupedList,
+              initialUserIndex: userIndex,
             ),
           ),
         );
       },
       child: Container(
-        width: width,
-        margin: const EdgeInsets.only(right: 12),
-        decoration: BoxDecoration(
-          color: Color(insight.themeColor),
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black12,
-              blurRadius: 4,
-              offset: Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Stack(
+        margin: const EdgeInsets.only(right: 16),
+        child: Column(
           children: [
-            Align(
-              alignment: const Alignment(0, -0.4),
+            Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: hasUnseen 
+                    ? const LinearGradient(
+                        colors: [Colors.black87, Colors.black45],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      )
+                    : null,
+                border: hasUnseen ? null : Border.all(color: Colors.black26, width: 2),
+              ),
               child: Container(
-                decoration: BoxDecoration(
+                padding: const EdgeInsets.all(2),
+                decoration: const BoxDecoration(
                   shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
+                  color: Colors.white,
                 ),
                 child: CircleAvatar(
-                  radius: 28,
+                  radius: 30,
                   backgroundColor: Colors.grey[300],
-                  backgroundImage: insight.authorPhotoUrl != null ? NetworkImage(insight.authorPhotoUrl!) : null,
-                  child: insight.authorPhotoUrl == null ? const Icon(Icons.person, color: Colors.black45) : null,
+                  backgroundImage: authorPhotoUrl != null ? NetworkImage(authorPhotoUrl) : null,
+                  child: authorPhotoUrl == null ? const Icon(Icons.person, color: Colors.black45, size: 30) : null,
                 ),
               ),
             ),
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 16.0, left: 4, right: 4),
-                child: Text(
-                  insight.authorName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black54,
-                        offset: Offset(0, 1),
-                        blurRadius: 2,
-                      ),
-                    ],
-                  ),
+            const SizedBox(height: 6),
+            SizedBox(
+              width: 74,
+              child: Text(
+                authorName.split(' ').first,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: hasUnseen ? FontWeight.w600 : FontWeight.normal,
+                  color: hasUnseen ? Colors.black87 : Colors.black54,
                 ),
               ),
             ),

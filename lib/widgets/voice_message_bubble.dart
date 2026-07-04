@@ -35,6 +35,22 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   bool _isPlaying = false;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
+  double _playbackRate = 1.0;
+
+  void _togglePlaybackSpeed() {
+    setState(() {
+      if (_playbackRate == 1.0) {
+        _playbackRate = 1.2;
+      } else if (_playbackRate == 1.2) {
+        _playbackRate = 1.5;
+      } else if (_playbackRate == 1.5) {
+        _playbackRate = 2.0;
+      } else {
+        _playbackRate = 1.0;
+      }
+      _audioPlayer.setPlaybackRate(_playbackRate);
+    });
+  }
 
   @override
   void initState() {
@@ -94,6 +110,7 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
           debugPrint('Error decoding base64 audio: $e');
         }
       }
+      _audioPlayer.setPlaybackRate(_playbackRate);
     }
   }
 
@@ -249,6 +266,17 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
                   ],
                 ),
               ],
+            ),
+          ),
+          InkWell(
+            onTap: _togglePlaybackSpeed,
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4.0),
+              child: Text(
+                '${_playbackRate}x',
+                style: TextStyle(color: fgColor, fontSize: 10, fontWeight: FontWeight.bold),
+              ),
             ),
           ),
           PopupMenuButton<String>(

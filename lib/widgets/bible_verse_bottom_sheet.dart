@@ -49,8 +49,24 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
     });
   }
 
+  String getTranslationFullName(String code) {
+    switch (code) {
+      case 'KJV': return 'King James Version';
+      case 'WEB': return 'World English Bible';
+      case 'ESV': return 'English Standard Version';
+      case 'BBE': return 'Bible in Basic English';
+      case 'NIV': return 'New International Version';
+      case 'NLT': return 'New Living Translation';
+      case 'MSG': return 'The Message';
+      case 'AMP': return 'Amplified Bible';
+      default: return code;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final bool isOnlineTranslation = ['NIV', 'NLT', 'MSG', 'AMP'].contains(_currentTranslation);
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.grey[200],
@@ -99,11 +115,28 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
               child: _isLoading 
                 ? const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
                 : _verseText == null
-                  ? const Text('Could not find this verse in the database.', style: TextStyle(color: Colors.red))
+                  ? Text(
+                      isOnlineTranslation 
+                          ? 'Loading or Network Error: Please check your internet connection to use this translation. \n\nIf you are offline, please switch to a downloaded version like KJV, WEB, ESV, or BBE.'
+                          : 'Could not find this verse in the database.', 
+                      style: const TextStyle(color: Colors.red, height: 1.5)
+                    )
                   : Text(
                       _verseText!,
                       style: const TextStyle(fontSize: 16, height: 1.5, color: Colors.black87),
                     ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.bottomRight,
+            child: Text(
+              getTranslationFullName(_currentTranslation),
+              style: const TextStyle(
+                fontSize: 11, 
+                color: Colors.black45, 
+                fontStyle: FontStyle.italic
+              ),
             ),
           ),
         ],

@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum MessageType { text, voice, hybrid }
+enum MessageType { text, voice, hybrid, image, video, document }
 
 class MessagePart {
   final MessageType type;
@@ -13,9 +13,18 @@ class MessagePart {
     this.durationSeconds,
   });
 
+  static MessageType _parseMessageType(dynamic typeStr) {
+    if (typeStr == 'voice') return MessageType.voice;
+    if (typeStr == 'image') return MessageType.image;
+    if (typeStr == 'video') return MessageType.video;
+    if (typeStr == 'document') return MessageType.document;
+    if (typeStr == 'hybrid') return MessageType.hybrid;
+    return MessageType.text;
+  }
+
   factory MessagePart.fromMap(Map<String, dynamic> data) {
     return MessagePart(
-      type: data['type'] == 'voice' ? MessageType.voice : MessageType.text,
+      type: _parseMessageType(data['type']),
       content: data['content'] ?? '',
       durationSeconds: data['durationSeconds'],
     );
@@ -69,7 +78,7 @@ class MessageModel {
       // Backward compatibility for old single-part messages
       parsedParts = [
         MessagePart(
-          type: data['type'] == 'voice' ? MessageType.voice : MessageType.text,
+          type: MessagePart._parseMessageType(data['type']),
           content: data['content'] ?? '',
           durationSeconds: data['durationSeconds'],
         )

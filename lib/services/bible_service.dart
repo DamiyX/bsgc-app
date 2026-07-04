@@ -11,12 +11,14 @@ class BibleService {
   
   bool get isLoaded => _bibles.isNotEmpty;
   
-  List<String> get availableTranslations => _bibles.keys.toList();
+  List<String> get availableTranslations => ['KJV', 'WEB', 'ESV', 'BBE', 'NIV', 'NLT', 'MSG', 'AMP'];
 
   Future<void> init() async {
     // Start loading in background, don't await all here if we don't want to block
     _loadTranslation('KJV', 'assets/bibles/kjv.json');
     _loadTranslation('WEB', 'assets/bibles/web.json');
+    _loadTranslation('ESV', 'assets/bibles/esv.json');
+    _loadTranslation('BBE', 'assets/bibles/bbe.json');
   }
 
   Future<void> _loadTranslation(String name, String path) async {
@@ -31,7 +33,8 @@ class BibleService {
 
   /// Returns the text for a given reference. Returns null if not found.
   String? getVerseText(String translation, String bookName, int chapter, int startVerse, [int? endVerse]) {
-    final bible = _bibles[translation] ?? _bibles['KJV'];
+    final bible = _bibles[translation];
+    // REMOVED: fallback to KJV if null! The user explicitly requested no silent fallback.
     if (bible == null) return null;
 
     final normalizedSearch = bookName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');

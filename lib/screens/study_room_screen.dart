@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/group_model.dart';
@@ -17,6 +18,10 @@ import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/scripture_parser.dart';
 import '../widgets/bible_verse_bottom_sheet.dart';
+import '../widgets/add_member_sheet.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 enum TtsState { playing, paused, stopped }
 
@@ -57,10 +62,60 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
   // Editing
   String? _editingMessageId;
 
+  // Scrolling & Highlight
+  final ScrollController _scrollController = ScrollController();
+  final Map<String, GlobalKey> _messageKeys = {};
+  String? _highlightedMessageId;
+  bool _showScrollToBottom = false;
+  String _lastNewMessageId = '';
+
+  // Pagination
+  int _messageLimit = 20;
+  bool _isLoadingMore = false;
+
+  void _onScroll() {
+    if (_scrollController.hasClients) {
+      if (_scrollController.offset > 200 && !_showScrollToBottom) {
+        setState(() => _showScrollToBottom = true);
+      } else if (_scrollController.offset <= 200 && _showScrollToBottom) {
+        setState(() => _showScrollToBottom = false);
+      }
+      
+      // Load more messages when reaching the top
+      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200 && !_isLoadingMore) {
+        setState(() {
+          _isLoadingMore = true;
+          _messageLimit += 20;
+          _messagesStream = _chatService.getGroupMessages(widget.group.id, limit: _messageLimit);
+        });
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) setState(() => _isLoadingMore = false);
+        });
+      }
+    }
+  }
+
+  void _smoothScrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 1200),
+        curve: Curves.easeOutExpo,
+      );
+    }
+  }
+
+  void _jumpToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0.0);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    _messagesStream = _chatService.getGroupMessages(widget.group.id);
+    _scrollController.addListener(_onScroll);
+    _messagesStream = _chatService.getGroupMessages(widget.group.id, limit: _messageLimit);
   }
 
   @override
@@ -70,16 +125,26 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     }
     _recordingTimer?.cancel();
     _textController.dispose();
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     _audioService.dispose();
     super.dispose();
   }
 
   Color _getAvatarColor(String userId) {
-    final colors = [
-      Colors.blueAccent, Colors.redAccent, Colors.green, Colors.orange, 
-      Colors.purple, Colors.teal, Colors.pink, Colors.indigo
+    if (userId == FirebaseAuth.instance.currentUser?.uid) return Colors.green;
+    final List<Color> colors = [
+      Colors.blue, Colors.orange, Colors.red, Colors.purple,
+      Colors.teal, Colors.pink, Colors.indigo, Colors.amber,
+      Colors.cyan, Colors.deepOrange, Colors.lime, Colors.brown
     ];
-    return colors[userId.hashCode.abs() % colors.length];
+    int index = widget.group.members.indexOf(userId);
+    if (index < 0) {
+      int asciiSum = 0;
+      for (int i = 0; i < userId.length; i++) asciiSum += userId.codeUnitAt(i);
+      index = asciiSum;
+    }
+    return colors[index % colors.length];
   }
 
   void _startRecording() async {
@@ -171,11 +236,15 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
       if (editId != null) {
         await _chatService.editMessage(widget.group.id, editId, partsToSend);
       } else {
-        await _chatService.sendHybridMessage(
+        _chatService.sendHybridMessage(
           widget.group.id,
           partsToSend,
-          replyToMessageId: replyId,
+          replyToMessageId: _replyToMessageId,
         );
+        _replyToMessageId = null;
+        if (_scrollController.hasClients) {
+          _jumpToBottom();
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -217,6 +286,160 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     });
   }
 
+  void _scrollToMessage(String messageId, List<MessageModel> messages) async {
+    var key = _messageKeys[messageId];
+    if (key == null || key.currentContext == null) {
+      int targetIndex = messages.indexWhere((m) => m.id == messageId);
+      if (targetIndex != -1) {
+        double targetApprox = targetIndex * 120.0;
+        if (targetApprox > _scrollController.position.maxScrollExtent) {
+          targetApprox = _scrollController.position.maxScrollExtent;
+        }
+        _scrollController.jumpTo(targetApprox);
+        await Future.delayed(const Duration(milliseconds: 100));
+
+        for (int i = 0; i < 20; i++) {
+          if (_messageKeys[messageId]?.currentContext != null) break;
+
+          int currentRenderedIndex = -1;
+          for (var m in messages) {
+             if (_messageKeys[m.id]?.currentContext != null) {
+                currentRenderedIndex = messages.indexWhere((msg) => msg.id == m.id);
+                break;
+             }
+          }
+
+          if (currentRenderedIndex != -1) {
+             int diff = targetIndex - currentRenderedIndex;
+             double adjustment = diff * 100.0;
+             if (adjustment > 1500) adjustment = 1500;
+             if (adjustment < -1500) adjustment = -1500;
+             
+             double nextOffset = _scrollController.offset + adjustment;
+             if (nextOffset < 0) nextOffset = 0;
+             if (nextOffset > _scrollController.position.maxScrollExtent) nextOffset = _scrollController.position.maxScrollExtent;
+             
+             _scrollController.jumpTo(nextOffset);
+             await Future.delayed(const Duration(milliseconds: 100));
+          } else {
+             _scrollController.jumpTo(_scrollController.offset + 10);
+             await Future.delayed(const Duration(milliseconds: 50));
+          }
+        }
+        key = _messageKeys[messageId];
+      }
+    }
+
+    if (key != null && key.currentContext != null) {
+      Scrollable.ensureVisible(
+        key.currentContext!,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeInOut,
+        alignment: 0.5,
+      );
+      setState(() {
+        _highlightedMessageId = messageId;
+      });
+      Future.delayed(const Duration(milliseconds: 3500), () {
+        if (mounted && _highlightedMessageId == messageId) {
+          setState(() {
+            _highlightedMessageId = null;
+          });
+        }
+      });
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Message is too far back. Tried scanning, but failed.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _uploadAndSendAttachment(Uint8List bytes, String extension, MessageType type, String mimeType) async {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Uploading ${type.name}...')));
+    try {
+      Uint8List uploadBytes = bytes;
+      if (type == MessageType.image) {
+        final compressed = await FlutterImageCompress.compressWithList(
+          bytes,
+          minWidth: 800,
+          minHeight: 800,
+          quality: 60,
+        );
+        uploadBytes = compressed;
+      }
+      
+      final storageRef = FirebaseStorage.instance.ref().child('chat_attachments/${widget.group.id}_${DateTime.now().millisecondsSinceEpoch}.$extension');
+      final uploadTask = storageRef.putData(uploadBytes, SettableMetadata(contentType: mimeType));
+      final snapshot = await uploadTask;
+      
+      if (snapshot.state == TaskState.success) {
+        final url = await snapshot.ref.getDownloadURL();
+        _chatService.sendHybridMessage(
+          widget.group.id,
+          [MessagePart(type: type, content: url)],
+        );
+        if (_scrollController.hasClients) {
+          _jumpToBottom();
+        }
+        if (mounted) ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to send ${type.name}: $e')));
+    }
+  }
+
+  void _showAttachmentMenu() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.image, color: Colors.blue),
+              title: const Text('Image'),
+              onTap: () async {
+                Navigator.pop(context);
+                final result = await ImagePicker().pickImage(source: ImageSource.gallery);
+                if (result != null) {
+                  final bytes = await result.readAsBytes();
+                  _uploadAndSendAttachment(bytes, 'jpg', MessageType.image, 'image/jpeg');
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.videocam, color: Colors.red),
+              title: const Text('Video'),
+              onTap: () async {
+                Navigator.pop(context);
+                final result = await ImagePicker().pickVideo(source: ImageSource.gallery);
+                if (result != null) {
+                  final bytes = await result.readAsBytes();
+                  _uploadAndSendAttachment(bytes, 'mp4', MessageType.video, 'video/mp4');
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.insert_drive_file, color: Colors.orange),
+              title: const Text('Document'),
+              onTap: () async {
+                Navigator.pop(context);
+                final result = await FilePicker.platform.pickFiles(type: FileType.any, withData: true);
+                if (result != null && result.files.single.bytes != null) {
+                  final ext = result.files.single.extension ?? 'file';
+                  _uploadAndSendAttachment(result.files.single.bytes!, ext, MessageType.document, 'application/octet-stream');
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _deleteMessage(MessageModel msg, bool forEveryone) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -241,6 +464,26 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
   void _toggleStar(MessageModel msg) async {
     final isStarred = msg.starredBy.contains(_currentUserId);
     await _chatService.toggleStarMessage(widget.group.id, msg.id, isStarred);
+  }
+
+  void _confirmClearChat() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear Chat'),
+        content: const Text('Are you sure you want to clear all messages for yourself? This action cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Clear', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Clearing chat...')));
+      await _chatService.clearChatForMe(widget.group.id);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chat cleared.')));
+    }
   }
 
   void _showBubbleMenu(MessageModel message) {
@@ -383,13 +626,39 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFFAFAFA),
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black87),
         actions: [
           IconButton(
             icon: const Icon(Icons.bug_report, color: Colors.transparent),
             onPressed: _seedMockMessages,
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.black87),
+            onSelected: (value) {
+              if (value == 'clear') {
+                _confirmClearChat();
+              } else if (value == 'add_members') {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (context) => AddMemberSheet(groupId: widget.group.id),
+                );
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'add_members',
+                child: Text('Add Members'),
+              ),
+              const PopupMenuItem(
+                value: 'clear',
+                child: Text('Clear Chat'),
+              ),
+            ],
           ),
         ],
         title: GestureDetector(
@@ -456,48 +725,107 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
         child: Column(
           children: [
             Expanded(
-              child: StreamBuilder<List<MessageModel>>(
-                stream: _messagesStream,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator(color: Colors.black));
-                  }
-                  if (snapshot.hasError) {
-                    return const Center(child: Text('Error loading messages'));
-                  }
-                  
-                  final messages = (snapshot.data ?? [])
-                      .where((m) => !m.deletedFor.contains(_currentUserId))
-                      .toList();
-                  if (messages.isEmpty) {
-                    return const Center(
-                      child: Text('This room is quiet. Share an insight.', style: TextStyle(color: Colors.black54)),
-                    );
-                  }
-
-                  return ListView.builder(
-                    reverse: true,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    itemCount: messages.length,
-                    itemBuilder: (context, index) {
-                      final message = messages[index];
-                      final isMe = message.senderId == _currentUserId;
-
-                      bool showAvatar = true;
-                      if (index > 0) {
-                        // In reverse list, index - 1 is the message displayed visually below this one
-                        if (messages[index - 1].senderId == message.senderId) {
-                          showAvatar = false;
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: StreamBuilder<List<MessageModel>>(
+                      stream: _messagesStream,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator(color: Colors.black));
                         }
-                      }
+                        if (snapshot.hasError) {
+                          return const Center(child: Text('Error loading messages'));
+                        }
+                        
+                        final messages = (snapshot.data ?? [])
+                            .where((m) => !m.deletedFor.contains(_currentUserId))
+                            .toList();
 
-                      return GestureDetector(
-                        onLongPress: () => _showBubbleMenu(message),
-                        child: _buildMessageBubble(message, isMe, messages, showAvatar),
-                      );
-                    },
-                  );
-                },
+                        if (messages.isNotEmpty) {
+                          final newestId = messages.first.id;
+                          if (newestId != _lastNewMessageId) {
+                            _lastNewMessageId = newestId;
+                            if (messages.first.senderId == _currentUserId) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                _jumpToBottom();
+                              });
+                            }
+                          }
+                        }
+
+                        if (messages.isEmpty) {
+                          return const Center(
+                            child: Text('This room is quiet. Share an insight.', style: TextStyle(color: Colors.black54)),
+                          );
+                        }
+
+                        return Scrollbar(
+                          controller: _scrollController,
+                          thumbVisibility: true,
+                          thickness: 4.0,
+                          radius: const Radius.circular(8),
+                          child: ListView.builder(
+                            controller: _scrollController,
+                            reverse: true,
+                            padding: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 48), // Increased bottom padding
+                            itemCount: messages.length + (_isLoadingMore ? 1 : 0),
+                            itemBuilder: (context, index) {
+                              if (index == messages.length) {
+                                return const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 16.0),
+                                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                                );
+                              }
+                              
+                              final message = messages[index];
+                              final isMe = message.senderId == _currentUserId;
+
+                              bool showAvatar = true;
+                              if (index > 0) {
+                                if (messages[index - 1].senderId == message.senderId) {
+                                  showAvatar = false;
+                                }
+                              }
+
+                              return Container(
+                                key: _messageKeys.putIfAbsent(message.id, () => GlobalKey()),
+                                child: GestureDetector(
+                                  onLongPress: () => _showBubbleMenu(message),
+                                  child: _buildMessageBubble(message, isMe, messages, showAvatar),
+                                ),
+                              );
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  if (_showScrollToBottom)
+                    Positioned(
+                      bottom: 8,
+                      left: 0,
+                      right: 0,
+                      child: Align(
+                        alignment: Alignment.center,
+                        child: GestureDetector(
+                          onTap: _smoothScrollToBottom,
+                          child: Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              shape: BoxShape.circle,
+                              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))],
+                            ),
+                            child: const Center(
+                              child: Icon(Icons.arrow_downward, color: Colors.black87, size: 20),
+                            ),
+                          ),
+                        ).animate().fade().scale(),
+                      ),
+                    ),
+                ],
               ),
             ),
             _buildInputArea(),
@@ -644,6 +972,46 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     }
   }
 
+  Widget _buildLightningEffect(String senderId) {
+    final color = _getAvatarColor(senderId);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Container(
+          width: 4,
+          height: constraints.maxHeight,
+          clipBehavior: Clip.hardEdge,
+          decoration: const BoxDecoration(),
+          child: Stack(
+            children: [
+              Positioned(
+                top: 0,
+                child: Container(
+                  width: 4,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [color.withValues(alpha: 0.0), color, color, color.withValues(alpha: 0.0)],
+                    ),
+                    boxShadow: [BoxShadow(color: color, blurRadius: 6, spreadRadius: 2)],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ).animate(onPlay: (controller) {
+                  controller.forward(from: 0).then((_) {
+                    Future.delayed(const Duration(milliseconds: 400), () {
+                      if (mounted) controller.forward(from: 0);
+                    });
+                  });
+                }).slideY(begin: -1, end: (constraints.maxHeight / 60) + 1, duration: 1200.ms, curve: Curves.easeInOut),
+              )
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildAIThreadMessage(MessageModel message, List<MessageModel> allMessages) {
     List<Widget> threadNodes = [];
     for (var part in message.parts) {
@@ -682,7 +1050,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
           const SizedBox(height: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: threadNodes.map((node) => _buildThreadRow(node, message.senderId)).toList(),
+            children: threadNodes.map((node) => _buildThreadRow(node, message.senderId, message.id == _highlightedMessageId)).toList(),
           ),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -705,7 +1073,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     );
   }
 
-  Widget _buildThreadRow(Widget child, String senderId) {
+  Widget _buildThreadRow(Widget child, String senderId, bool isHighlighted) {
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -720,6 +1088,13 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                   bottom: 0,
                   child: Container(width: 2, color: Colors.black12),
                 ),
+                if (isHighlighted)
+                  Positioned(
+                    left: 14,
+                    top: 0,
+                    bottom: 0,
+                    child: _buildLightningEffect(senderId),
+                  ),
                 Positioned(
                   left: 13,
                   top: 12,
@@ -849,14 +1224,20 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
 
     return Padding(
       padding: EdgeInsets.only(bottom: isMe ? 16.0 : 36.0, top: isMe ? 0 : 8.0),
-      child: Row(
-        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (!isMe) ...[
-            if (showAvatar) _buildAvatar(message) else const SizedBox(width: 32),
-            const SizedBox(width: 8),
-          ],
+      child: IntrinsicHeight(
+        child: Row(
+          mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (!isMe) ...[
+              if (showAvatar) _buildAvatar(message) else const SizedBox(width: 32),
+              const SizedBox(width: 8),
+              if (message.id == _highlightedMessageId)
+                Padding(
+                  padding: const EdgeInsets.only(right: 4.0),
+                  child: _buildLightningEffect(message.senderId),
+                )
+            ],
           
           Flexible(
             child: Column(
@@ -868,32 +1249,6 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                     child: Text(
                       message.senderName,
                       style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _getAvatarColor(message.senderId)),
-                    ),
-                  ),
-                
-                if (replyMsg != null)
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 4),
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border(left: BorderSide(color: isMe ? Colors.black87 : Colors.blueGrey, width: 3)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          replyMsg.senderName,
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: isMe ? Colors.black87 : Colors.blueGrey),
-                        ),
-                        Text(
-                          replyMsg.isDeleted ? 'Deleted message' : (replyMsg.parts.isNotEmpty && replyMsg.parts.first.type == MessageType.text ? replyMsg.parts.first.content : '🎤 Voice Note'),
-                          style: const TextStyle(fontSize: 12, color: Colors.black54),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
                     ),
                   ),
 
@@ -928,17 +1283,46 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: message.parts.map((part) {
-                        if (part.type == MessageType.text) {
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            child: _buildRichText(
+                      children: [
+                        if (replyMsg != null)
+                          GestureDetector(
+                            onTap: () => _scrollToMessage(replyMsg!.id, allMessages),
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: isMe ? Colors.grey[800] : Colors.black.withValues(alpha: 0.05),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border(left: BorderSide(color: _getAvatarColor(replyMsg.senderId), width: 3)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    replyMsg.senderName,
+                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: _getAvatarColor(replyMsg.senderId)),
+                                  ),
+                                  Text(
+                                    replyMsg.isDeleted ? 'Deleted message' : (replyMsg.parts.isNotEmpty && replyMsg.parts.first.type == MessageType.text ? replyMsg.parts.first.content : '🎤 Voice Note'),
+                                    style: TextStyle(fontSize: 12, color: isMe ? Colors.white70 : Colors.black54),
+                                    maxLines: 3,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ...message.parts.map((part) {
+                          if (part.type == MessageType.text) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              child: _buildRichText(
                               part.content,
                               TextStyle(color: isMe ? Colors.white : Colors.black87, fontSize: 16),
                               const TextStyle(color: Colors.orange, fontSize: 16, fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
                             ),
                           );
-                        } else {
+                        } else if (part.type == MessageType.voice) {
                           return Padding(
                             padding: const EdgeInsets.all(2.0),
                             child: VoiceMessageBubble(
@@ -948,8 +1332,47 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                               timestamp: message.timestamp,
                             ),
                           );
-                        }
-                      }).toList(),
+                        } else if (part.type == MessageType.image) {
+                            return Padding(
+                              padding: const EdgeInsets.all(4.0),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.network(
+                                  part.content,
+                                  width: 250,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 100),
+                                ),
+                              ),
+                            );
+                          } else if (part.type == MessageType.video) {
+                            return Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.videocam, color: Colors.redAccent, size: 32),
+                                  const SizedBox(width: 8),
+                                  Text('Video Attachment', style: TextStyle(color: isMe ? Colors.white : Colors.black87)),
+                                ],
+                              ),
+                            );
+                          } else if (part.type == MessageType.document) {
+                            return Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.insert_drive_file, color: Colors.orange, size: 32),
+                                  const SizedBox(width: 8),
+                                  Text('Document', style: TextStyle(color: isMe ? Colors.white : Colors.black87)),
+                                ],
+                              ),
+                            );
+                          }
+                          return const SizedBox();
+                        }),
+                      ],
                     ),
                   ),
                 
@@ -973,18 +1396,26 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
           ),
 
           if (isMe) ...[
+            if (message.id == _highlightedMessageId)
+              Padding(
+                padding: const EdgeInsets.only(left: 4.0),
+                child: _buildLightningEffect(message.senderId),
+              ),
             const SizedBox(width: 8),
             if (showAvatar) _buildAvatar(message) else const SizedBox(width: 32),
           ]
         ],
       ),
-    ).animate().fade(duration: 300.ms).slideY(begin: 0.1, curve: Curves.easeOut);
+    )).animate().fade(duration: 300.ms).slideY(begin: 0.1, curve: Curves.easeOut);
   }
+
   Widget _buildInputArea() {
     return Container(
-      decoration: const BoxDecoration(
+      margin: const EdgeInsets.only(left: 12, right: 12, bottom: 12),
+      decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.black12)),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 4))],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1138,18 +1569,25 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                       ),
                     )
                   else
-                    TextField(
-                      controller: _textController,
-                      maxLines: null,
-                      keyboardType: TextInputType.multiline,
-                      textInputAction: TextInputAction.newline,
-                      decoration: const InputDecoration(
-                        hintText: 'Share a thought...',
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.symmetric(vertical: 8.0),
-                      ),
-                      style: const TextStyle(fontSize: 16, color: Colors.black87),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _textController,
+                            maxLines: null,
+                            keyboardType: TextInputType.multiline,
+                            textInputAction: TextInputAction.newline,
+                            decoration: const InputDecoration(
+                              hintText: 'Share a thought...',
+                              border: InputBorder.none,
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
+                            ),
+                            style: const TextStyle(fontSize: 16, color: Colors.black87),
+                          ),
+                        ),
+                      ],
                     ),
                 ],
               ),
@@ -1158,11 +1596,24 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
           
           // Action Buttons Docked at Bottom Right
           Padding(
-            padding: const EdgeInsets.only(right: 16, bottom: 12, top: 4),
+            padding: const EdgeInsets.only(right: 16, bottom: 12, top: 4, left: 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 if (!_isRecording) ...[
+                  // Add Attachment Button
+                  GestureDetector(
+                    onTap: _showAttachmentMenu,
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.add, color: Colors.black87),
+                    ),
+                  ),
+                  const Spacer(),
                   GestureDetector(
                     onTap: _startRecording,
                     child: Container(

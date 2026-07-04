@@ -2,12 +2,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class GroupModel {
   final String id;
-  final String name;
+  String name;
   final List<String> members; // user IDs
   final Map<String, double> readingProgress; // mapping user ID to progress 0.0-1.0
   final String pinnedScripture;
-  final String description;
-  final String? photoUrl;
+  String description;
+  String? photoUrl;
   final DateTime createdAt;
   final String? studyBook;
   final int totalChapters;
@@ -16,6 +16,8 @@ class GroupModel {
   final String? topic;
   final DateTime? startDate;
   final DateTime? endDate;
+  final DateTime? lastMessageTime;
+  final Map<String, int> unreadCounts;
 
   GroupModel({
     required this.id,
@@ -33,6 +35,8 @@ class GroupModel {
     this.topic,
     this.startDate,
     this.endDate,
+    this.lastMessageTime,
+    this.unreadCounts = const {},
   });
 
   factory GroupModel.fromFirestore(DocumentSnapshot doc) {
@@ -56,6 +60,15 @@ class GroupModel {
       });
     }
 
+    // Parse unreadCounts safely
+    Map<String, int> parsedUnreadCounts = {};
+    if (data['unreadCounts'] != null) {
+      final Map<String, dynamic> rawUnreads = Map<String, dynamic>.from(data['unreadCounts']);
+      rawUnreads.forEach((key, value) {
+        parsedUnreadCounts[key] = (value as num).toInt();
+      });
+    }
+
     return GroupModel(
       id: doc.id,
       name: data['name'] ?? '',
@@ -72,6 +85,8 @@ class GroupModel {
       topic: data['topic'],
       startDate: (data['startDate'] as Timestamp?)?.toDate(),
       endDate: (data['endDate'] as Timestamp?)?.toDate(),
+      lastMessageTime: (data['lastMessageTime'] as Timestamp?)?.toDate(),
+      unreadCounts: parsedUnreadCounts,
     );
   }
 
@@ -91,6 +106,8 @@ class GroupModel {
       'topic': topic,
       'startDate': startDate != null ? Timestamp.fromDate(startDate!) : null,
       'endDate': endDate != null ? Timestamp.fromDate(endDate!) : null,
+      if (lastMessageTime != null) 'lastMessageTime': Timestamp.fromDate(lastMessageTime!),
+      'unreadCounts': unreadCounts,
     };
   }
 }
