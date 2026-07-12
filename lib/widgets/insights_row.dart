@@ -4,6 +4,8 @@ import '../models/insight_model.dart';
 import '../services/insight_service.dart';
 import '../screens/create_insight_screen.dart';
 import '../screens/view_insight_screen.dart';
+import '../screens/my_insights_screen.dart';
+import '../theme.dart';
 
 class InsightsRow extends StatelessWidget {
   final InsightService _insightService = InsightService();
@@ -91,85 +93,80 @@ class InsightsRow extends StatelessWidget {
     final user = FirebaseAuth.instance.currentUser;
     bool hasUnseen = true; // Mocked
     
-    return GestureDetector(
-      onTap: () {
-        if (hasMyInsights) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ViewInsightScreen(
-                userInsightsGroups: globalGroupedList,
-                initialUserIndex: 0,
-              ),
-            ),
-          );
-        } else {
-          Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateInsightScreen()));
-        }
-      },
-      child: Container(
-        margin: const EdgeInsets.only(right: 16),
-        child: Column(
-          children: [
-            if (hasMyInsights)
-              Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: hasUnseen 
-                      ? const LinearGradient(
-                          colors: [Colors.black87, Colors.black45],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        )
-                      : null,
-                  border: hasUnseen ? null : Border.all(color: Colors.black26, width: 2),
-                ),
+    return Container(
+      margin: const EdgeInsets.only(right: 16),
+      child: Column(
+        children: [
+          Stack(
+            children: [
+              GestureDetector(
+                onTap: () {
+                  if (hasMyInsights) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ViewInsightScreen(
+                          userInsightsGroups: globalGroupedList,
+                          initialUserIndex: 0,
+                        ),
+                      ),
+                    );
+                  } else {
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateInsightScreen()));
+                  }
+                },
                 child: Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: const BoxDecoration(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.white,
+                    gradient: (hasMyInsights && hasUnseen) 
+                        ? const SweepGradient(
+                            colors: [
+                              AppColors.gradientEnd,
+                              AppColors.gradientStart,
+                              AppColors.gradientEnd,
+                              AppColors.gradientStart,
+                              AppColors.gradientEnd,
+                            ],
+                          )
+                        : null,
+                    border: (hasMyInsights && hasUnseen) ? null : Border.all(color: Colors.black12, width: 2),
                   ),
-                  child: CircleAvatar(
-                    radius: 30,
-                    backgroundColor: Colors.grey[200],
-                    backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
-                    child: user?.photoURL == null ? const Icon(Icons.person, color: Colors.black45, size: 30) : null,
-                  ),
-                ),
-              )
-            else
-              Stack(
-                children: [
-                  Container(
+                  child: Container(
                     padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.black12, width: 2),
+                      color: Colors.white,
                     ),
                     child: CircleAvatar(
-                      radius: 32,
+                      radius: 30,
                       backgroundColor: Colors.grey[200],
                       backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
-                      child: user?.photoURL == null ? const Icon(Icons.person, color: Colors.black45, size: 32) : null,
+                      child: user?.photoURL == null ? const Icon(Icons.person, color: Colors.black45, size: 30) : null,
                     ),
                   ),
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.black87,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                      padding: const EdgeInsets.all(2),
-                      child: const Icon(Icons.add, color: Colors.white, size: 16),
-                    ),
-                  ),
-                ],
+                ),
               ),
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: GestureDetector(
+                  onTap: () {
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateInsightScreen()));
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.gradientEnd,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    padding: const EdgeInsets.all(2),
+                    child: const Icon(Icons.add, color: Colors.white, size: 16),
+                  ),
+                ),
+              ),
+            ],
+          ),
             const SizedBox(height: 6),
             Text(
               hasMyInsights ? 'My Insight' : 'Add Insight',
@@ -177,7 +174,6 @@ class InsightsRow extends StatelessWidget {
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -208,14 +204,18 @@ class InsightsRow extends StatelessWidget {
         child: Column(
           children: [
             Container(
-              padding: const EdgeInsets.all(3),
+              padding: const EdgeInsets.all(4),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: hasUnseen 
-                    ? const LinearGradient(
-                        colors: [Colors.black87, Colors.black45],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+                    ? const SweepGradient(
+                        colors: [
+                          AppColors.gradientEnd,
+                          AppColors.gradientStart,
+                          AppColors.gradientEnd,
+                          AppColors.gradientStart,
+                          AppColors.gradientEnd,
+                        ],
                       )
                     : null,
                 border: hasUnseen ? null : Border.all(color: Colors.black26, width: 2),

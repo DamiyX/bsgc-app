@@ -35,5 +35,26 @@ service cloud.firestore {
         allow update, delete: if false;
       }
     }
+    
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+      
+      match /notes/{noteId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+    }
+    
+    match /insights/{insightId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() && resource.data.authorUid == request.auth.uid;
+      
+      match /comments/{commentId} {
+        allow read: if isAuthenticated();
+        allow create, update: if isAuthenticated();
+        allow delete: if isAuthenticated() && resource.data.authorUid == request.auth.uid;
+      }
+    }
   }
 }

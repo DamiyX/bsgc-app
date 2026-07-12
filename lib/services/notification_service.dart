@@ -2,6 +2,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -10,11 +11,25 @@ class NotificationService {
 
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
   bool _isInitialized = false;
 
   Future<void> init() async {
     if (_isInitialized) return;
     _isInitialized = true;
+
+    // Create the custom Android channel for the 'braid_chime' sound
+    const AndroidNotificationChannel channel = AndroidNotificationChannel(
+      'braid_messages', // id
+      'Braid Messages', // title
+      description: 'Notifications for new messages with custom sound.',
+      importance: Importance.max,
+      sound: RawResourceAndroidNotificationSound('braid_chime'), // This looks for braid_chime.wav in res/raw
+    );
+
+    await _localNotifications
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
 
     // Request permission for iOS / Android 13+
     NotificationSettings settings = await _fcm.requestPermission(

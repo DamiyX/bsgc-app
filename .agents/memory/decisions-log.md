@@ -11,3 +11,7 @@
 ## Deep Navigation Scanning (Scroll-To-Message)
 **Decision**: Built an iterative, landmark-based navigation engine to scroll to old replies.
 **Reason**: Naive jumping fails when target indices are thousands of pixels away due to lazy rendering in `ListView.builder`. The engine now jumps to a mathematical estimate, reads currently rendered context keys as landmarks, calculates exact offsets, and iterates until the target is precisely centered.
+
+## Widget Lifecycle Control
+**Decision**: Removed ValueKey from page viewers in favor of didUpdateWidget.
+**Reason**: Using ValueKey on a widget forces Flutter to entirely destroy and recreate the widget tree when the underlying data ID changes, which causes extremely jarring UI flickering (especially for bottom navigation bars). Overriding didUpdateWidget allows the state to gracefully reset animations while preserving the widget structure, resulting in smooth transitions.

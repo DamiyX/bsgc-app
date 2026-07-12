@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../services/auth_service.dart';
 import '../theme.dart';
 
@@ -8,27 +9,29 @@ class FoyerScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA), // Off-white minimalist
       body: SafeArea(
         child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              ClipRRect(borderRadius: BorderRadius.circular(32), child: Image.asset('assets/icon2.png', height: 150)),
+              const SizedBox(height: 24),
               const Text(
-                'BSGC',
+                'Braid',
                 style: TextStyle(
                   fontSize: 48,
-                  fontWeight: FontWeight.w300,
-                  letterSpacing: 4.0,
-                  color: Colors.black87,
+                  fontFamily: 'Comfortaa',
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 2.0,
+                  color: AppColors.textMain,
                 ),
               ),
               const SizedBox(height: 16),
               const Text(
-                'Bible Study Group Chat',
+                'Where faith meets fellowship',
                 style: TextStyle(
                   fontSize: 16,
-                  color: Colors.black54,
+                  color: AppColors.textMuted,
                   letterSpacing: 1.2,
                 ),
               ),
@@ -38,18 +41,12 @@ class FoyerScreen extends StatelessWidget {
                   final authService = AuthService();
                   await authService.signInWithGoogle();
                 },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.gradientEnd,
+                  foregroundColor: Colors.white,
+                ),
                 icon: const Icon(Icons.login),
                 label: const Text('Continue with Google'),
-                style: ElevatedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  backgroundColor: AppColors.primary,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  textStyle: const TextStyle(fontSize: 16),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
               ),
             ],
           ),
@@ -58,3 +55,5 @@ class FoyerScreen extends StatelessWidget {
     );
   }
 }
+
+

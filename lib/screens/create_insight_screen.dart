@@ -1,3 +1,4 @@
+import '../theme.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:uuid/uuid.dart';
@@ -51,10 +52,10 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
         expiresAt: now.add(const Duration(days: 3)),
       );
 
-      _insightService.createInsight(insight); 
+      await _insightService.createInsight(insight); 
       
       // Artificial delay so the user sees it "loading"
-      await Future.delayed(const Duration(milliseconds: 1500));
+      await Future.delayed(const Duration(milliseconds: 500));
       
       if (mounted) {
         setState(() {
@@ -94,7 +95,7 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
           if (_isSuccess)
             const Padding(
               padding: EdgeInsets.all(16.0),
-              child: Icon(Icons.check_circle, color: Colors.black, size: 28),
+              child: Icon(Icons.check_circle, color: AppColors.gradientEnd, size: 28),
             )
           else if (_isPublishing)
             const Padding(
@@ -102,7 +103,7 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
               child: SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(color: Colors.black87, strokeWidth: 2),
+                child: CircularProgressIndicator(color: AppColors.gradientEnd, strokeWidth: 2),
               ),
             )
           else
@@ -116,12 +117,13 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
         ],
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
+        child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               TextField(
+                cursorColor: Colors.black,
                 controller: _titleController,
                 maxLines: null,
                 style: const TextStyle(
@@ -138,25 +140,34 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
                     fontWeight: FontWeight.bold,
                   ),
                   border: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  enabledBorder: InputBorder.none,
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
               const SizedBox(height: 16),
-              TextField(
-                controller: _bodyController,
-                maxLines: null,
-                style: const TextStyle(
-                  color: Colors.black87,
-                  fontSize: 16,
-                  height: 1.5,
-                ),
-                decoration: const InputDecoration(
-                  hintText: 'Type your insight...',
-                  hintStyle: TextStyle(
-                    color: Colors.black38,
+              Expanded(
+                child: TextField(
+                  cursorColor: Colors.black,
+                  controller: _bodyController,
+                  maxLines: null,
+                  expands: true,
+                  textAlignVertical: TextAlignVertical.top,
+                  style: const TextStyle(
+                    color: Colors.black87,
                     fontSize: 16,
+                    height: 1.5,
                   ),
-                  border: InputBorder.none,
+                  decoration: const InputDecoration(
+                    hintText: 'Type your insight...',
+                    hintStyle: TextStyle(
+                      color: Colors.black38,
+                      fontSize: 16,
+                    ),
+                    border: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                  ),
                 ),
               ),
             ],

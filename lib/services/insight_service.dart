@@ -22,11 +22,15 @@ class InsightService {
     return _firestore
         .collection('insights')
         .where('authorUid', isEqualTo: userId)
-        .where('expiresAt', isGreaterThan: Timestamp.now())
-        .orderBy('expiresAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) => InsightModel.fromFirestore(doc)).toList();
+      final now = DateTime.now();
+      var list = snapshot.docs
+          .map((doc) => InsightModel.fromFirestore(doc))
+          .where((insight) => insight.expiresAt.isAfter(now))
+          .toList();
+      list.sort((a, b) => b.expiresAt.compareTo(a.expiresAt));
+      return list;
     });
   }
 
@@ -81,5 +85,35 @@ class InsightService {
         'likedBy': FieldValue.arrayRemove([userId])
       });
     }
+  }
+
+  // Saved Insights
+  Future<void> saveInsight(String userId, InsightModel insight) async {
+    await _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('saved_insights')
+        .doc(insight.id)
+        .set(insight.toMap());
+  }
+
+  Future<void> unsaveInsight(String userId, String insightId) async {
+    await _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('saved_insights')
+        .doc(insightId)
+        .delete();
+  }
+
+  Stream<List<InsightModel>> getSavedInsights(String userId) {
+    return _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('saved_insights')
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.map((doc) => InsightModel.fromFirestore(doc)).toList();
+    });
   }
 }

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/group_model.dart';
 import '../models/message_model.dart';
+import 'push_notification_sender.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class ChatService {
@@ -15,10 +16,11 @@ class ChatService {
     return _firestore
         .collection('groups')
         .where('members', arrayContains: userId)
-        .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) => GroupModel.fromFirestore(doc)).toList();
+      final groups = snapshot.docs.map((doc) => GroupModel.fromFirestore(doc)).toList();
+      groups.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return groups;
     });
   }
 
@@ -36,24 +38,45 @@ class ChatService {
     final user = _auth.currentUser;
     if (user == null) throw Exception('User not authenticated');
 
-    final docRef = await _firestore.collection('groups').add({
+    final docRef = _firestore.collection('groups').doc();
+    
+    final data = {
       'name': name,
       'members': [user.uid],
       'readingProgress': { user.uid: 0.0 },
       'userCompletedChapters': { user.uid: [] },
       'pinnedScripture': '',
       'description': description,
-      'createdAt': FieldValue.serverTimestamp(),
+      'createdAt': Timestamp.now(),
       'groupType': groupType,
       'topic': topic,
       'studyBook': studyBook,
       'totalChapters': totalChapters,
       'startDate': startDate != null ? Timestamp.fromDate(startDate) : null,
       'endDate': endDate != null ? Timestamp.fromDate(endDate) : null,
-    });
+      'extensionCount': 0,
+    };
 
-    final docSnap = await docRef.get();
-    return GroupModel.fromFirestore(docSnap);
+    await docRef.set(data);
+
+    return GroupModel(
+      id: docRef.id,
+      name: name,
+      members: [user.uid],
+      readingProgress: { user.uid: 0.0 },
+      userCompletedChapters: { user.uid: [] },
+      pinnedScripture: '',
+      description: description,
+      createdAt: DateTime.now(),
+      groupType: groupType,
+      topic: topic,
+      studyBook: studyBook,
+      totalChapters: totalChapters,
+      startDate: startDate,
+      endDate: endDate,
+      unreadCounts: {},
+      extensionCount: 0,
+    );
   }
 
   // Join a group by ID
@@ -79,15 +102,127 @@ class ChatService {
     }
   }
 
+  // Extend group duration (Max 3 times)
+  Future<bool> extendGroupDuration(String groupId, Duration extraTime) async {
+    final docRef = _firestore.collection('groups').doc(groupId);
+    final docSnap = await docRef.get();
+
+    if (!docSnap.exists) throw Exception('Group not found');
+    
+    final data = docSnap.data() as Map<String, dynamic>;
+    int currentExtensions = data['extensionCount'] ?? 0;
+    
+    if (currentExtensions >= 3) {
+      return false; // Cannot extend more than 3 times
+    }
+    
+    Timestamp? currentEndDateTs = data['endDate'];
+    DateTime currentEndDate = currentEndDateTs != null ? currentEndDateTs.toDate() : DateTime.now();
+    DateTime newEndDate = currentEndDate.add(extraTime);
+
+    await docRef.update({
+      'endDate': Timestamp.fromDate(newEndDate),
+      'extensionCount': FieldValue.increment(1),
+    });
+    
+    return true;
+  }
+
   // Leave a group
   Future<void> leaveGroup(String groupId) async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('User not authenticated');
 
-    await _firestore.collection('groups').doc(groupId).update({
+    final docRef = _firestore.collection('groups').doc(groupId);
+    final docSnap = await docRef.get();
+    
+    if (docSnap.exists) {
+      List<String> currentMembers = List<String>.from(docSnap.data()?['members'] ?? []);
+      
+      // Apply 30-day cooldown between leaving user and all other current members
+      await _applyCooldowns(user.uid, currentMembers);
+    }
+
+    await docRef.update({
       'members': FieldValue.arrayRemove([user.uid]),
       'readingProgress.${user.uid}': FieldValue.delete(),
+      'userCompletedChapters.${user.uid}': FieldValue.delete(),
     });
+  }
+
+  // Apply 30-day cooldown to prevent re-grouping
+  Future<void> _applyCooldowns(String leavingUserId, List<String> groupMembers) async {
+    if (groupMembers.isEmpty) return;
+    
+    final batch = _firestore.batch();
+    final expiresAt = Timestamp.fromDate(DateTime.now().add(const Duration(days: 30)));
+    
+    for (String memberId in groupMembers) {
+      if (memberId == leavingUserId) continue;
+      
+      // Create a deterministic ID so either A->B or B->A maps to the same doc
+      final ids = [leavingUserId, memberId]..sort();
+      final cooldownId = '${ids[0]}_${ids[1]}';
+      
+      final ref = _firestore.collection('cooldowns').doc(cooldownId);
+      batch.set(ref, {
+        'users': ids,
+        'expiresAt': expiresAt,
+      }, SetOptions(merge: true));
+    }
+    
+    await batch.commit();
+  }
+
+  // Check if a cooldown exists between current user and target user
+  Future<DateTime?> checkCooldown(String targetUserId) async {
+    final user = _auth.currentUser;
+    if (user == null) return null;
+
+    final ids = [user.uid, targetUserId]..sort();
+    final cooldownId = '${ids[0]}_${ids[1]}';
+
+    try {
+      final doc = await _firestore.collection('cooldowns').doc(cooldownId).get();
+      if (doc.exists) {
+        final expiresAt = doc.data()?['expiresAt'] as Timestamp?;
+        if (expiresAt != null) {
+          final expirationDate = expiresAt.toDate();
+          if (expirationDate.isAfter(DateTime.now())) {
+            return expirationDate;
+          }
+        }
+      }
+    } catch (e) {
+      // Ignored
+    }
+    return null;
+  }
+
+  // Add multiple members to a group
+  Future<void> addMembersToGroup(String groupId, List<String> memberIds) async {
+    final docRef = _firestore.collection('groups').doc(groupId);
+    final docSnap = await docRef.get();
+
+    if (!docSnap.exists) throw Exception('Group not found');
+
+    List<String> currentMembers = List<String>.from(docSnap.data()?['members'] ?? []);
+    if (currentMembers.length + memberIds.length > 12) {
+      throw Exception('Group cannot exceed 12 members');
+    }
+
+    Map<String, dynamic> updates = {
+      'members': FieldValue.arrayUnion(memberIds),
+    };
+    
+    for (String uid in memberIds) {
+      if (!currentMembers.contains(uid)) {
+        updates['readingProgress.$uid'] = 0.0;
+        updates['userCompletedChapters.$uid'] = [];
+      }
+    }
+
+    await docRef.update(updates);
   }
 
   // Edit a group
@@ -99,7 +234,8 @@ class ChatService {
     if (description != null) updates['description'] = description;
     if (photoUrl != null) updates['photoUrl'] = photoUrl;
 
-    await _firestore.collection('groups').doc(groupId).update(updates);
+    // Fire and forget to allow offline persistence to work instantly
+    _firestore.collection('groups').doc(groupId).update(updates);
   }
 
   // Fetch profiles for a list of user IDs
@@ -172,20 +308,53 @@ class ChatService {
       'starredBy': [],
     });
 
-    // Update group's last message time and increment unread count for other members
-    final groupDoc = await _firestore.collection('groups').doc(groupId).get();
-    if (groupDoc.exists) {
-      final members = List<String>.from(groupDoc.data()?['members'] ?? []);
-      Map<String, dynamic> updates = {
-        'lastMessageTime': FieldValue.serverTimestamp(),
-      };
-      for (String memberId in members) {
-        if (memberId != user.uid) {
-          updates['unreadCounts.$memberId'] = FieldValue.increment(1);
+      // Update group's last message time and increment unread count for other members
+      final groupDoc = await _firestore.collection('groups').doc(groupId).get();
+      if (groupDoc.exists) {
+        final groupData = groupDoc.data()!;
+        final groupName = groupData['name'] ?? 'Study Group';
+        final members = List<String>.from(groupData['members'] ?? []);
+        Map<String, dynamic> updates = {
+          'lastMessageTime': FieldValue.serverTimestamp(),
+        };
+        for (String memberId in members) {
+          if (memberId != user.uid) {
+            updates['unreadCounts.$memberId'] = FieldValue.increment(1);
+          }
+        }
+        await _firestore.collection('groups').doc(groupId).update(updates);
+
+        // Extract a preview text for the notification body
+        String notificationBody = 'Sent a message';
+        if (parts.isNotEmpty) {
+          final firstPart = parts.first;
+          if (firstPart.type == 'text' && firstPart.content.isNotEmpty) {
+            notificationBody = firstPart.content.length > 50 
+              ? '${firstPart.content.substring(0, 50)}...' 
+              : firstPart.content;
+          } else if (firstPart.type == 'voice') {
+            notificationBody = '🎤 Voice note';
+          }
+        }
+
+        // Send Push Notifications using Client-Side Hack
+        for (String memberId in members) {
+          if (memberId != user.uid) {
+            final userDoc = await _firestore.collection('users').doc(memberId).get();
+            if (userDoc.exists) {
+              final fcmToken = userDoc.data()?['fcmToken'] as String?;
+              if (fcmToken != null && fcmToken.isNotEmpty) {
+                PushNotificationSender.sendPushNotification(
+                  fcmToken: fcmToken,
+                  title: '${user.displayName} in $groupName',
+                  body: notificationBody,
+                  data: {'groupId': groupId},
+                );
+              }
+            }
+          }
         }
       }
-      await _firestore.collection('groups').doc(groupId).update(updates);
-    }
   }
 
   // Reset unread count for current user

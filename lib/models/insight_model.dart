@@ -9,6 +9,7 @@ class InsightModel {
   final String body;
   final String themeId;
   final List<String> seenBy;
+  final List<String> likedBy; // Add likedBy field
   final DateTime createdAt;
   final DateTime expiresAt;
 
@@ -21,6 +22,7 @@ class InsightModel {
     required this.body,
     required this.themeId,
     this.seenBy = const [],
+    this.likedBy = const [], // Default to empty
     required this.createdAt,
     required this.expiresAt,
   });
@@ -36,6 +38,7 @@ class InsightModel {
       body: data['body'] ?? '',
       themeId: data['themeId'] ?? (data['themeColor'] != null ? data['themeColor'].toString() : 'theme_0'),
       seenBy: List<String>.from(data['seenBy'] ?? []),
+      likedBy: List<String>.from(data['likedBy'] ?? []), // Parse likedBy
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       expiresAt: (data['expiresAt'] as Timestamp).toDate(),
     );
@@ -50,6 +53,7 @@ class InsightModel {
       'body': body,
       'themeId': themeId,
       'seenBy': seenBy,
+      'likedBy': likedBy, // Serialize likedBy
       'createdAt': Timestamp.fromDate(createdAt),
       'expiresAt': Timestamp.fromDate(expiresAt),
     };

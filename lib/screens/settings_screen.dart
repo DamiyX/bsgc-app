@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
+import '../services/backup_service.dart';
 import '../theme.dart';
+import 'edit_profile_screen.dart';
+import 'tts_settings_screen.dart';
+import 'support_chat_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({Key? key}) : super(key: key);
+  const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -19,17 +22,13 @@ class SettingsScreen extends StatelessWidget {
         children: [
           _buildSectionHeader('Account'),
           ListTile(
-            leading: const Icon(Icons.person_outline),
-            title: const Text('Change Display Picture'),
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('DP change coming soon')));
-            },
-          ),
-          ListTile(
             leading: const Icon(Icons.edit),
-            title: const Text('Edit Name'),
+            title: const Text('Edit Profile'),
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Name edit coming soon')));
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+              );
             },
           ),
 
@@ -40,7 +39,19 @@ class SettingsScreen extends StatelessWidget {
             title: const Text('Dark Mode'),
             value: false, // Simulated
             onChanged: (val) {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Dark mode toggle coming soon')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Dark mode toggle coming soon')),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.record_voice_over),
+            title: const Text('Reading Voice'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const TtsSettingsScreen()),
+              );
             },
           ),
           ListTile(
@@ -50,12 +61,83 @@ class SettingsScreen extends StatelessWidget {
           ),
 
           const Divider(),
+          _buildSectionHeader('Support'),
+          ListTile(
+            leading: const Icon(Icons.help_outline),
+            title: const Text('Help & Support'),
+            subtitle: const Text('Contact us or view FAQs'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SupportChatScreen()),
+              );
+            },
+          ),
+
+          const Divider(),
           _buildSectionHeader('Spiritual Tools'),
           ListTile(
             leading: const Icon(Icons.alarm),
             title: const Text('Set Prayer Time / Alarm'),
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Prayer alarm coming soon')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Prayer alarm coming soon')),
+              );
+            },
+          ),
+
+          const Divider(),
+          _buildSectionHeader('Data & Backup'),
+          ListTile(
+            leading: const Icon(Icons.cloud_upload_outlined),
+            title: const Text('Back up to Google Drive'),
+            subtitle: const Text('Save notes, insights, and profile to Drive'),
+            onTap: () async {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Starting backup to Google Drive...'),
+                ),
+              );
+              try {
+                await BackupService().backupToGoogleDrive();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Backup successful!')),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('Backup failed: $e')));
+                }
+              }
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.cloud_download_outlined),
+            title: const Text('Restore from Google Drive'),
+            subtitle: const Text('Restore previously backed up data'),
+            onTap: () async {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Starting restore from Google Drive...'),
+                ),
+              );
+              try {
+                await BackupService().restoreFromGoogleDrive();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Restore successful!')),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('Restore failed: $e')));
+                }
+              }
             },
           ),
 
@@ -84,9 +166,16 @@ class SettingsScreen extends StatelessWidget {
           ),
           ListTile(
             leading: const Icon(Icons.delete_forever, color: Colors.red),
-            title: const Text('Delete Account', style: TextStyle(color: Colors.red)),
+            title: const Text(
+              'Delete Account',
+              style: TextStyle(color: Colors.red),
+            ),
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Account deletion requires re-auth.')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Account deletion requires re-auth.'),
+                ),
+              );
             },
           ),
         ],
@@ -99,8 +188,8 @@ class SettingsScreen extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Text(
         title,
-        style: TextStyle(
-          color: AppColors.primary,
+        style: const TextStyle(
+          color: Colors.black87,
           fontWeight: FontWeight.bold,
           letterSpacing: 0.5,
         ),

@@ -1,13 +1,14 @@
 {
   "workflow": "BSGC Group App Development",
-  "current_phase": "UI Polish & Bug Fixes",
-  "completion_pct": 85,
-  "notes": "Session completed. Refined complex UI behaviors including deep chat navigation, flawless real-time auto-scrolling, avatar color generation across different screens, and fixed a critical Firebase Storage object-not-found timing bug. The app UI is incredibly smooth and stable. Next session should focus on finalizing any remaining group features or moving to production prep.",
+  "current_phase": "Session Handoff & Memory Hygiene",
+  "completion_pct": 95,
+  "notes": "Session completed. Fixed UI glitching with insight navigation by swapping ValueKey for didUpdateWidget. Fixed severe infinite scroll loop in chat history by implementing a strict _hasMoreMessages data boundary. Updated and successfully compiled all app icons and splash screens. App built successfully but failed install due to user's device being full. Ready for handoff to a fresh context window to handle any final polish or backend syncing.",
   "key_decisions": [
-    "Replaced Dart's default String.hashCode with custom ASCII summation to guarantee unique, consistent avatar colors.",
-    "Tied chat auto-scrolling strictly to StreamBuilder data emission for perfect accuracy.",
-    "Used landmark-based iterative jumping to allow users to navigate to the very first message in massive chat logs.",
-    "Avoided large ListView animations by manually clamping jump distances before animating."
+    "Wrapped native-dependent Firebase initialization (Crashlytics) in try-catch in main.dart to prevent complete app death if native SDK integration is incomplete.",
+    "Transitioned from Firebase Storage to Cloudinary for image hosting to avoid 'Pay as you go' billing requirement.",
+    "Used TextEditingController in IntlPhoneField instead of relying on initialValue to guarantee reliable state persistence across widget rebuilds.",
+    "Opted for a local visual update for added contacts in AddMemberSheet prior to building the full backend syncing logic to unblock UI testing.",
+    "Used didUpdateWidget instead of ValueKey for smoother insight navigation state transitions."
   ],
   "blockers": []
 }

@@ -18,6 +18,7 @@ class GroupModel {
   final DateTime? endDate;
   final DateTime? lastMessageTime;
   final Map<String, int> unreadCounts;
+  final int extensionCount;
 
   GroupModel({
     required this.id,
@@ -37,6 +38,7 @@ class GroupModel {
     this.endDate,
     this.lastMessageTime,
     this.unreadCounts = const {},
+    this.extensionCount = 0,
   });
 
   factory GroupModel.fromFirestore(DocumentSnapshot doc) {
@@ -87,6 +89,7 @@ class GroupModel {
       endDate: (data['endDate'] as Timestamp?)?.toDate(),
       lastMessageTime: (data['lastMessageTime'] as Timestamp?)?.toDate(),
       unreadCounts: parsedUnreadCounts,
+      extensionCount: data['extensionCount'] ?? 0,
     );
   }
 
@@ -108,6 +111,7 @@ class GroupModel {
       'endDate': endDate != null ? Timestamp.fromDate(endDate!) : null,
       if (lastMessageTime != null) 'lastMessageTime': Timestamp.fromDate(lastMessageTime!),
       'unreadCounts': unreadCounts,
+      'extensionCount': extensionCount,
     };
   }
 }

@@ -3,8 +3,9 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:bsgc_app/services/auth_service.dart';
 import 'package:bsgc_app/services/bible_service.dart';
+import 'package:bsgc_app/services/deep_link_service.dart';
 import 'package:bsgc_app/screens/foyer_screen.dart';
-import 'package:bsgc_app/screens/main_hall_screen.dart';
+import 'package:bsgc_app/widgets/user_data_wrapper.dart';
 import 'package:bsgc_app/theme.dart';
 import 'package:bsgc_app/firebase_options.dart';
 
@@ -13,30 +14,47 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
   
-  // Pass all uncaught "fatal" errors from the framework to Crashlytics
-  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
-  
-  // Pass all uncaught asynchronous errors that aren't handled by the Flutter framework to Crashlytics
-  PlatformDispatcher.instance.onError = (error, stack) {
-    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-    return true;
-  };
+  try {
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    
+    if (!kIsWeb) {
+      // Pass all uncaught "fatal" errors from the framework to Crashlytics
+      FlutterError.onError =
+          FirebaseCrashlytics.instance.recordFlutterFatalError;
 
-  await BibleService().init();
-  runApp(const BSGCApp());
+      // Pass all uncaught asynchronous errors that aren't handled by the Flutter framework to Crashlytics
+      PlatformDispatcher.instance.onError = (error, stack) {
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+        return true;
+      };
+    }
+  } catch (e) {
+    debugPrint('Failed to initialize Crashlytics: $e');
+  }
+
+  try {
+    await BibleService().init();
+  } catch (e) {
+    debugPrint('Failed to initialize BibleService: $e');
+  }
+
+  try {
+    await DeepLinkService().init();
+  } catch (e) {
+    debugPrint('Failed to initialize DeepLinkService: $e');
+  }
+
+  runApp(const BraidApp());
 }
 
-class BSGCApp extends StatelessWidget {
-  const BSGCApp({super.key});
+class BraidApp extends StatelessWidget {
+  const BraidApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'BSGC',
+      title: 'Braid',
       debugShowCheckedModeBanner: false,
       theme: appTheme,
       home: const AuthWrapper(),
@@ -54,13 +72,11 @@ class AuthWrapper extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
+            body: Center(child: CircularProgressIndicator()),
           );
         }
         if (snapshot.hasData) {
-          return const MainHallScreen();
+          return const UserDataWrapper();
         }
         return const FoyerScreen();
       },

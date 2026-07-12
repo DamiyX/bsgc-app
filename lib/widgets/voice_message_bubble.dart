@@ -182,7 +182,7 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
         final filePath = '${tempDir.path}/$newName.m4a';
         final file = File(filePath);
         await file.writeAsBytes(bytes);
-        await Share.shareXFiles([XFile(filePath)], text: 'Shared from BSGC App');
+        await Share.shareXFiles([XFile(filePath)], text: 'Shared from Braid');
       }
     } catch (e) {
       if (mounted) {
