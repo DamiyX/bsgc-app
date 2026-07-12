@@ -99,6 +99,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - .env
     - assets/icon1.png
     - assets/icon2.png
     - assets/icon.svg

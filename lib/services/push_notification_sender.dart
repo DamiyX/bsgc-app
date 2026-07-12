@@ -2,15 +2,16 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:googleapis_auth/auth_io.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class PushNotificationSender {
   static const String _projectId = 'bsgc-app';
 
-  static const Map<String, dynamic> _serviceAccountJson = {
+  static Map<String, dynamic> get _serviceAccountJson => {
     "type": "service_account",
     "project_id": "bsgc-app",
-    "private_key_id": "YOUR_PRIVATE_KEY_ID_HERE",
-    "private_key": "YOUR_PRIVATE_KEY_HERE",
+    "private_key_id": dotenv.env['FCM_PRIVATE_KEY_ID'] ?? "YOUR_PRIVATE_KEY_ID_HERE",
+    "private_key": (dotenv.env['FCM_PRIVATE_KEY'] ?? "YOUR_PRIVATE_KEY_HERE").replaceAll(r'\n', '\n'),
     "client_email": "braid-push-notifications@bsgc-app.iam.gserviceaccount.com",
     "client_id": "114447050610643892949",
     "auth_uri": "https://accounts.google.com/o/oauth2/auth",
