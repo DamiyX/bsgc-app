@@ -12,7 +12,7 @@ import '../widgets/voice_message_bubble.dart';
 import 'group_details_screen.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../theme.dart';
-import 'package:bsgc_app/services/cloudinary_service.dart';
+import 'package:bsgc_app/services/storage_service.dart';
 import 'dart:async';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -384,13 +384,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
         uploadBytes = compressed;
       }
       
-      String resourceType = 'auto';
-      if (type == MessageType.image) resourceType = 'image';
-      if (type == MessageType.video) resourceType = 'video';
+      final url = await StorageService.uploadFile(uploadBytes, folder: 'chat_media', extension: extension);
       
-      final url = await CloudinaryService.uploadFile(uploadBytes, resourceType: resourceType, extension: extension);
-      
-      if (url != null) {
+      if (url.isNotEmpty) {
         _chatService.sendHybridMessage(
           widget.group.id,
           [MessagePart(type: type, content: url)],
@@ -401,7 +397,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
         if (mounted) ScaffoldMessenger.of(context).hideCurrentSnackBar();
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to upload file to Cloudinary')));
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to upload file to Firebase Storage')));
         }
       }
     } catch (e) {

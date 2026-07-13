@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:bsgc_app/services/cloudinary_service.dart';
+import 'package:bsgc_app/services/storage_service.dart';
 import 'dart:async';
 import 'package:intl_phone_field/intl_phone_field.dart';
 import '../theme.dart';
@@ -127,9 +127,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         quality: 70,
       );
 
-      final url = await CloudinaryService.uploadFile(compressed);
-      if (url == null) {
-        throw Exception('Cloudinary configuration missing or upload failed');
+      final url = await StorageService.uploadFile(compressed, folder: 'profiles');
+      
+      if (url.isEmpty) {
+        throw Exception('Firebase Storage upload failed');
       }
 
       if (user != null) {

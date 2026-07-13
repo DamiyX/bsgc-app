@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:bsgc_app/services/cloudinary_service.dart';
+import 'package:bsgc_app/services/storage_service.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -228,9 +228,9 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
         );
         bytes = compressed;
 
-        final newUrl = await CloudinaryService.uploadFile(bytes);
-        if (newUrl == null) {
-          throw Exception('Cloudinary configuration missing or upload failed');
+        final newUrl = await StorageService.uploadFile(bytes, folder: 'groups');
+        if (newUrl.isEmpty) {
+          throw Exception('Firebase Storage upload failed');
         }
 
         await _chatService.editGroup(

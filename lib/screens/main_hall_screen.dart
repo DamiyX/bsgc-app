@@ -6,7 +6,7 @@ import '../services/chat_service.dart';
 import '../models/group_model.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:bsgc_app/services/cloudinary_service.dart';
+import 'package:bsgc_app/services/storage_service.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'study_room_screen.dart';
 import 'create_group_screen.dart';
@@ -325,9 +325,9 @@ class MainHallScreen extends StatelessWidget {
         quality: 70,
       );
 
-      final url = await CloudinaryService.uploadFile(compressed);
-      if (url == null) {
-        throw Exception('Cloudinary configuration missing or upload failed');
+      final url = await StorageService.uploadFile(compressed, folder: 'groups');
+      if (url.isEmpty) {
+        throw Exception('Firebase Storage upload failed');
       }
 
       await user.updatePhotoURL(url);

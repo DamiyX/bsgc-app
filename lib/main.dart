@@ -11,16 +11,9 @@ import 'package:bsgc_app/firebase_options.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  try {
-    await dotenv.load(fileName: ".env");
-  } catch (e) {
-    debugPrint('Failed to load .env file: $e');
-  }
   
   try {
     await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);

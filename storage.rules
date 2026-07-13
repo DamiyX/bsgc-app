@@ -6,48 +6,20 @@ service firebase.storage {
       return request.auth != null;
     }
 
-    // Profile pictures - authenticated users can read/write their own
-    match /profile_pictures/{fileName} {
+    match /{allPaths=**} {
       allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated()
-                   && request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
-      allow delete: if false;
     }
 
-    // User avatars - authenticated users can read/write their own
-    match /avatars/{fileName} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated()
-                   && request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
-      allow delete: if false;
+    match /profiles/{fileName} {
+      allow write: if isAuthenticated() && request.resource.size < 5 * 1024 * 1024;
     }
 
-    // Group images - authenticated users can upload
-    match /group_images/{fileName} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated()
-                   && request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
-      allow delete: if false;
+    match /groups/{fileName} {
+      allow write: if isAuthenticated() && request.resource.size < 5 * 1024 * 1024;
     }
 
-    // Chat attachments - images, videos, documents
-    match /chat_attachments/{fileName} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated()
-                   && request.resource.size < 25 * 1024 * 1024;
-      allow update, delete: if false;
-    }
-
-    // Voice notes
-    match /voice_notes/{groupId}/{fileName} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() 
-                   && request.resource.size < 5 * 1024 * 1024 
-                   && request.resource.contentType.matches('audio/.*');
-      allow update, delete: if false;
+    match /chat_media/{fileName} {
+      allow write: if isAuthenticated() && request.resource.size < 50 * 1024 * 1024;
     }
   }
 }

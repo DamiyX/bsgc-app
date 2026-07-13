@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/group_model.dart';
 import '../models/message_model.dart';
-import 'push_notification_sender.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class ChatService {
@@ -337,23 +336,6 @@ class ChatService {
           }
         }
 
-        // Send Push Notifications using Client-Side Hack
-        for (String memberId in members) {
-          if (memberId != user.uid) {
-            final userDoc = await _firestore.collection('users').doc(memberId).get();
-            if (userDoc.exists) {
-              final fcmToken = userDoc.data()?['fcmToken'] as String?;
-              if (fcmToken != null && fcmToken.isNotEmpty) {
-                PushNotificationSender.sendPushNotification(
-                  fcmToken: fcmToken,
-                  title: '${user.displayName} in $groupName',
-                  body: notificationBody,
-                  data: {'groupId': groupId},
-                );
-              }
-            }
-          }
-        }
       }
   }
 
