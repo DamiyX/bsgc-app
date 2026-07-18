@@ -7,6 +7,8 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_saver/file_saver.dart';
+import 'package:provider/provider.dart';
+import '../providers/theme_provider.dart';
 import '../theme.dart';
 
 class VoiceMessageBubble extends StatefulWidget {
@@ -199,7 +201,16 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
 
   @override
   Widget build(BuildContext context) {
-    final fgColor = (widget.isMe && !widget.isDraft) ? Colors.white : Theme.of(context).colorScheme.onSurface;
+    final theme = Provider.of<ThemeProvider>(context).chatBubbleTheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    Color fgColor = Theme.of(context).colorScheme.onSurface;
+    if (widget.isMe && !widget.isDraft) {
+      if (theme == ChatBubbleTheme.lightGray && !isDark) {
+        fgColor = Colors.black87;
+      } else {
+        fgColor = Colors.white;
+      }
+    }
     final progress = _duration.inMilliseconds > 0 
         ? _position.inMilliseconds / _duration.inMilliseconds 
         : 0.0;

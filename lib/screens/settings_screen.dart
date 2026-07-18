@@ -110,15 +110,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       items: const [
                         DropdownMenuItem(
                           value: ChatBubbleTheme.gradient,
-                          child: Text('Gradient'),
-                        ),
-                        DropdownMenuItem(
-                          value: ChatBubbleTheme.solidGray,
-                          child: Text('Solid Gray/Black'),
+                          child: Text('Gradient Purple'),
                         ),
                         DropdownMenuItem(
                           value: ChatBubbleTheme.solidPurple,
                           child: Text('Solid Purple'),
+                        ),
+                        DropdownMenuItem(
+                          value: ChatBubbleTheme.lightGray,
+                          child: Text('Light Gray'),
+                        ),
+                        DropdownMenuItem(
+                          value: ChatBubbleTheme.dark,
+                          child: Text('Dark'),
                         ),
                       ],
                     ),

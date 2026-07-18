@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui' as ui;
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -711,10 +712,12 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                 );
               } else if (value == 'theme_gradient') {
                 Provider.of<ThemeProvider>(context, listen: false).setChatBubbleTheme(ChatBubbleTheme.gradient);
-              } else if (value == 'theme_gray') {
-                Provider.of<ThemeProvider>(context, listen: false).setChatBubbleTheme(ChatBubbleTheme.solidGray);
               } else if (value == 'theme_purple') {
                 Provider.of<ThemeProvider>(context, listen: false).setChatBubbleTheme(ChatBubbleTheme.solidPurple);
+              } else if (value == 'theme_light_gray') {
+                Provider.of<ThemeProvider>(context, listen: false).setChatBubbleTheme(ChatBubbleTheme.lightGray);
+              } else if (value == 'theme_dark') {
+                Provider.of<ThemeProvider>(context, listen: false).setChatBubbleTheme(ChatBubbleTheme.dark);
               }
             },
             itemBuilder: (context) => [
@@ -724,15 +727,19 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
               ),
               const PopupMenuItem(
                 value: 'theme_gradient',
-                child: Text('Use Gradient Bubbles'),
-              ),
-              const PopupMenuItem(
-                value: 'theme_gray',
-                child: Text('Use Gray/Black Bubbles'),
+                child: Text('Use Gradient Purple Bubbles'),
               ),
               const PopupMenuItem(
                 value: 'theme_purple',
                 child: Text('Use Solid Purple Bubbles'),
+              ),
+              const PopupMenuItem(
+                value: 'theme_light_gray',
+                child: Text('Use Light Gray Bubbles'),
+              ),
+              const PopupMenuItem(
+                value: 'theme_dark',
+                child: Text('Use Dark Bubbles'),
               ),
               const PopupMenuItem(
                 value: 'clear',
@@ -794,138 +801,134 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                           ]
                         ],
                       ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: StreamBuilder<List<MessageModel>>(
-                      stream: _messagesStream,
-                      builder: (context, snapshot) {
-                        if (snapshot.hasData) {
-                          _cachedMessages = snapshot.data!;
-                        }
-                        
-                        if (snapshot.connectionState == ConnectionState.waiting && _cachedMessages.isEmpty) {
-                          return Center(child: CircularProgressIndicator(color: AppColors.gradientEnd));
-                        }
-                        if (snapshot.hasError && _cachedMessages.isEmpty) {
-                          return Center(child: Text('Error loading messages'));
-                        }
-                        
-                        final messages = _cachedMessages
-                            .where((m) => !m.deletedFor.contains(_currentUserId))
-                            .toList();
+            Positioned.fill(
+              child: StreamBuilder<List<MessageModel>>(
+                stream: _messagesStream,
+                builder: (context, snapshot) {
+                  if (snapshot.hasData) {
+                    _cachedMessages = snapshot.data!;
+                  }
+                  
+                  if (snapshot.connectionState == ConnectionState.waiting && _cachedMessages.isEmpty) {
+                    return Center(child: CircularProgressIndicator(color: AppColors.gradientEnd));
+                  }
+                  if (snapshot.hasError && _cachedMessages.isEmpty) {
+                    return Center(child: Text('Error loading messages'));
+                  }
+                  
+                  final messages = _cachedMessages
+                      .where((m) => !m.deletedFor.contains(_currentUserId))
+                      .toList();
 
-                        if (messages.isNotEmpty) {
-                          final newestId = messages.first.id;
-                          if (newestId != _lastNewMessageId) {
-                            _lastNewMessageId = newestId;
-                            if (messages.first.senderId == _currentUserId) {
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                _jumpToBottom();
-                              });
-                            }
+                  if (messages.isNotEmpty) {
+                    final newestId = messages.first.id;
+                    if (newestId != _lastNewMessageId) {
+                      _lastNewMessageId = newestId;
+                      if (messages.first.senderId == _currentUserId) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          _jumpToBottom();
+                        });
+                      }
+                    }
+                  }
+
+                  if (messages.isEmpty) {
+                    return Center(
+                      child: Text('This room is quiet. Share an insight.', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54))),
+                    );
+                  }
+
+                  return Scrollbar(
+                    controller: _scrollController,
+                    thumbVisibility: true,
+                    thickness: 4.0,
+                    radius: const Radius.circular(8),
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      reverse: true,
+                      padding: EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 120), // Increased bottom padding for input area
+                      itemCount: messages.length + (_isLoadingMore && _hasMoreMessages ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index == messages.length) {
+                          return Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16.0),
+                            child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.gradientEnd)),
+                          );
+                        }
+                        
+                        final message = messages[index];
+                        final isMe = message.senderId == _currentUserId;
+
+                        bool showAvatar = true;
+                        if (index > 0) {
+                          if (messages[index - 1].senderId == message.senderId) {
+                            showAvatar = false;
                           }
                         }
 
-                        if (messages.isEmpty) {
-                          return Center(
-                            child: Text('This room is quiet. Share an insight.', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54))),
-                          );
-                        }
-
-                        return Scrollbar(
-                          controller: _scrollController,
-                          thumbVisibility: true,
-                          thickness: 4.0,
-                          radius: const Radius.circular(8),
-                          child: ListView.builder(
-                            controller: _scrollController,
-                            reverse: true,
-                            padding: EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 48), // Increased bottom padding
-                            itemCount: messages.length + (_isLoadingMore && _hasMoreMessages ? 1 : 0),
-                            itemBuilder: (context, index) {
-                              if (index == messages.length) {
-                                return Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 16.0),
-                                  child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.gradientEnd)),
-                                );
-                              }
-                              
-                              final message = messages[index];
-                              final isMe = message.senderId == _currentUserId;
-
-                              bool showAvatar = true;
-                              if (index > 0) {
-                                if (messages[index - 1].senderId == message.senderId) {
-                                  showAvatar = false;
-                                }
-                              }
-
-                              return Container(
-                                key: _messageKeys.putIfAbsent(message.id, () => GlobalKey()),
-                                child: Dismissible(
-                                  key: Key('dismiss_${message.id}'),
-                                  direction: DismissDirection.startToEnd,
-                                  confirmDismiss: (direction) async {
-                                    _setReply(message);
-                                    return false; // Don't actually dismiss
-                                  },
-                                  background: Container(
-                                    alignment: Alignment.centerLeft,
-                                    padding: EdgeInsets.only(left: 24.0),
-                                    child: Icon(Icons.reply, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
-                                  ),
-                                  child: GestureDetector(
-                                    onLongPress: () => _showBubbleMenu(message),
-                                    child: _buildMessageBubble(message, isMe, messages, showAvatar, index),
-                                  ),
-                                ),
-                              );
+                        return Container(
+                          key: _messageKeys.putIfAbsent(message.id, () => GlobalKey()),
+                          child: Dismissible(
+                            key: Key('dismiss_${message.id}'),
+                            direction: DismissDirection.startToEnd,
+                            confirmDismiss: (direction) async {
+                              _setReply(message);
+                              return false; // Don't actually dismiss
                             },
+                            background: Container(
+                              alignment: Alignment.centerLeft,
+                              padding: EdgeInsets.only(left: 24.0),
+                              child: Icon(Icons.reply, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                            ),
+                            child: GestureDetector(
+                              onLongPress: () => _showBubbleMenu(message),
+                              child: _buildMessageBubble(message, isMe, messages, showAvatar, index),
+                            ),
                           ),
                         );
                       },
                     ),
-                  ),
-                  if (_showScrollToBottom)
-                    Positioned(
-                      bottom: 8,
-                      left: 0,
-                      right: 0,
-                      child: Align(
-                        alignment: Alignment.center,
-                        child: GestureDetector(
-                          onTap: _smoothScrollToBottom,
-                          child: Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                              shape: BoxShape.circle,
-                              boxShadow: [BoxShadow(color: Theme.of(context).dividerColor, blurRadius: 4, offset: Offset(0, 2))],
-                            ),
-                            child: Center(
-                              child: Icon(Icons.arrow_downward, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87), size: 20),
-                            ),
-                          ),
-                        ).animate().fade().scale(),
-                      ),
-                    ),
-                ],
+                  );
+                },
               ),
             ),
-            _buildInputArea(),
+            if (_showScrollToBottom)
+              Positioned(
+                bottom: 100, // Move button above input area
+                right: 16,
+                child: GestureDetector(
+                  onTap: _smoothScrollToBottom,
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).brightness == Brightness.dark ? Colors.grey[800] : Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2))],
+                    ),
+                    child: Center(
+                      child: Icon(Icons.arrow_downward, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black87, size: 20),
+                    ),
+                  ),
+                ).animate().fade().scale(),
+              ),
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ui.ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
+                  child: Container(
+                    color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.7),
+                    child: _buildInputArea(),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -1423,6 +1426,33 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     );
   }
 
+  Color? _getBubbleColor(BuildContext context, bool isMe) {
+    if (!isMe) return Theme.of(context).cardColor;
+    final theme = Provider.of<ThemeProvider>(context).chatBubbleTheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    switch (theme) {
+      case ChatBubbleTheme.solidPurple:
+        return AppColors.primary;
+      case ChatBubbleTheme.lightGray:
+        return isDark ? Colors.grey[800] : const Color(0xFFF4F4F4);
+      case ChatBubbleTheme.dark:
+        return isDark ? Colors.grey[800] : Colors.black;
+      case ChatBubbleTheme.gradient:
+      default:
+        return null;
+    }
+  }
+
+  Color _getBubbleTextColor(BuildContext context, bool isMe) {
+    if (!isMe) return Theme.of(context).colorScheme.onSurface;
+    final theme = Provider.of<ThemeProvider>(context).chatBubbleTheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    if (theme == ChatBubbleTheme.lightGray && !isDark) {
+      return Colors.black87;
+    }
+    return Colors.white;
+  }
+
   Widget _buildMessageBubble(MessageModel message, bool isMe, List<MessageModel> allMessages, bool showAvatar, int index) {
     if (!isMe) {
       return _buildAIThreadMessage(message, allMessages, index);
@@ -1548,13 +1578,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                   Container(
                     padding: EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: isMe 
-                          ? (Provider.of<ThemeProvider>(context).chatBubbleTheme == ChatBubbleTheme.solidGray
-                              ? (Theme.of(context).brightness == Brightness.dark ? Colors.grey[800] : Colors.black) 
-                              : (Provider.of<ThemeProvider>(context).chatBubbleTheme == ChatBubbleTheme.solidPurple 
-                                  ? AppColors.primary 
-                                  : null)) 
-                          : Theme.of(context).cardColor,
+                      color: _getBubbleColor(context, isMe),
                       gradient: (isMe && Provider.of<ThemeProvider>(context).chatBubbleTheme == ChatBubbleTheme.gradient)
                           ? LinearGradient(
                               colors: [AppColors.chatBubbleGradientStart, AppColors.chatBubbleGradientEnd],
@@ -1579,13 +1603,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                   Container(
                     padding: EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: isMe 
-                          ? (Provider.of<ThemeProvider>(context).chatBubbleTheme == ChatBubbleTheme.solidGray
-                              ? (Theme.of(context).brightness == Brightness.dark ? Colors.grey[800] : Colors.black) 
-                              : (Provider.of<ThemeProvider>(context).chatBubbleTheme == ChatBubbleTheme.solidPurple 
-                                  ? AppColors.primary 
-                                  : null)) 
-                          : Theme.of(context).cardColor,
+                      color: _getBubbleColor(context, isMe),
                       gradient: (isMe && Provider.of<ThemeProvider>(context).chatBubbleTheme == ChatBubbleTheme.gradient)
                           ? LinearGradient(
                               colors: [AppColors.chatBubbleGradientStart, AppColors.chatBubbleGradientEnd],
@@ -1622,7 +1640,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                                   ),
                                   Text(
                                     _getReplyMessageSummary(replyMsg),
-                                    style: TextStyle(fontSize: 12, color: isMe ? Colors.white70 : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+                                    style: TextStyle(fontSize: 12, color: isMe ? _getBubbleTextColor(context, isMe).withValues(alpha: 0.8) : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
                                     maxLines: 4,
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -1636,7 +1654,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                               padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                               child: _buildRichText(
                                 part.content,
-                                TextStyle(color: isMe ? Colors.white : Theme.of(context).colorScheme.onSurface, fontSize: 15),
+                                TextStyle(color: _getBubbleTextColor(context, isMe), fontSize: 15),
                                 TextStyle(color: Colors.purpleAccent, fontSize: 15, fontWeight: FontWeight.bold, decoration: TextDecoration.underline, decorationColor: Colors.purpleAccent),
                               ),
                             );
@@ -1706,7 +1724,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                                 children: [
                                   Icon(Icons.videocam, color: Colors.redAccent, size: 32),
                                   SizedBox(width: 8),
-                                  Text('Video Attachment', style: TextStyle(color: isMe ? Colors.white : Theme.of(context).colorScheme.onSurface)),
+                                  Text('Video Attachment', style: TextStyle(color: _getBubbleTextColor(context, isMe))),
                                 ],
                               ),
                             );
@@ -1718,7 +1736,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                                 children: [
                                   Icon(Icons.insert_drive_file, color: Colors.orange, size: 32),
                                   SizedBox(width: 8),
-                                  Text('Document', style: TextStyle(color: isMe ? Colors.white : Theme.of(context).colorScheme.onSurface)),
+                                  Text('Document', style: TextStyle(color: _getBubbleTextColor(context, isMe))),
                                 ],
                               ),
                             );

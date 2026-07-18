@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum ChatBubbleTheme { gradient, solidGray, solidPurple }
+enum ChatBubbleTheme { gradient, solidPurple, lightGray, dark }
 
 class ThemeProvider extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.light;
