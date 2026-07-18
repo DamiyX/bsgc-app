@@ -26,7 +26,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late Stream<List<InsightModel>> _savedInsightsStream;
   int _directReach = 0;
   int _extendedReach = 0;
-  int _insightsCount = 0;
+  int _interactionCount = 0;
   
   int _notesCount = 0;
   int _savesCount = 0;
@@ -83,18 +83,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
         }
       }
 
-      // Get Insights Count
-      final insightsSnapshot = await db.collection('insights').where('authorUid', isEqualTo: user.uid).get();
-
       // Get Notes and Saves Count for Tabs
       final notesSnapshot = await db.collection('users').doc(user.uid).collection('notes').get();
       final savesSnapshot = await db.collection('users').doc(user.uid).collection('saved_insights').get();
+
+      final currentMonth = "${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}";
+      int currentInteractionCount = 0;
+      if (userDoc.exists) {
+        final data = userDoc.data()!;
+        if (data['interactionMonth'] == currentMonth) {
+           currentInteractionCount = data['interactionCount'] ?? 0;
+        }
+      }
 
       if (mounted) {
         setState(() {
           _directReach = gen1Ids.length;
           _extendedReach = gen2Total;
-          _insightsCount = insightsSnapshot.docs.length;
+          _interactionCount = currentInteractionCount;
           _notesCount = notesSnapshot.docs.length;
           _savesCount = savesSnapshot.docs.length;
         });
@@ -109,22 +115,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(
-          title: Text(_displayName.isNotEmpty ? _displayName : 'Profile', style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Comfortaa')),
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.transparent,
-          systemOverlayStyle: const SystemUiOverlayStyle(
-            statusBarColor: Colors.transparent,
-            statusBarIconBrightness: Brightness.dark,
-            statusBarBrightness: Brightness.light,
-          ),
-          elevation: 0,
+          title: Text(_displayName.isNotEmpty ? _displayName : 'Profile', style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Comfortaa')),
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          surfaceTintColor: Colors.transparent,          elevation: 0,
           centerTitle: false,
         ),
         floatingActionButton: FloatingActionButton(
           backgroundColor: AppColors.gradientEnd,
-          child: const Icon(Icons.add, color: Colors.white),
+          child: Icon(Icons.add, color: Colors.white),
           onPressed: () {
             Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateNoteScreen())).then((_) => _fetchProfileData());
           },
@@ -141,25 +141,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           children: [
                             // Top Section: DP & Stats
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                              padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
                               child: Row(
                                 children: [
                                   // Left: Display Picture
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      border: Border.all(color: Colors.grey.shade300, width: 1),
-                                    ),
-                                    child: CircleAvatar(
-                                      radius: 40,
-                                      backgroundColor: Colors.grey.shade200,
-                                      backgroundImage: _photoUrl.isNotEmpty ? NetworkImage(_photoUrl) : null,
-                                      child: _photoUrl.isEmpty 
-                                          ? const Icon(Icons.person, size: 40, color: Colors.grey)
-                                          : null,
+                                  GestureDetector(
+                                    onTap: () {
+                                      if (_photoUrl.isNotEmpty) {
+                                        showDialog(
+                                          context: context,
+                                          builder: (_) => Dialog(
+                                            backgroundColor: Colors.transparent,
+                                            insetPadding: EdgeInsets.all(0),
+                                            child: GestureDetector(
+                                              onTap: () => Navigator.pop(context),
+                                              child: InteractiveViewer(
+                                                child: Image.network(_photoUrl, fit: BoxFit.contain),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    child: Container(
+                                      padding: EdgeInsets.all(3),
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        gradient: LinearGradient(
+                                          colors: [AppColors.gradientStart, AppColors.gradientEnd],
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                        ),
+                                      ),
+                                      child: Container(
+                                        padding: EdgeInsets.all(2),
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: Theme.of(context).scaffoldBackgroundColor,
+                                        ),
+                                        child: CircleAvatar(
+                                          radius: 40,
+                                          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                          backgroundImage: _photoUrl.isNotEmpty ? NetworkImage(_photoUrl) : null,
+                                          child: _photoUrl.isEmpty 
+                                              ? Icon(Icons.person, size: 40, color: Theme.of(context).colorScheme.onSurfaceVariant)
+                                              : null,
+                                        ),
+                                      ),
                                     ),
                                   ),
-                                  const SizedBox(width: 24),
+                                  SizedBox(width: 24),
                                   
                                   // Right: Stats Row
                                   Expanded(
@@ -170,8 +201,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            // Insights real-time stat
-                                            _buildStatColumn('Insights', _insightsCount),
+                                            // Insights stat
+                                            _buildStatColumn('Insights', _notesCount),
+                                            // Interactions real-time stat
+                                            GestureDetector(
+                                              onTap: () {
+                                                showDialog(
+                                                  context: context,
+                                                  builder: (context) => AlertDialog(
+                                                    title: Text('Interactions'),
+                                                    content: Text('This measures your engagement and activity within your study groups for the current month. Keep participating to grow your score!'),
+                                                    actions: [
+                                                      TextButton(
+                                                        onPressed: () => Navigator.pop(context),
+                                                        child: Text('Got it', style: TextStyle(color: AppColors.gradientEnd)),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+                                              },
+                                              child: _buildStatColumn('Interactions', _interactionCount),
+                                            ),
                                             // Network expandable stat
                                             GestureDetector(
                                               onTap: () {
@@ -187,7 +237,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                                     children: [
                                                       Text(
                                                         (_directReach + _extendedReach).toString(),
-                                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                                                       ),
                                                       Icon(
                                                         _showNetworkBreakdown ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
@@ -195,10 +245,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                                       ),
                                                     ],
                                                   ),
-                                                  const SizedBox(height: 2),
-                                                  const Text(
+                                                  SizedBox(height: 2),
+                                                  Text(
                                                     'Network',
-                                                    style: TextStyle(fontSize: 12, color: Colors.black87, fontWeight: FontWeight.w500),
+                                                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87), fontWeight: FontWeight.w500),
                                                   ),
                                                 ],
                                               ),
@@ -208,13 +258,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         // Network Breakdown Dropdown
                                         if (_showNetworkBreakdown)
                                           Padding(
-                                            padding: const EdgeInsets.only(top: 12.0),
+                                            padding: EdgeInsets.only(top: 12.0),
                                             child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                               decoration: BoxDecoration(
-                                                color: Colors.grey.shade50,
+                                                color: Theme.of(context).colorScheme.surface,
                                                 borderRadius: BorderRadius.circular(12),
-                                                border: Border.all(color: Colors.grey.shade200),
+                                                border: Border.all(color: Theme.of(context).colorScheme.surfaceContainerHighest),
                                               ),
                                               child: Row(
                                                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -234,37 +284,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             
                             // Bio Section
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                              padding: EdgeInsets.symmetric(horizontal: 16.0),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
                                     _displayName,
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                                   ),
-                                  const SizedBox(height: 4),
+                                  SizedBox(height: 4),
                                   Text(
                                     _bio,
-                                    style: const TextStyle(fontSize: 14),
+                                    style: TextStyle(fontSize: 14),
                                   ),
                                 ],
                               ),
                             ),
                             
-                            const SizedBox(height: 16),
+                            SizedBox(height: 16),
                             
                             // Action Buttons Row
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                              padding: EdgeInsets.symmetric(horizontal: 16.0),
                               child: Row(
                                 children: [
                                   Expanded(
                                     child: OutlinedButton(
                                       style: OutlinedButton.styleFrom(
-                                        foregroundColor: Colors.black,
-                                        side: BorderSide(color: Colors.grey.shade300),
+                                        foregroundColor: Theme.of(context).colorScheme.onSurface,
+                                        side: BorderSide(color: Theme.of(context).dividerColor),
                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                        padding: const EdgeInsets.symmetric(vertical: 8),
+                                        padding: EdgeInsets.symmetric(vertical: 8),
                                       ),
                                       onPressed: () async {
                                         final updated = await Navigator.push(
@@ -276,17 +326,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                           _fetchProfileData();
                                         }
                                       },
-                                      child: const Text('Edit Profile', style: TextStyle(fontWeight: FontWeight.w600)),
+                                      child: Text('Edit Profile', style: TextStyle(fontWeight: FontWeight.w600)),
                                     ),
                                   ),
-                                  const SizedBox(width: 8),
+                                  SizedBox(width: 8),
                                   Expanded(
                                     child: OutlinedButton(
                                       style: OutlinedButton.styleFrom(
-                                        foregroundColor: Colors.black,
-                                        side: BorderSide(color: Colors.grey.shade300),
+                                        foregroundColor: Theme.of(context).colorScheme.onSurface,
+                                        side: BorderSide(color: Theme.of(context).dividerColor),
                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                        padding: const EdgeInsets.symmetric(vertical: 8),
+                                        padding: EdgeInsets.symmetric(vertical: 8),
                                       ),
                                       onPressed: () {
                                         final user = FirebaseAuth.instance.currentUser;
@@ -297,13 +347,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                           );
                                         }
                                       },
-                                      child: const Text('Share Braid', style: TextStyle(fontWeight: FontWeight.w600)),
+                                      child: Text('Share Braid', style: TextStyle(fontWeight: FontWeight.w600)),
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 16),
+                            SizedBox(height: 16),
                           ],
                         ),
                       ),
@@ -312,7 +362,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         delegate: _SliverAppBarDelegate(
                           TabBar(
                             labelColor: AppColors.gradientEnd,
-                            unselectedLabelColor: Colors.grey,
+                            unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
                             indicatorColor: AppColors.gradientEnd,
                             indicatorWeight: 3,
                             tabs: [
@@ -326,9 +376,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     return Row(
                                       mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
-                                        const Icon(Icons.description_outlined, size: 20),
-                                        const SizedBox(width: 8),
-                                        Text('Note $_notesCount', style: const TextStyle(fontWeight: FontWeight.w600)),
+                                        Icon(Icons.description_outlined, size: 20),
+                                        SizedBox(width: 8),
+                                        Text('Note $_notesCount', style: TextStyle(fontWeight: FontWeight.w600)),
                                       ],
                                     );
                                   }
@@ -344,9 +394,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     return Row(
                                       mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
-                                        const Icon(Icons.bookmark_border, size: 20),
-                                        const SizedBox(width: 8),
-                                        Text('Saved $_savesCount', style: const TextStyle(fontWeight: FontWeight.w600)),
+                                        Icon(Icons.bookmark_border, size: 20),
+                                        SizedBox(width: 8),
+                                        Text('Saved $_savesCount', style: TextStyle(fontWeight: FontWeight.w600)),
                                       ],
                                     );
                                   }
@@ -361,22 +411,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         pinned: true,
                         delegate: _SliverSearchDelegate(
                           child: Container(
-                            color: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            color: Theme.of(context).scaffoldBackgroundColor,
+                            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                             child: Row(
                               children: [
                                 Expanded(
                                   child: TextField(
                                     decoration: InputDecoration(
                                       hintText: 'Search...',
-                                      prefixIcon: const Icon(Icons.search, color: Colors.grey),
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                                      prefixIcon: Icon(Icons.search, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                      contentPadding: EdgeInsets.symmetric(horizontal: 16),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(30),
                                         borderSide: BorderSide.none,
                                       ),
                                       filled: true,
-                                      fillColor: Colors.grey.shade100,
+                                      fillColor: Theme.of(context).colorScheme.surfaceContainer,
                                     ),
                                     onChanged: (val) {
                                       setState(() {
@@ -385,18 +435,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     },
                                   ),
                                 ),
-                                const SizedBox(width: 12),
+                                SizedBox(width: 12),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                                  padding: EdgeInsets.symmetric(horizontal: 12),
                                   decoration: BoxDecoration(
-                                    color: Colors.grey.shade100,
+                                    color: Theme.of(context).colorScheme.surface,
                                     borderRadius: BorderRadius.circular(30),
                                   ),
                                   child: DropdownButtonHideUnderline(
                                     child: DropdownButton<String>(
                                       value: _filterMode,
-                                      icon: const Icon(Icons.filter_list, size: 18),
-                                      style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w600),
+                                      icon: Icon(Icons.filter_list, size: 18),
+                                      style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87), fontWeight: FontWeight.w600),
                                       items: ['Recent', 'Oldest'].map((String value) {
                                         return DropdownMenuItem<String>(
                                           value: value,
@@ -438,12 +488,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       children: [
         Text(
           value.toString(),
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
         ),
-        const SizedBox(height: 2),
+        SizedBox(height: 2),
         Text(
           label,
-          style: const TextStyle(fontSize: 12, color: Colors.black87, fontWeight: FontWeight.w500),
+          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87), fontWeight: FontWeight.w500),
         ),
       ],
     );
@@ -454,10 +504,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       stream: _notesStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator(color: AppColors.gradientEnd));
+          return SizedBox.shrink();
         }
         if (snapshot.hasError) {
-          return const Center(child: Text('Failed to load notes.'));
+          return Center(child: Text('Failed to load notes.'));
         }
         var notes = snapshot.data ?? [];
         
@@ -476,11 +526,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         }
 
         if (notes.isEmpty) {
-          return const Center(child: Text('No notes found.', style: TextStyle(color: Colors.grey)));
+          return Center(child: Text('No notes found.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)));
         }
         
         return GridView.builder(
-          padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 80),
+          padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 80),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 2,
             crossAxisSpacing: 12,
@@ -493,10 +543,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
             return NoteCard(
               note: note,
               isGrid: true,
-              onDelete: () {
-                NoteService().deleteNote(FirebaseAuth.instance.currentUser!.uid, note.id);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Note deleted')));
+              onDelete: () async {
+                await NoteService().deleteNote(FirebaseAuth.instance.currentUser!.uid, note.id);
                 _fetchProfileData(); // update count
+                if (mounted) {
+                  ScaffoldMessenger.of(context).clearSnackBars();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Note deleted', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      behavior: SnackBarBehavior.floating,
+                      elevation: 0,
+                      duration: const Duration(seconds: 3),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      action: SnackBarAction(
+                        label: 'UNDO',
+                        textColor: AppColors.gradientStart,
+                        onPressed: () async {
+                          await NoteService().saveNote(note);
+                          _fetchProfileData();
+                        },
+                      ),
+                    ),
+                  );
+                }
               },
             );
           },
@@ -510,10 +579,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       stream: _savedInsightsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator(color: AppColors.gradientEnd));
+          return SizedBox.shrink();
         }
         if (snapshot.hasError) {
-          return const Center(child: Text('Failed to load saved messages.'));
+          return Center(child: Text('Failed to load saved messages.'));
         }
         var saved = snapshot.data ?? [];
         
@@ -533,19 +602,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
         }
 
         if (saved.isEmpty) {
-          return const Center(child: Text('No saved messages.', style: TextStyle(color: Colors.grey)));
+          return Center(child: Text('No saved messages.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)));
         }
         return ListView.builder(
-          padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 80),
+          padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 80),
           itemCount: saved.length,
           itemBuilder: (context, index) {
             final note = saved[index];
             return SavedInsightCard(
               insight: note,
-              onDelete: () {
-                InsightService().unsaveInsight(FirebaseAuth.instance.currentUser?.uid ?? '', note.id);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unsaved note')));
+              onDelete: () async {
+                await InsightService().unsaveInsight(FirebaseAuth.instance.currentUser?.uid ?? '', note.id);
                 _fetchProfileData(); // update count
+                if (mounted) {
+                  ScaffoldMessenger.of(context).clearSnackBars();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Insight unsaved', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      behavior: SnackBarBehavior.floating,
+                      elevation: 0,
+                      duration: const Duration(seconds: 3),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      action: SnackBarAction(
+                        label: 'UNDO',
+                        textColor: AppColors.gradientStart,
+                        onPressed: () async {
+                          await InsightService().saveInsight(FirebaseAuth.instance.currentUser?.uid ?? '', note);
+                          _fetchProfileData();
+                        },
+                      ),
+                    ),
+                  );
+                }
               },
             );
           },
@@ -568,7 +656,7 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(
-      color: Colors.white,
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: _tabBar,
     );
   }
@@ -592,7 +680,7 @@ class _SliverSearchDelegate extends SliverPersistentHeaderDelegate {
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(
-      color: Colors.white,
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: child,
     );
   }

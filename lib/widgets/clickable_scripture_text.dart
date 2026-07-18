@@ -5,7 +5,7 @@ import 'bible_verse_bottom_sheet.dart';
 class ClickableScriptureText extends StatelessWidget {
   final String text;
   final TextStyle style;
-  final TextStyle linkStyle;
+  final TextStyle? linkStyle;
   final int? maxLines;
   final TextOverflow? overflow;
 
@@ -13,11 +13,7 @@ class ClickableScriptureText extends StatelessWidget {
     super.key,
     required this.text,
     required this.style,
-    this.linkStyle = const TextStyle(
-      color: Colors.orange,
-      fontWeight: FontWeight.bold,
-      decoration: TextDecoration.underline,
-    ),
+    this.linkStyle,
     this.maxLines,
     this.overflow,
   });
@@ -31,13 +27,18 @@ class ClickableScriptureText extends StatelessWidget {
         children: ScriptureParser.parseText(
           text: text,
           defaultStyle: style,
-          linkStyle: style.merge(linkStyle),
+          linkStyle: style.merge(linkStyle ?? TextStyle(
+            color: Colors.purpleAccent,
+            fontWeight: FontWeight.bold,
+            decoration: TextDecoration.underline,
+            decorationColor: Colors.purpleAccent,
+          )),
           onReferenceTap: (reference) {
             showDialog(
               context: context,
               builder: (context) => Dialog(
                 backgroundColor: Colors.transparent,
-                insetPadding: const EdgeInsets.symmetric(horizontal: 16),
+                insetPadding: EdgeInsets.symmetric(horizontal: 16),
                 child: BibleVerseBottomSheet(reference: reference),
               ),
             );

@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/insight_model.dart';
+import 'auth_service.dart';
 
 class InsightService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -35,17 +37,30 @@ class InsightService {
   }
 
   Future<void> createInsight(InsightModel insight) async {
-    await _firestore.collection('insights').doc(insight.id).set(insight.toMap());
+    try {
+      await _firestore.collection('insights').doc(insight.id).set(insight.toMap()).timeout(const Duration(seconds: 2));
+      await AuthService().recordInteraction();
+    } on TimeoutException {
+      // Offline sync fallback
+    }
   }
 
   Future<void> deleteInsight(String insightId) async {
-    await _firestore.collection('insights').doc(insightId).delete();
+    try {
+      await _firestore.collection('insights').doc(insightId).delete().timeout(const Duration(seconds: 2));
+    } on TimeoutException {
+      // Offline sync fallback
+    }
   }
 
   Future<void> markAsSeen(String insightId, String userId) async {
-    await _firestore.collection('insights').doc(insightId).update({
+    try {
+      await _firestore.collection('insights').doc(insightId).update({
       'seenBy': FieldValue.arrayUnion([userId])
-    });
+    }).timeout(const Duration(seconds: 2));
+    } on TimeoutException {
+      // Offline sync fallback
+    }
   }
 
   Stream<List<InsightCommentModel>> getComments(String insightId) {
@@ -61,12 +76,21 @@ class InsightService {
   }
 
   Future<void> addComment(String insightId, InsightCommentModel comment) async {
-    await _firestore
-        .collection('insights')
-        .doc(insightId)
-        .collection('comments')
-        .doc(comment.id)
-        .set(comment.toMap());
+    try {
+      final batch = _firestore.batch();
+      final commentRef = _firestore.collection('insights').doc(insightId).collection('comments').doc(comment.id);
+      final insightRef = _firestore.collection('insights').doc(insightId);
+      
+      batch.set(commentRef, comment.toMap());
+      batch.update(insightRef, {
+        'updatedAt': FieldValue.serverTimestamp(),
+        'seenBy': [comment.authorUid],
+      });
+      
+      await batch.commit().timeout(const Duration(seconds: 2));
+    } on TimeoutException {
+      // Offline sync fallback
+    }
   }
 
   Future<void> toggleCommentLike(String insightId, String commentId, String userId, bool isLiking) async {
@@ -77,8 +101,29 @@ class InsightService {
         .doc(commentId);
     
     if (isLiking) {
-      await docRef.update({
+      final batch = _firestore.batch();
+      batch.update(docRef, {
         'likedBy': FieldValue.arrayUnion([userId])
+      });
+      batch.update(_firestore.collection('insights').doc(insightId), {
+        'updatedAt': FieldValue.serverTimestamp(),
+        'seenBy': [userId], // Bump and reset unseen so others notice activity
+      });
+      await batch.commit();
+    } else {
+      await docRef.update({
+        'likedBy': FieldValue.arrayRemove([userId])
+      });
+    }
+  }
+
+  Future<void> toggleInsightLike(String insightId, String userId, bool isLiking) async {
+    final docRef = _firestore.collection('insights').doc(insightId);
+    if (isLiking) {
+      await docRef.update({
+        'likedBy': FieldValue.arrayUnion([userId]),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'seenBy': [userId], // Bump and reset unseen so others notice activity
       });
     } else {
       await docRef.update({
@@ -89,21 +134,31 @@ class InsightService {
 
   // Saved Insights
   Future<void> saveInsight(String userId, InsightModel insight) async {
-    await _firestore
+    try {
+      await _firestore
         .collection('users')
         .doc(userId)
         .collection('saved_insights')
         .doc(insight.id)
-        .set(insight.toMap());
+        .set(insight.toMap())
+        .timeout(const Duration(seconds: 2));
+    } on TimeoutException {
+      // Offline sync fallback
+    }
   }
 
   Future<void> unsaveInsight(String userId, String insightId) async {
-    await _firestore
+    try {
+      await _firestore
         .collection('users')
         .doc(userId)
         .collection('saved_insights')
         .doc(insightId)
-        .delete();
+        .delete()
+        .timeout(const Duration(seconds: 2));
+    } on TimeoutException {
+      // Offline sync fallback
+    }
   }
 
   Stream<List<InsightModel>> getSavedInsights(String userId) {
@@ -115,5 +170,20 @@ class InsightService {
         .map((snapshot) {
       return snapshot.docs.map((doc) => InsightModel.fromFirestore(doc)).toList();
     });
+  }
+
+  Future<bool> isInsightSaved(String userId, String insightId) async {
+    try {
+      final snapshot = await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('saved_insights')
+          .doc(insightId)
+          .snapshots()
+          .first;
+      return snapshot.exists;
+    } catch (e) {
+      return false;
+    }
   }
 }

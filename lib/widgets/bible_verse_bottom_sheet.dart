@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/bible_service.dart';
 import '../utils/scripture_parser.dart';
+import '../theme.dart';
 
 class BibleVerseBottomSheet extends StatefulWidget {
   final ScriptureReference reference;
@@ -83,10 +84,10 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.grey[200],
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(16),
       ),
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(24),
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.7,
       ),
@@ -100,27 +101,27 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
               Expanded(
                 child: Text(
                   widget.reference.fullMatch,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
                   ),
                 ),
               ),
               if (_bibleService.isLoaded)
                 DropdownButton<String>(
                   value: _currentTranslation,
-                  underline: const SizedBox(),
-                  icon: const Icon(
+                  underline: SizedBox(),
+                  icon: Icon(
                     Icons.keyboard_arrow_down,
-                    color: Colors.black54,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                   ),
                   items: _bibleService.availableTranslations.map((t) {
                     return DropdownMenuItem(
                       value: t,
                       child: Text(
                         t,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                        style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                     );
                   }).toList(),
@@ -135,14 +136,14 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
                 ),
             ],
           ),
-          const Divider(height: 24),
+          Divider(height: 24),
           Flexible(
             child: SingleChildScrollView(
               child: _isLoading
-                  ? const Center(
+                  ? Center(
                       child: Padding(
                         padding: EdgeInsets.all(32),
-                        child: CircularProgressIndicator(),
+                        child: CircularProgressIndicator(color: AppColors.gradientEnd),
                       ),
                     )
                   : _verseText == null
@@ -150,26 +151,26 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
                       isOnlineTranslation
                           ? 'Loading or Network Error: Please check your internet connection to use this translation. \n\nIf you are offline, please switch to a downloaded version like KJV, WEB, ESV, or BBE.'
                           : 'Could not find this verse in the database.',
-                      style: const TextStyle(color: Colors.red, height: 1.5),
+                      style: TextStyle(color: Colors.red, height: 1.5),
                     )
                   : Text(
                       _verseText!,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 16,
                         height: 1.5,
-                        color: Colors.black87,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
                       ),
                     ),
             ),
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           Align(
             alignment: Alignment.bottomRight,
             child: Text(
               getTranslationFullName(_currentTranslation),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
-                color: Colors.black45,
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
                 fontStyle: FontStyle.italic,
               ),
             ),
@@ -179,3 +180,4 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
     );
   }
 }
+

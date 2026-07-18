@@ -59,18 +59,18 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
       setState(() {
         _isEditing = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Note saved!')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Note saved!')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black87),
+        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
         actions: [
           if (_isEditing) ...[
             // Undo/Redo buttons
@@ -80,7 +80,7 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
                 return Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.undo),
+                      icon: Icon(Icons.undo),
                       onPressed: value.canUndo ? () {
                         if (_isTitleFocused) {
                           _titleUndoController.undo();
@@ -90,7 +90,7 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
                       } : null,
                     ),
                     IconButton(
-                      icon: const Icon(Icons.redo),
+                      icon: Icon(Icons.redo),
                       onPressed: value.canRedo ? () {
                         if (_isTitleFocused) {
                           _titleUndoController.redo();
@@ -104,12 +104,12 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
               },
             ),
             IconButton(
-              icon: const Icon(Icons.check, color: AppColors.gradientEnd),
+              icon: Icon(Icons.check, color: AppColors.gradientEnd),
               onPressed: _saveChanges,
             ),
           ] else ...[
             IconButton(
-              icon: const Icon(Icons.edit, color: Colors.black87),
+              icon: Icon(Icons.edit, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
               onPressed: () {
                 setState(() {
                   _isEditing = true;
@@ -121,33 +121,33 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
       ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(20.0),
+          padding: EdgeInsets.all(20.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (!_isEditing) ...[
                 Text(
                   _titleController.text.isEmpty ? 'Untitled Note' : _titleController.text,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
                   ),
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: 8),
                 Text(
                   DateFormat('MMM d, yyyy').format(widget.note.updatedAt),
-                  style: const TextStyle(color: Colors.grey, fontSize: 13),
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                 ),
-                const SizedBox(height: 24),
+                SizedBox(height: 24),
                 Expanded(
                   child: SingleChildScrollView(
                     child: ClickableScriptureText(
                       text: _bodyController.text,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 16,
                         height: 1.6,
-                        color: Colors.black87,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
                       ),
                     ),
                   ),
@@ -160,10 +160,10 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
                   child: TextField(
                     controller: _titleController,
                     undoController: _titleUndoController,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
-                      color: Colors.black87,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
                     ),
                     decoration: const InputDecoration(
                       hintText: 'Note Title',
@@ -171,7 +171,7 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 Expanded(
                   child: Focus(
                     onFocusChange: (hasFocus) {
@@ -182,10 +182,10 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
                       undoController: _bodyUndoController,
                       maxLines: null,
                       expands: true,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 16,
                         height: 1.6,
-                        color: Colors.black87,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
                       ),
                       decoration: const InputDecoration(
                         hintText: 'Write your thoughts...',

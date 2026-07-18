@@ -80,20 +80,20 @@ class _CreateNoteScreenState extends State<CreateNoteScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black87),
-        title: const Text('Create Note', style: TextStyle(color: Colors.black87)),
+        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
+        title: Text('Create Note', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87))),
         actions: [
           if (_isSuccess)
-            const Padding(
+            Padding(
               padding: EdgeInsets.all(16.0),
-              child: Icon(Icons.check_circle, color: Colors.black, size: 28),
+              child: Icon(Icons.check_circle, color: Theme.of(context).colorScheme.onSurface, size: 28),
             )
           else if (_isSaving)
-            const Padding(
+            Padding(
               padding: EdgeInsets.all(16.0),
               child: SizedBox(
                 width: 20,
@@ -104,33 +104,33 @@ class _CreateNoteScreenState extends State<CreateNoteScreen> {
           else
             TextButton(
               onPressed: _saveNote,
-              child: const Text(
+              child: Text(
                 'Save',
-                style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 16),
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87), fontWeight: FontWeight.bold, fontSize: 16),
               ),
             ),
         ],
       ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               TextField(
-                cursorColor: Colors.black,
+                cursorColor: Theme.of(context).colorScheme.onSurface,
                 controller: _titleController,
                 maxLines: null,
-                style: const TextStyle(
-                  color: Colors.black,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                   height: 1.2,
                 ),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: 'Title',
                   hintStyle: TextStyle(
-                    color: Colors.black38,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
@@ -140,23 +140,23 @@ class _CreateNoteScreenState extends State<CreateNoteScreen> {
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: 16),
               Expanded(
                 child: TextField(
-                  cursorColor: Colors.black,
+                  cursorColor: Theme.of(context).colorScheme.onSurface,
                   controller: _bodyController,
                   maxLines: null,
                   expands: true,
                   textAlignVertical: TextAlignVertical.top,
-                  style: const TextStyle(
-                    color: Colors.black87,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
                     fontSize: 16,
                     height: 1.5,
                   ),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: 'Type your note...',
                     hintStyle: TextStyle(
-                      color: Colors.black38,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                       fontSize: 16,
                     ),
                     border: InputBorder.none,

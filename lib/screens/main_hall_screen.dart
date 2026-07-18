@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -21,6 +22,7 @@ import '../services/notification_service.dart';
 import 'profile_screen.dart';
 import 'settings_screen.dart';
 import 'create_note_screen.dart';
+import '../services/contact_cache_service.dart';
 
 class MainHallScreen extends StatelessWidget {
   const MainHallScreen({super.key});
@@ -32,23 +34,20 @@ class MainHallScreen extends StatelessWidget {
 
     // Initialize push notifications when user enters the main hall
     NotificationService().init();
+    
+    // Sync local phone contacts for overriding Google names
+    ContactCacheService().syncContactsInBackground();
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        systemOverlayStyle: const SystemUiOverlayStyle(
-          statusBarColor: Colors.transparent,
-          statusBarIconBrightness: Brightness.dark,
-          statusBarBrightness: Brightness.light,
-        ),
-        title: Row(
+        elevation: 0,        title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.asset('assets/icon2.png', height: 44)),
-            const SizedBox(width: 8),
-            const Text(
+            ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.asset('assets/icon2.png', height: 32)),
+            SizedBox(width: 8),
+            Text(
               'Braid',
               style: TextStyle(fontFamily: 'Comfortaa', fontWeight: FontWeight.w600, fontSize: 26, letterSpacing: -0.5),
             ),
@@ -56,7 +55,7 @@ class MainHallScreen extends StatelessWidget {
         ),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 8.0),
+            padding: EdgeInsets.only(right: 8.0),
             child: Row(
               children: [
                 InkWell(
@@ -69,17 +68,17 @@ class MainHallScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                   child: CircleAvatar(
                     radius: 18,
-                    backgroundColor: Colors.grey[200],
+                    backgroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
                     backgroundImage: user?.photoURL != null
                         ? NetworkImage(user!.photoURL!)
                         : null,
                     child: user?.photoURL == null
-                        ? const Icon(Icons.person, size: 20, color: Colors.grey)
+                        ? Icon(Icons.person, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant)
                         : null,
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.menu, color: Colors.black87),
+                  icon: Icon(Icons.menu, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
                   onPressed: () {
                     Navigator.push(
                       context,
@@ -97,12 +96,12 @@ class MainHallScreen extends StatelessWidget {
           stream: chatService.getUserGroups(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
+              return Center(
                 child: CircularProgressIndicator(color: AppColors.gradientEnd),
               );
             }
             if (snapshot.hasError) {
-              return const Center(child: Text('Error loading groups'));
+              return Center(child: Text('Error loading groups'));
             }
             final groups = snapshot.data ?? [];
 
@@ -110,7 +109,7 @@ class MainHallScreen extends StatelessWidget {
               slivers: [
                 SliverToBoxAdapter(child: InsightsRow()),
                 if (groups.isNotEmpty)
-                  const SliverToBoxAdapter(
+                  SliverToBoxAdapter(
                     child: Padding(
                       padding: EdgeInsets.symmetric(
                         horizontal: 24.0,
@@ -121,17 +120,17 @@ class MainHallScreen extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
                         ),
                       ),
                     ),
                   ),
                 if (groups.isEmpty)
-                  const SliverFillRemaining(
+                  SliverFillRemaining(
                     child: Center(
                       child: Text(
                         'You are not in any groups yet.',
-                        style: TextStyle(fontSize: 16, color: Colors.black54),
+                        style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
                       ),
                     ),
                   )
@@ -153,53 +152,38 @@ class MainHallScreen extends StatelessWidget {
                                   );
                                 },
                                 child: Padding(
-                                  padding: const EdgeInsets.symmetric(
+                                  padding: EdgeInsets.symmetric(
                                     vertical: 16,
                                     horizontal: 16,
                                   ),
                                   child: Row(
                                     crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                        CrossAxisAlignment.center,
                                     children: [
                                       Container(
-                                        width: 64,
+                                        width: 72,
                                         height: 96,
                                         decoration: BoxDecoration(
-                                          color: Colors.black.withValues(
-                                            alpha: 0.05,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                          boxShadow: const [
-                                            BoxShadow(
-                                              color: Colors.black12,
-                                              blurRadius: 4,
-                                              offset: Offset(0, 2),
-                                            ),
-                                          ],
-                                          image:
-                                              group.photoUrl != null &&
-                                                  group.photoUrl!.isNotEmpty
+                                          color: group.photoUrl == null || group.photoUrl!.isEmpty 
+                                              ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05)
+                                              : Colors.transparent,
+                                          borderRadius: BorderRadius.circular(8),
+                                          image: group.photoUrl != null && group.photoUrl!.isNotEmpty
                                               ? DecorationImage(
-                                                  image: NetworkImage(
-                                                    group.photoUrl!,
-                                                  ),
+                                                  image: NetworkImage(group.photoUrl!),
                                                   fit: BoxFit.cover,
                                                 )
                                               : null,
                                         ),
-                                        child:
-                                            group.photoUrl == null ||
-                                                group.photoUrl!.isEmpty
-                                            ? const Icon(
+                                        child: group.photoUrl == null || group.photoUrl!.isEmpty
+                                            ? Icon(
                                                 Icons.book,
-                                                size: 28,
-                                                color: Colors.black45,
+                                                size: 32,
+                                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
                                               )
                                             : null,
                                       ),
-                                      const SizedBox(width: 16),
+                                      SizedBox(width: 16),
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment:
@@ -207,18 +191,18 @@ class MainHallScreen extends StatelessWidget {
                                           children: [
                                             Text(
                                               group.name,
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontSize: 18,
                                                 fontWeight: FontWeight.w600,
-                                                color: Colors.black87,
+                                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
                                               ),
                                             ),
-                                            const SizedBox(height: 6),
-                                            _buildGroupSubtitle(group),
+                                            SizedBox(height: 6),
+                                            _buildGroupSubtitle(context, group),
                                           ],
                                         ),
                                       ),
-                                      _buildTrailingInfo(group, index),
+                                      _buildTrailingInfo(context, group, index),
                                     ],
                                   ),
                                 ),
@@ -231,7 +215,7 @@ class MainHallScreen extends StatelessWidget {
                                 curve: Curves.easeOutQuad,
                               ),
                           if (index < groups.length - 1)
-                            const Divider(color: Colors.black12, height: 1),
+                            Divider(color: Theme.of(context).dividerColor, height: 1, thickness: 0.5, indent: 92, endIndent: 16),
                         ],
                       );
                     }, childCount: groups.length),
@@ -252,10 +236,10 @@ class MainHallScreen extends StatelessWidget {
         curve: Curves.bounceIn,
         children: [
           SpeedDialChild(
-            child: const Icon(Icons.description, color: Colors.white),
+            child: Icon(Icons.description, color: Colors.white),
             backgroundColor: AppColors.textMain,
             label: 'Create Note',
-            labelStyle: const TextStyle(fontWeight: FontWeight.w500),
+            labelStyle: TextStyle(fontWeight: FontWeight.w500),
             onTap: () {
               Navigator.push(
                 context,
@@ -264,10 +248,10 @@ class MainHallScreen extends StatelessWidget {
             },
           ),
           SpeedDialChild(
-            child: const Icon(Icons.group_add, color: Colors.white),
+            child: Icon(Icons.group_add, color: Colors.white),
             backgroundColor: AppColors.gradientEnd,
             label: 'Create Study Group',
-            labelStyle: const TextStyle(fontWeight: FontWeight.w500),
+            labelStyle: TextStyle(fontWeight: FontWeight.w500),
             onTap: () {
               Navigator.push(
                 context,
@@ -289,8 +273,8 @@ class MainHallScreen extends StatelessWidget {
         child: Wrap(
           children: [
             ListTile(
-              leading: const Icon(Icons.image),
-              title: const Text('Change Profile Picture'),
+              leading: Icon(Icons.image),
+              title: Text('Change Profile Picture'),
               onTap: () async {
                 Navigator.pop(ctx);
                 await _changeProfilePicture(context);
@@ -320,9 +304,9 @@ class MainHallScreen extends StatelessWidget {
       final bytes = await pickedFile.readAsBytes();
       final compressed = await FlutterImageCompress.compressWithList(
         bytes,
-        minWidth: 400,
-        minHeight: 400,
-        quality: 70,
+        minWidth: 1000,
+        minHeight: 1000,
+        quality: 85,
       );
 
       final url = await StorageService.uploadFile(compressed, folder: 'groups');
@@ -331,7 +315,7 @@ class MainHallScreen extends StatelessWidget {
       }
 
       await user.updatePhotoURL(url);
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).update(
+      FirebaseFirestore.instance.collection('users').doc(user.uid).update(
         {'photoURL': url},
       );
 
@@ -353,57 +337,78 @@ class MainHallScreen extends StatelessWidget {
     }
   }
 
-  Widget _buildGroupSubtitle(GroupModel group) {
-    if (group.startDate == null || group.endDate == null) {
-      if (group.groupType == 'Bible') {
-        return Text(
-          'Book: ${group.studyBook ?? 'None'}',
-          style: const TextStyle(color: Colors.black54),
-        );
-      } else {
-        return Text(
-          'Topic: ${group.topic ?? 'None'}',
-          style: const TextStyle(color: Colors.black54),
-        );
-      }
-    }
+  Widget _buildGroupSubtitle(BuildContext context, GroupModel group) {
+    List<Widget> children = [];
 
-    final now = DateTime.now();
-    final start = group.startDate!;
-    final end = group.endDate!;
-
-    int totalDays = end.difference(start).inDays + 1;
-    int currentDay = now.difference(start).inDays + 1;
-
-    if (currentDay < 1) currentDay = 0;
-    if (currentDay > totalDays) currentDay = totalDays;
-
-    String subtitleText = 'Day $currentDay of $totalDays • ';
+    // 1. Topic & Progress (Same line)
+    String label = '';
+    String value = '';
     if (group.groupType == 'Bible') {
-      subtitleText += 'Book: ${group.studyBook ?? 'None'}';
+      label = 'Book: ';
+      value = group.studyBook ?? 'None';
     } else {
-      subtitleText += 'Topic: ${group.topic ?? 'None'}';
+      label = 'Topic: ';
+      value = group.topic ?? 'None';
     }
 
-    return Text(
-      subtitleText,
-      style: const TextStyle(fontSize: 13, color: Colors.black54),
+    Widget topicWidget = Expanded(
+      child: RichText(
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        text: TextSpan(
+          children: [
+            TextSpan(
+              text: label,
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.purpleAccent),
+            ),
+            TextSpan(
+              text: value,
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurface),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    children.add(
+      Row(
+        children: [
+          topicWidget,
+        ],
+      )
+    );
+
+    // 3. Sender & Preview
+    if (group.lastMessageText != null && group.lastMessageText!.isNotEmpty) {
+      String senderName = 'Someone';
+      if (group.lastMessageSenderId != null && group.lastMessageSenderName != null) {
+         senderName = ContactCacheService().getContactName(group.lastMessageSenderId!, group.lastMessageSenderName!);
+         senderName = senderName.split(' ').first;
+      }
+
+      children.add(SizedBox(height: 4));
+      children.add(
+        Text(
+          '$senderName: ${group.lastMessageText}',
+          style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        )
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
     );
   }
 
-  Widget _buildTrailingInfo(GroupModel group, int index) {
+  Widget _buildTrailingInfo(BuildContext context, GroupModel group, int index) {
     final user = FirebaseAuth.instance.currentUser;
     int unreadCount = user != null ? (group.unreadCounts[user.uid] ?? 0) : 0;
-
-    // --- SIMULATION LOGIC ---
-    // If the group has no unread messages, artificially simulate some for testing.
-    if (unreadCount == 0) {
-      if (index % 3 == 0) {
-        unreadCount = 5;
-      } else if (index % 3 == 1)
-        unreadCount = 1;
+    if (user != null && group.lastMessageSenderId == user.uid) {
+      unreadCount = 0;
     }
-    // ------------------------
 
     final hasUnread = unreadCount > 0;
 
@@ -427,22 +432,12 @@ class MainHallScreen extends StatelessWidget {
       }
     }
 
-    // --- SIMULATION LOGIC ---
-    if (timeText.isEmpty) {
-      if (index % 3 == 0) {
-        timeText = '10:45 AM';
-      } else if (index % 3 == 1)
-        timeText = 'Yesterday';
-      else
-        timeText = 'Oct 12';
-    }
-    // ------------------------
+    if (timeText.isEmpty && !hasUnread) return SizedBox.shrink();
 
-    if (timeText.isEmpty && !hasUnread) return const SizedBox.shrink();
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 4.0),
+    return SizedBox(
+      height: 96, // Match the avatar's height for perfect vertical centering
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (timeText.isNotEmpty)
@@ -451,22 +446,22 @@ class MainHallScreen extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: hasUnread ? FontWeight.bold : FontWeight.normal,
-                color: hasUnread ? AppColors.gradientEnd : Colors.black54,
+                color: hasUnread ? AppColors.gradientEnd : Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           if (hasUnread) ...[
-            const SizedBox(height: 6),
+            SizedBox(height: 6),
             Container(
-              padding: const EdgeInsets.all(6),
-              decoration: const BoxDecoration(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
                 color: AppColors.gradientEnd,
-                shape: BoxShape.circle,
+                borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                unreadCount.toString(),
-                style: const TextStyle(
+                unreadCount > 99 ? '99+' : unreadCount.toString(),
+                style: TextStyle(
                   color: Colors.white,
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.bold,
                 ),
               ),

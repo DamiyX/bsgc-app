@@ -27,14 +27,14 @@ class NoteCard extends StatelessWidget {
       },
       child: Card(
         elevation: 0,
-        color: Colors.grey[100],
-        margin: isGrid ? EdgeInsets.zero : const EdgeInsets.only(bottom: 16),
+        color: Theme.of(context).cardColor,
+        margin: isGrid ? EdgeInsets.zero : EdgeInsets.only(bottom: 16),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: Colors.grey[300]!, width: 1),
+          side: BorderSide(color: Theme.of(context).dividerColor, width: 1),
         ),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -45,7 +45,7 @@ class NoteCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       note.title.isEmpty ? 'Untitled Note' : note.title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
                       ),
@@ -58,9 +58,9 @@ class NoteCard extends StatelessWidget {
                     height: 24,
                     child: PopupMenuButton<String>(
                       padding: EdgeInsets.zero,
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.more_vert,
-                        color: Colors.black54,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                         size: 20,
                       ),
                       onSelected: (val) {
@@ -87,13 +87,13 @@ class NoteCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               if (isGrid)
                 Expanded(
                   child: ClickableScriptureText(
                     text: note.body,
                     style: TextStyle(
-                      color: Colors.grey[800],
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       height: 1.4,
                       fontSize: 14,
                     ),
@@ -105,15 +105,15 @@ class NoteCard extends StatelessWidget {
                 ClickableScriptureText(
                   text: note.body,
                   style: TextStyle(
-                    color: Colors.grey[800],
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                     height: 1.4,
                     fontSize: 14,
                   ),
                 ),
-              if (!isGrid) const SizedBox(height: 8),
+              if (!isGrid) SizedBox(height: 8),
               Text(
                 DateFormat('MMM d, yyyy').format(note.updatedAt),
-                style: const TextStyle(color: Colors.black54, fontSize: 12),
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 12),
               ),
             ],
           ),

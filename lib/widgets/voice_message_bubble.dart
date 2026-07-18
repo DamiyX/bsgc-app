@@ -123,17 +123,17 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          backgroundColor: Colors.white,
-          title: Text(action == 'download' ? 'Download Audio' : 'Share Audio', style: const TextStyle(fontWeight: FontWeight.bold)),
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          title: Text(action == 'download' ? 'Download Audio' : 'Share Audio', style: TextStyle(fontWeight: FontWeight.bold)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Enter a name for this recording:', style: TextStyle(fontSize: 14)),
-              const SizedBox(height: 12),
+              Text('Enter a name for this recording:', style: TextStyle(fontSize: 14)),
+              SizedBox(height: 12),
               TextField(
                 controller: nameController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   border: OutlineInputBorder(),
                   isDense: true,
                   suffixText: '.m4a',
@@ -144,7 +144,7 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, null),
-              child: const Text('Cancel', style: TextStyle(color: Colors.black54)),
+              child: Text('Cancel', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54))),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(context, nameController.text.trim()),
@@ -199,14 +199,14 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
 
   @override
   Widget build(BuildContext context) {
-    final fgColor = (widget.isMe && !widget.isDraft) ? Colors.white : Colors.black87;
+    final fgColor = (widget.isMe && !widget.isDraft) ? Colors.white : Theme.of(context).colorScheme.onSurface;
     final progress = _duration.inMilliseconds > 0 
         ? _position.inMilliseconds / _duration.inMilliseconds 
         : 0.0;
 
     return Container(
       width: MediaQuery.of(context).size.width * 0.65,
-      padding: const EdgeInsets.fromLTRB(4, 0, 0, 0),
+      padding: EdgeInsets.fromLTRB(4, 0, 0, 0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -218,9 +218,9 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
             ),
             onPressed: _togglePlayPause,
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            constraints: BoxConstraints(minWidth: 36, minHeight: 36),
           ),
-          const SizedBox(width: 4),
+          SizedBox(width: 4),
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -232,7 +232,7 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
                     thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                     overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
                     activeTrackColor: fgColor,
-                    inactiveTrackColor: widget.isMe ? Colors.white24 : Colors.black12,
+                    inactiveTrackColor: widget.isMe ? Colors.white24 : Theme.of(context).colorScheme.onSurface,
                     thumbColor: fgColor,
                   ),
                   child: Slider(
@@ -245,21 +245,21 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
                     },
                   ),
                 ),
-                const SizedBox(height: 4),
+                SizedBox(height: 4),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
                       _isPlaying ? _formatDuration(_position) : _formatDuration(_duration),
                       style: TextStyle(
-                        color: widget.isMe ? Colors.white70 : Colors.black54, 
+                        color: widget.isMe ? Colors.white70 : Theme.of(context).colorScheme.onSurfaceVariant, 
                         fontSize: 10,
                       ),
                     ),
                     Text(
                       DateFormat('HH:mm').format(widget.timestamp),
                       style: TextStyle(
-                        color: widget.isMe ? Colors.white70 : Colors.black54, 
+                        color: widget.isMe ? Colors.white70 : Theme.of(context).colorScheme.onSurfaceVariant, 
                         fontSize: 9,
                       ),
                     ),
@@ -272,7 +272,7 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
             onTap: _togglePlaybackSpeed,
             borderRadius: BorderRadius.circular(4),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4.0),
+              padding: EdgeInsets.symmetric(horizontal: 4.0),
               child: Text(
                 '${_playbackRate}x',
                 style: TextStyle(color: fgColor, fontSize: 10, fontWeight: FontWeight.bold),

@@ -26,7 +26,7 @@ class BackupService {
     scopes: [drive.DriveApi.driveFileScope],
   );
 
-  Future<void> backupToGoogleDrive() async {
+  Future<void> backupToGoogleDrive({bool isBackground = false}) async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('Not authenticated');
 
@@ -50,11 +50,25 @@ class BackupService {
     // 2. Write to local temp file
     final tempDir = await getTemporaryDirectory();
     final file = File('${tempDir.path}/braid_backup.json');
-    await file.writeAsString(jsonEncode(backupData));
+    await file.writeAsString(jsonEncode(backupData, toEncodable: (item) {
+      if (item is Timestamp) {
+        return {'__type__': 'Timestamp', 'value': item.toDate().toIso8601String()};
+      }
+      return item;
+    }));
 
     // 3. Upload to Google Drive
-    final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-    if (googleUser == null) throw Exception('Google Sign In failed');
+    final GoogleSignInAccount? googleUser = isBackground 
+        ? await _googleSignIn.signInSilently() 
+        : await _googleSignIn.signIn();
+    
+    if (googleUser == null) {
+      if (isBackground) {
+        print('Background backup failed: Silent Google Sign In failed');
+        return; // Fail gracefully in background
+      }
+      throw Exception('Google Sign In failed');
+    }
 
     final authHeaders = await googleUser.authHeaders;
     final authenticateClient = GoogleAuthClient(authHeaders);
@@ -102,7 +116,8 @@ class BackupService {
     }
     
     final jsonString = utf8.decode(dataStore);
-    final backupData = jsonDecode(jsonString) as Map<String, dynamic>;
+    final backupDataRaw = jsonDecode(jsonString) as Map<String, dynamic>;
+    final backupData = _restoreTimestamps(backupDataRaw) as Map<String, dynamic>;
 
     // Restore Notes
     if (backupData['notes'] != null) {
@@ -122,5 +137,17 @@ class BackupService {
     if (backupData['profile'] != null) {
        await _firestore.collection('users').doc(user.uid).set(backupData['profile'], SetOptions(merge: true));
     }
+  }
+
+  dynamic _restoreTimestamps(dynamic value) {
+    if (value is Map) {
+      if (value['__type__'] == 'Timestamp' && value['value'] != null) {
+        return Timestamp.fromDate(DateTime.parse(value['value'] as String));
+      }
+      return value.map((k, v) => MapEntry(k as String, _restoreTimestamps(v)));
+    } else if (value is List) {
+      return value.map((v) => _restoreTimestamps(v)).toList();
+    }
+    return value;
   }
 }

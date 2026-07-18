@@ -6,9 +6,11 @@ import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
 import '../models/insight_model.dart';
 import '../services/insight_service.dart';
+import '../services/notification_service.dart';
 import '../widgets/clickable_scripture_text.dart';
 import 'my_insights_screen.dart';
 import 'create_insight_screen.dart';
+import '../services/contact_cache_service.dart';
 import '../theme.dart';
 
 import 'dart:ui' as ui;
@@ -40,7 +42,16 @@ class _ViewInsightScreenState extends State<ViewInsightScreen> {
   void initState() {
     super.initState();
     _userPageController = PageController(initialPage: widget.initialUserIndex);
-    _insightIndices = List.filled(widget.userInsightsGroups.length, 0);
+    
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    _insightIndices = List.generate(widget.userInsightsGroups.length, (i) {
+      if (currentUserId != null) {
+        final firstUnseen = widget.userInsightsGroups[i].indexWhere((insight) => !insight.seenBy.contains(currentUserId));
+        if (firstUnseen != -1) return firstUnseen;
+      }
+      return 0;
+    });
+
     _initTts();
   }
 
@@ -162,7 +173,7 @@ class _ViewInsightScreenState extends State<ViewInsightScreen> {
             child: BackdropFilter(
               filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
               child: Container(
-                color: Colors.black.withValues(alpha: 0.2),
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
               ), // Slight dark tint
             ),
           ),
@@ -177,7 +188,7 @@ class _ViewInsightScreenState extends State<ViewInsightScreen> {
               final currentTtsState = isCurrent ? _ttsState : TtsState.stopped;
 
               return _ViewInsightPage(
-                
+                key: ValueKey(insight.id),
                 insight: insight,
                 insightIndex: insightIndex,
                 totalInsights: insights.length,
@@ -204,6 +215,7 @@ class _ViewInsightPage extends StatefulWidget {
   final VoidCallback onNext;
 
   const _ViewInsightPage({
+    super.key,
     required this.insight,
     required this.insightIndex,
     required this.totalInsights,
@@ -224,6 +236,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
   final InsightService _insightService = InsightService();
   InsightCommentModel? _replyingTo;
   bool _isLiked = false;
+  int _likeCount = 0;
   bool _isSaved = false;
   double _dismissOffset = 0.0;
   bool _commentsVisible = false;
@@ -240,6 +253,11 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
     if (user != null && !widget.insight.seenBy.contains(user.uid)) {
       _insightService.markAsSeen(widget.insight.id, user.uid);
     }
+    
+    _isLiked = user != null && widget.insight.likedBy.contains(user.uid);
+    _likeCount = widget.insight.likedBy.length;
+    
+    _checkSavedStatus();
 
     _commentsAnimController = AnimationController(
       vsync: this,
@@ -259,18 +277,29 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
     );
   }
 
+  void _checkSavedStatus() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final isSaved = await _insightService.isInsightSaved(user.uid, widget.insight.id);
+      if (mounted) {
+        setState(() {
+          _isSaved = isSaved;
+        });
+      }
+    }
+  }
+
   @override
   void didUpdateWidget(_ViewInsightPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.insight.id != oldWidget.insight.id) {
+    if (oldWidget.insight.id != widget.insight.id) {
       final user = FirebaseAuth.instance.currentUser;
-      if (user != null && !widget.insight.seenBy.contains(user.uid)) {
-        _insightService.markAsSeen(widget.insight.id, user.uid);
-      }
-      if (_commentsVisible) {
-        _commentsVisible = false;
-        _commentsAnimController.reverse();
-      }
+      setState(() {
+        _isLiked = user != null && widget.insight.likedBy.contains(user.uid);
+        _likeCount = widget.insight.likedBy.length;
+        _isSaved = false;
+      });
+      _checkSavedStatus();
     }
   }
 
@@ -366,7 +395,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
       authorPhotoUrl: user.photoURL,
       body: text,
       replyToId: _replyingTo?.id,
-      replyToName: _replyingTo?.authorName,
+      replyToName: _replyingTo == null ? null : ContactCacheService().getContactName(_replyingTo!.authorUid, _replyingTo!.authorName),
       createdAt: DateTime.now(),
     );
 
@@ -389,23 +418,23 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
           if (widget.insight.title.isNotEmpty) ...[
           Text(
             widget.insight.title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
-              color: Colors.black87,
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
               height: 1.3,
             ),
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
         ],
 
         Padding(
-          padding: const EdgeInsets.only(left: 12.0),
+          padding: EdgeInsets.only(left: 12.0),
           child: ClickableScriptureText(
             text: widget.insight.body,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
-              color: Colors.black87,
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
               height: 1.5,
             ),
           ),
@@ -418,103 +447,146 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
   Widget _buildFloatingBottomBar() {
     final countStream = _insightService.getComments(widget.insight.id);
     return Container(
-      padding: const EdgeInsets.only(left: 16, right: 16, bottom: 12, top: 32),
+      padding: EdgeInsets.only(left: 16, right: 16, bottom: 8, top: 32),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Colors.white.withAlpha(0),
-            Colors.white.withAlpha(200),
-            Colors.white,
+            Theme.of(context).scaffoldBackgroundColor.withAlpha(0),
+            Theme.of(context).scaffoldBackgroundColor.withAlpha(200),
+            Theme.of(context).scaffoldBackgroundColor,
           ],
           stops: const [0.0, 0.4, 1.0],
         ),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: GestureDetector(
-              onTap: _toggleComments,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  'Add a comment...',
-                  style: TextStyle(color: Colors.black54),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: _toggleComments,
+                  child: Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).brightness == Brightness.light ? Colors.grey[200] : Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      'Add a comment...',
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ),
               ),
-            ),
+              SizedBox(width: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                          _isLiked ? Icons.thumb_up : Icons.thumb_up_alt_outlined,
+                          color: _isLiked ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onSurface,
+                        ),
+                        onPressed: () async {
+                          final user = FirebaseAuth.instance.currentUser;
+                          if (user == null) return;
+                          
+                          if (!_isLiked) {
+                            NotificationService().playActionSound();
+                          }
+
+                          setState(() {
+                            _isLiked = !_isLiked;
+                            _likeCount += _isLiked ? 1 : -1;
+                          });
+                          
+                          await _insightService.toggleInsightLike(widget.insight.id, user.uid, _isLiked);
+                        },
+                        padding: EdgeInsets.all(4),
+                        constraints: const BoxConstraints(),
+                      ),
+                      if (_likeCount > 0)
+                        Padding(
+                          padding: EdgeInsets.only(left: 4.0),
+                          child: Text('$_likeCount', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        ),
+                    ],
+                  ),
+                  SizedBox(width: 8),
+                  IconButton(
+                    icon: Icon(
+                      _isSaved ? Icons.bookmark : Icons.bookmark_border,
+                      color: _isSaved ? AppColors.gradientEnd : Theme.of(context).colorScheme.onSurface,
+                    ),
+                    onPressed: () async {
+                      if (!_isSaved) {
+                        NotificationService().playActionSound();
+                      }
+                      setState(() => _isSaved = !_isSaved);
+                      final user = FirebaseAuth.instance.currentUser;
+                      if (user != null) {
+                        if (_isSaved) {
+                          await _insightService.saveInsight(user.uid, widget.insight);
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).clearSnackBars();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Insight saved', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                behavior: SnackBarBehavior.floating,
+                                elevation: 0,
+                                duration: const Duration(milliseconds: 1500),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            );
+                          }
+                        } else {
+                          await _insightService.unsaveInsight(user.uid, widget.insight.id);
+                        }
+                      }
+                    },
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          IconButton(
-            icon: Icon(
-              _isSaved ? Icons.bookmark : Icons.bookmark_border,
-              color: _isSaved ? AppColors.gradientEnd : Colors.black87,
-            ),
-            onPressed: () async {
-              setState(() => _isSaved = !_isSaved);
-              final user = FirebaseAuth.instance.currentUser;
-              if (user != null) {
-                if (_isSaved) {
-                  await _insightService.saveInsight(user.uid, widget.insight);
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Insight saved')),
-                    );
-                  }
-                } else {
-                  await _insightService.unsaveInsight(user.uid, widget.insight.id);
-                }
-              }
-            },
-          ),
-          const SizedBox(width: 4),
-          StreamBuilder<List<InsightCommentModel>>(
+        ],
+      ),
+      StreamBuilder<List<InsightCommentModel>>(
             stream: countStream,
             builder: (context, snapshot) {
               final count = snapshot.hasData ? snapshot.data!.length : 0;
               return GestureDetector(
                 onTap: _toggleComments,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 8,
-                  ),
+                  padding: EdgeInsets.only(top: 8, bottom: 4),
                   color: Colors.transparent,
-                  child: Row(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.keyboard_arrow_up,
-                        color: Colors.black87,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                        size: 20,
                       ),
-                      if (count > 0) ...[
-                        const SizedBox(width: 4),
+                      if (count > 0)
                         Text(
-                          '$count',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                          '$count comments',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45)),
                         ),
-                      ],
                     ],
                   ),
                 ),
               );
             },
-          ),
-          IconButton(
-            icon: Icon(
-              _isLiked ? Icons.thumb_up : Icons.thumb_up_alt_outlined,
-              color: _isLiked ? AppColors.gradientEnd : Colors.black87,
-            ),
-            onPressed: () => setState(() => _isLiked = !_isLiked),
           ),
         ],
       ),
@@ -545,11 +617,11 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                 Container(
                   width: 24,
                   height: 32,
-                  margin: const EdgeInsets.only(right: 8, top: 4),
-                  decoration: const BoxDecoration(
+                  margin: EdgeInsets.only(right: 8, top: 4),
+                  decoration: BoxDecoration(
                     border: Border(
-                      left: BorderSide(color: Colors.black12, width: 2),
-                      bottom: BorderSide(color: Colors.black12, width: 2),
+                      left: BorderSide(color: Theme.of(context).dividerColor, width: 2),
+                      bottom: BorderSide(color: Theme.of(context).dividerColor, width: 2),
                     ),
                     borderRadius: BorderRadius.only(
                       bottomLeft: Radius.circular(12),
@@ -558,52 +630,48 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                 ),
               CircleAvatar(
                 radius: 16,
-                backgroundColor: Colors.grey[300],
+                backgroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
                 backgroundImage: comment.authorPhotoUrl != null
                     ? NetworkImage(comment.authorPhotoUrl!)
                     : null,
                 child: comment.authorPhotoUrl == null
-                    ? const Icon(Icons.person, size: 16, color: Colors.black54)
+                    ? Icon(Icons.person, size: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54))
                     : null,
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: 8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[200],
-                        borderRadius: BorderRadius.circular(16),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 0,
+                        vertical: 4,
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            comment.authorName,
-                            style: const TextStyle(
+                            ContactCacheService().getContactName(comment.authorUid, comment.authorName),
+                            style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 13,
-                              color: Colors.black87,
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
                             ),
                           ),
-                          const SizedBox(height: 4),
+                          SizedBox(height: 4),
                           Text(
                             comment.body,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 14,
-                              color: Colors.black87,
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
                             ),
                           ),
                         ],
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.only(left: 12, top: 4),
+                      padding: EdgeInsets.only(left: 12, top: 4),
                       child: Wrap(
                         crossAxisAlignment: WrapCrossAlignment.center,
                         spacing: 16,
@@ -613,18 +681,23 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                             DateFormat(
                               'MMM d, h:mm a',
                             ).format(comment.createdAt),
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
-                              color: Colors.black54,
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                             ),
                           ),
                           GestureDetector(
-                            onTap: () => _insightService.toggleCommentLike(
-                              widget.insight.id,
-                              comment.id,
-                              currentUserId,
-                              !isLiked,
-                            ),
+                            onTap: () {
+                              if (!isLiked) {
+                                NotificationService().playActionSound();
+                              }
+                              _insightService.toggleCommentLike(
+                                widget.insight.id,
+                                comment.id,
+                                currentUserId,
+                                !isLiked,
+                              );
+                            },
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -635,16 +708,16 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                                     size: 14,
                                     color: isLiked
                                         ? AppColors.primary
-                                        : Colors.black54,
+                                        : Theme.of(context).colorScheme.onSurfaceVariant,
                                   ),
                                 if (likeCount > 0) ...[
-                                  const SizedBox(width: 4),
+                                  SizedBox(width: 4),
                                   Text(
                                     '$likeCount',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.black54,
+                                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                                     ),
                                   ),
                                 ],
@@ -658,12 +731,12 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                                 _toggleComments();
                               }
                             },
-                            child: const Text(
+                            child: Text(
                               'Reply',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.black54,
+                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                               ),
                             ),
                           ),
@@ -687,15 +760,15 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
 
   Widget _buildCommentInputArea() {
     return Container(
-      padding: const EdgeInsets.only(
+      padding: EdgeInsets.only(
         left: 16,
         right: 16,
         top: 8,
         bottom: 12,
       ),
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey[200]!)),
+        color: Theme.of(context).scaffoldBackgroundColor,
+        border: Border(top: BorderSide(color: Theme.of(context).colorScheme.onSurfaceVariant!)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -703,24 +776,24 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
         children: [
           if (_replyingTo != null)
             Padding(
-              padding: const EdgeInsets.only(bottom: 8.0, left: 4),
+              padding: EdgeInsets.only(bottom: 8.0, left: 4),
               child: Row(
                 children: [
                   Text(
-                    'Replying to ${_replyingTo!.authorName}',
-                    style: const TextStyle(
+                    'Replying to ${ContactCacheService().getContactName(_replyingTo!.authorUid, _replyingTo!.authorName)}',
+                    style: TextStyle(
                       fontSize: 12,
-                      color: Colors.black54,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const Spacer(),
+                  Spacer(),
                   GestureDetector(
                     onTap: () => setState(() => _replyingTo = null),
-                    child: const Icon(
+                    child: Icon(
                       Icons.close,
                       size: 16,
-                      color: Colors.black54,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                     ),
                   ),
                 ],
@@ -736,9 +809,9 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                   onSubmitted: (_) => _submitDirectComment(),
                   decoration: InputDecoration(
                     hintText: 'Write a comment...',
-                    hintStyle: const TextStyle(color: Colors.black54),
+                    hintStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
                     isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
+                    contentPadding: EdgeInsets.symmetric(
                       horizontal: 16,
                       vertical: 10,
                     ),
@@ -746,15 +819,19 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                       borderRadius: BorderRadius.circular(20),
                       borderSide: BorderSide.none,
                     ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide.none,
+                    ),
                     filled: true,
-                    fillColor: Colors.grey[200],
+                    fillColor: Theme.of(context).brightness == Brightness.light ? Colors.grey[200] : Theme.of(context).cardColor,
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: 8),
                 GestureDetector(
                   onTap: _submitDirectComment,
-                  child: const Icon(Icons.send, color: AppColors.gradientEnd),
+                  child: Icon(Icons.send, color: AppColors.gradientEnd),
                 ),
             ],
           ),
@@ -769,34 +846,34 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
       onVerticalDragUpdate: _handleDragUpdate,
       onVerticalDragEnd: _handleDragEnd,
       child: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(
           children: [
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
             Container(
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey[300],
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
-                  const Text(
+                  Text(
                     'Comments',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
-                      color: Colors.black87,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                   StreamBuilder<List<InsightCommentModel>>(
                     stream: countStream,
                     builder: (context, snapshot) {
@@ -805,9 +882,9 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                           : 0;
                       return Text(
                         '$count',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
-                          color: Colors.black54,
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                         ),
                       );
                     },
@@ -815,17 +892,17 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                 ],
               ),
             ),
-            const Divider(height: 1, color: Colors.black12),
+            Divider(height: 1, color: Theme.of(context).dividerColor),
             Expanded(
               child: StreamBuilder<List<InsightCommentModel>>(
                 stream: _insightService.getComments(widget.insight.id),
                 builder: (context, snapshot) {
                   final comments = snapshot.data ?? [];
                   if (comments.isEmpty) {
-                    return const Center(
+                    return Center(
                       child: Text(
                         'No comments yet.',
-                        style: TextStyle(color: Colors.black54),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
                       ),
                     );
                   }
@@ -837,7 +914,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
 
                   return ListView.builder(
                     controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(
+                    padding: EdgeInsets.symmetric(
                       horizontal: 16,
                       vertical: 16,
                     ),
@@ -876,17 +953,17 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
             children: [
               // Progress Bar
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                 child: Row(
                   children: List.generate(widget.totalInsights, (idx) {
                     return Expanded(
                       child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 2),
+                        margin: EdgeInsets.symmetric(horizontal: 2),
                         height: 3,
                         decoration: BoxDecoration(
                           color: idx <= widget.insightIndex
-                              ? Colors.black87
-                              : Colors.black12,
+                              ? Theme.of(context).colorScheme.onSurface
+                              : Theme.of(context).colorScheme.onSurface,
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -897,7 +974,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
 
               // Author Info
               Padding(
-                padding: const EdgeInsets.symmetric(
+                padding: EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 4,
                 ),
@@ -907,12 +984,12 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                       children: [
                         CircleAvatar(
                           radius: 20,
-                          backgroundColor: Colors.grey[200],
+                          backgroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
                           backgroundImage: widget.insight.authorPhotoUrl != null
                               ? NetworkImage(widget.insight.authorPhotoUrl!)
                               : null,
                           child: widget.insight.authorPhotoUrl == null
-                              ? const Icon(Icons.person, color: Colors.black45)
+                              ? Icon(Icons.person, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45))
                               : null,
                         ),
                         if (isMyInsight)
@@ -929,18 +1006,18 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                                 );
                               },
                               child: Container(
-                                padding: const EdgeInsets.all(2),
+                                padding: EdgeInsets.all(2),
                                 decoration: BoxDecoration(
                                   color: AppColors.gradientEnd,
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: Colors.white,
+                                    color: Theme.of(context).scaffoldBackgroundColor,
                                     width: 2,
                                   ),
                                 ),
-                                child: const Icon(
+                                child: Icon(
                                   Icons.add,
-                                  color: Colors.white,
+                                  color: Theme.of(context).scaffoldBackgroundColor,
                                   size: 10,
                                 ),
                               ),
@@ -948,25 +1025,25 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                           ),
                       ],
                     ),
-                    const SizedBox(width: 12),
+                    SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            widget.insight.authorName,
-                            style: const TextStyle(
+                            ContactCacheService().getContactName(widget.insight.authorUid, widget.insight.authorName),
+                            style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
-                              color: Colors.black87,
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
                             ),
                           ),
                           Text(
                             DateFormat(
                               'MMM d, h:mm a',
                             ).format(widget.insight.createdAt),
-                            style: const TextStyle(
-                              color: Colors.black54,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                               fontSize: 12,
                             ),
                           ),
@@ -978,7 +1055,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                         widget.ttsState == TtsState.playing
                             ? Icons.pause_circle_filled
                             : Icons.volume_up,
-                        color: Colors.black87,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
                       ),
                       onPressed: widget.onTogglePlay,
                     ),
@@ -1025,13 +1102,14 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                             SliverFillRemaining(
                               hasScrollBody: false,
                               child: Padding(
-                                padding: const EdgeInsets.only(
+                                padding: EdgeInsets.only(
                                   left: 24,
                                   right: 24,
                                   top: 16,
                                   bottom: 100,
                                 ),
-                                child: Center(
+                                child: Align(
+                                  alignment: Alignment.topLeft,
                                   child: _buildInsightBody(),
                                 ),
                               ),
@@ -1076,7 +1154,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
               alignment: Alignment.topCenter,
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: Theme.of(context).scaffoldBackgroundColor,
                   borderRadius: BorderRadius.circular(value * 24),
                 ),
                 clipBehavior: Clip.antiAlias,
@@ -1091,7 +1169,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
           animation: _commentsAnimController,
           builder: (context, child) {
             if (_commentsAnimController.isDismissed) {
-              return const SizedBox.shrink();
+              return SizedBox.shrink();
             }
             return GestureDetector(
               onTap: () {
@@ -1100,7 +1178,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                 }
               },
               child: Container(
-                color: Colors.black.withValues(
+                color: Theme.of(context).colorScheme.onSurface.withValues(
                   alpha: _commentsAnimController.value * 0.5,
                 ),
               ),
@@ -1125,6 +1203,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
     );
   }
 }
+
 
 
 

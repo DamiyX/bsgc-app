@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -57,10 +58,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         // Save to phoneNumbers array
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'phoneNumbers': FieldValue.arrayUnion(validPhones),
-          'phone': validPhones.first, // keep string for backward compatibility
-        }, SetOptions(merge: true));
+        try {
+          await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+            'phoneNumbers': FieldValue.arrayUnion(validPhones),
+            'phone': validPhones.first, // keep string for backward compatibility
+          }, SetOptions(merge: true)).timeout(const Duration(seconds: 2));
+        } on TimeoutException {
+          // Proceed offline
+        }
 
         if (mounted) {
           // Check for Magic Link Inviter
@@ -69,7 +74,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
           if (pendingInviterId != null && pendingInviterId.isNotEmpty) {
             // Apply the inviter automatically and mark selection as complete
-            await FirebaseFirestore.instance
+            FirebaseFirestore.instance
                 .collection('users')
                 .doc(user.uid)
                 .set({
@@ -110,19 +115,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text(
+        title: Text(
           'Complete Profile',
-          style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87), fontWeight: FontWeight.bold),
         ),
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
         centerTitle: true,
       ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(24.0),
+          padding: EdgeInsets.all(24.0),
           child: Form(
             key: _formKey,
             child: Column(
@@ -131,14 +136,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 Expanded(
                   child: ListView(
                     children: [
-                      const SizedBox(height: 16),
-                      const Icon(
+                      SizedBox(height: 16),
+                      Icon(
                         Icons.connect_without_contact,
                         size: 80,
                         color: AppColors.gradientEnd,
                       ),
-                      const SizedBox(height: 32),
-                      const Text(
+                      SizedBox(height: 32),
+                      Text(
                         'Let friends find you',
                         textAlign: TextAlign.center,
                         style: TextStyle(
@@ -146,17 +151,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      SizedBox(height: 16),
                       Text(
                         'Enter your phone numbers so friends can easily invite you to study groups.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                        style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
-                      const SizedBox(height: 48),
+                      SizedBox(height: 48),
 
                       ...List.generate(_completePhoneNumbers.length, (index) {
                         return Padding(
-                          padding: const EdgeInsets.only(bottom: 12.0),
+                          padding: EdgeInsets.only(bottom: 12.0),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -165,22 +170,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                                   key: _fieldKeys[index],
                                   decoration: InputDecoration(
                                     labelText: 'Phone Number ${index + 1}',
-                                    floatingLabelStyle: const TextStyle(color: AppColors.gradientStart),
+                                    floatingLabelStyle: TextStyle(color: AppColors.gradientStart),
                                     border: OutlineInputBorder(
-                                      borderSide: const BorderSide(
-                                        color: Colors.grey,
+                                      borderSide: BorderSide(
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                                       ),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     focusedBorder: OutlineInputBorder(
-                                      borderSide: const BorderSide(
+                                      borderSide: BorderSide(
                                         color: AppColors.gradientStart,
                                         width: 2.0,
                                       ),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     filled: true,
-                                    fillColor: Colors.grey[50],
+                                    fillColor: Theme.of(context).colorScheme.onSurfaceVariant,
                                   ),
                                   initialCountryCode: 'NG',
                                   onChanged: (phone) {
@@ -191,7 +196,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                               ),
                               if (_completePhoneNumbers.length > 1)
                                 IconButton(
-                                  icon: const Icon(
+                                  icon: Icon(
                                     Icons.remove_circle_outline,
                                     color: Colors.red,
                                   ),
@@ -207,8 +212,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         alignment: Alignment.centerLeft,
                         child: TextButton.icon(
                           onPressed: _addPhoneNumberField,
-                          icon: const Icon(Icons.add, color: AppColors.gradientEnd),
-                          label: const Text(
+                          icon: Icon(Icons.add, color: AppColors.gradientEnd),
+                          label: Text(
                             'Add another number',
                             style: TextStyle(color: AppColors.gradientEnd),
                           ),
@@ -217,7 +222,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 SizedBox(
                   height: 56,
                   child: ElevatedButton(
@@ -230,7 +235,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ),
                     child: _isLoading
                         ? CircularProgressIndicator(color: Colors.white)
-                        : const Text(
+                        : Text(
                             'Continue',
                             style: TextStyle(
                               fontSize: 18,
@@ -240,7 +245,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           ),
                   ),
                 ),
-                const SizedBox(height: 24),
+                SizedBox(height: 24),
               ],
             ),
           ),

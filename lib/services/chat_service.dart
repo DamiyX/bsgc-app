@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/group_model.dart';
 import '../models/message_model.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'auth_service.dart';
 
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -18,7 +20,11 @@ class ChatService {
         .snapshots()
         .map((snapshot) {
       final groups = snapshot.docs.map((doc) => GroupModel.fromFirestore(doc)).toList();
-      groups.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      groups.sort((a, b) {
+        final aTime = a.lastMessageTime ?? a.createdAt;
+        final bTime = b.lastMessageTime ?? b.createdAt;
+        return bTime.compareTo(aTime);
+      });
       return groups;
     });
   }
@@ -56,7 +62,11 @@ class ChatService {
       'extensionCount': 0,
     };
 
-    await docRef.set(data);
+    try {
+      await docRef.set(data).timeout(const Duration(seconds: 2));
+    } on TimeoutException {
+      // Offline or slow connection. Local cache will sync later.
+    }
 
     return GroupModel(
       id: docRef.id,
@@ -147,6 +157,9 @@ class ChatService {
       'readingProgress.${user.uid}': FieldValue.delete(),
       'userCompletedChapters.${user.uid}': FieldValue.delete(),
     });
+
+    // Automatically delete chat history for the leaving user
+    await clearChatForMe(groupId);
   }
 
   // Apply 30-day cooldown to prevent re-grouping
@@ -313,8 +326,25 @@ class ChatService {
         final groupData = groupDoc.data()!;
         final groupName = groupData['name'] ?? 'Study Group';
         final members = List<String>.from(groupData['members'] ?? []);
+        // Extract a preview text for the notification body
+        String notificationBody = 'Sent a message';
+        if (parts.isNotEmpty) {
+          final firstPart = parts.first;
+          if (firstPart.type == MessageType.text && firstPart.content.isNotEmpty) {
+            String cleanText = firstPart.content.replaceAll('\n', ' ');
+            notificationBody = cleanText.length > 50 
+              ? '${cleanText.substring(0, 50)}...' 
+              : cleanText;
+          } else if (firstPart.type == MessageType.voice) {
+            notificationBody = '🎤 Voice note';
+          }
+        }
+
         Map<String, dynamic> updates = {
           'lastMessageTime': FieldValue.serverTimestamp(),
+          'lastMessageText': notificationBody,
+          'lastMessageSenderName': user.displayName ?? 'Believer',
+          'lastMessageSenderId': user.uid,
         };
         for (String memberId in members) {
           if (memberId != user.uid) {
@@ -323,18 +353,8 @@ class ChatService {
         }
         await _firestore.collection('groups').doc(groupId).update(updates);
 
-        // Extract a preview text for the notification body
-        String notificationBody = 'Sent a message';
-        if (parts.isNotEmpty) {
-          final firstPart = parts.first;
-          if (firstPart.type == 'text' && firstPart.content.isNotEmpty) {
-            notificationBody = firstPart.content.length > 50 
-              ? '${firstPart.content.substring(0, 50)}...' 
-              : firstPart.content;
-          } else if (firstPart.type == 'voice') {
-            notificationBody = '🎤 Voice note';
-          }
-        }
+        // Record interaction for the current user
+        await AuthService().recordInteraction();
 
       }
   }

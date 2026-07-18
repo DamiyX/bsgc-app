@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../theme.dart';
 
 class TtsSettingsScreen extends StatefulWidget {
   const TtsSettingsScreen({super.key});
@@ -102,12 +103,12 @@ class _TtsSettingsScreenState extends State<TtsSettingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Reading Voice'),
-        backgroundColor: Colors.white,
+        title: Text('Reading Voice'),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       ),
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: _isLoading 
-        ? Center(child: CircularProgressIndicator())
+        ? Center(child: CircularProgressIndicator(color: AppColors.gradientEnd))
         : ListView.builder(
             itemCount: _voices.length,
             itemBuilder: (context, index) {
@@ -115,8 +116,8 @@ class _TtsSettingsScreenState extends State<TtsSettingsScreen> {
               final isSelected = _selectedVoiceName == voice['originalName'];
               return ListTile(
                 title: Text('${voice['displayName']}'),
-                subtitle: const Text('Tap to select and hear a sample'),
-                trailing: isSelected ? const Icon(Icons.check_circle, color: Colors.green) : null,
+                subtitle: Text('Tap to select and hear a sample'),
+                trailing: isSelected ? Icon(Icons.check_circle, color: Colors.green) : null,
                 onTap: () => _selectVoice(voice),
               );
             },
@@ -124,3 +125,4 @@ class _TtsSettingsScreenState extends State<TtsSettingsScreen> {
     );
   }
 }
+

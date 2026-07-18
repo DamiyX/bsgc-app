@@ -17,6 +17,9 @@ class GroupModel {
   final DateTime? startDate;
   final DateTime? endDate;
   final DateTime? lastMessageTime;
+  final String? lastMessageText;
+  final String? lastMessageSenderName;
+  final String? lastMessageSenderId;
   final Map<String, int> unreadCounts;
   final int extensionCount;
 
@@ -37,6 +40,9 @@ class GroupModel {
     this.startDate,
     this.endDate,
     this.lastMessageTime,
+    this.lastMessageText,
+    this.lastMessageSenderName,
+    this.lastMessageSenderId,
     this.unreadCounts = const {},
     this.extensionCount = 0,
   });
@@ -88,6 +94,9 @@ class GroupModel {
       startDate: (data['startDate'] as Timestamp?)?.toDate(),
       endDate: (data['endDate'] as Timestamp?)?.toDate(),
       lastMessageTime: (data['lastMessageTime'] as Timestamp?)?.toDate(),
+      lastMessageText: data['lastMessageText'],
+      lastMessageSenderName: data['lastMessageSenderName'],
+      lastMessageSenderId: data['lastMessageSenderId'],
       unreadCounts: parsedUnreadCounts,
       extensionCount: data['extensionCount'] ?? 0,
     );
@@ -110,6 +119,9 @@ class GroupModel {
       'startDate': startDate != null ? Timestamp.fromDate(startDate!) : null,
       'endDate': endDate != null ? Timestamp.fromDate(endDate!) : null,
       if (lastMessageTime != null) 'lastMessageTime': Timestamp.fromDate(lastMessageTime!),
+      if (lastMessageText != null) 'lastMessageText': lastMessageText,
+      if (lastMessageSenderName != null) 'lastMessageSenderName': lastMessageSenderName,
+      if (lastMessageSenderId != null) 'lastMessageSenderId': lastMessageSenderId,
       'unreadCounts': unreadCounts,
       'extensionCount': extensionCount,
     };

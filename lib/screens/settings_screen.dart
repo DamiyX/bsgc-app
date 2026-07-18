@@ -5,25 +5,56 @@ import '../theme.dart';
 import 'edit_profile_screen.dart';
 import 'tts_settings_screen.dart';
 import 'support_chat_screen.dart';
-
-class SettingsScreen extends StatelessWidget {
+import 'package:provider/provider.dart';
+import '../providers/theme_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  String _appVersion = '1.3.1 (VS Code Build)';
+  bool _muteAppSounds = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _muteAppSounds = prefs.getBool('mute_app_sounds') ?? false;
+    });
+  }
+
+  Future<void> _toggleMuteAppSounds(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('mute_app_sounds', value);
+    setState(() {
+      _muteAppSounds = value;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Settings'),
-        backgroundColor: Colors.white,
+        title: Text('Settings'),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         surfaceTintColor: Colors.transparent,
       ),
       body: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: EdgeInsets.symmetric(vertical: 8),
         children: [
           _buildSectionHeader('Account'),
           ListTile(
-            leading: const Icon(Icons.edit),
-            title: const Text('Edit Profile'),
+            leading: Icon(Icons.edit),
+            title: Text('Edit Profile'),
             onTap: () {
               Navigator.push(
                 context,
@@ -32,21 +63,81 @@ class SettingsScreen extends StatelessWidget {
             },
           ),
 
-          const Divider(),
+          Divider(),
           _buildSectionHeader('Preferences'),
-          SwitchListTile(
-            secondary: const Icon(Icons.dark_mode_outlined),
-            title: const Text('Dark Mode'),
-            value: false, // Simulated
-            onChanged: (val) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Dark mode toggle coming soon')),
+          Consumer<ThemeProvider>(
+            builder: (context, themeProvider, child) {
+              return Column(
+                children: [
+                  ListTile(
+                    leading: Icon(Icons.dark_mode_outlined),
+                    title: Text('Theme Appearance'),
+                    trailing: DropdownButton<ThemeMode>(
+                      value: themeProvider.themeMode,
+                      underline: SizedBox(),
+                      onChanged: (ThemeMode? newMode) {
+                        if (newMode != null) {
+                          themeProvider.setThemeMode(newMode);
+                        }
+                      },
+                      items: const [
+                        DropdownMenuItem(
+                          value: ThemeMode.system,
+                          child: Text('System'),
+                        ),
+                        DropdownMenuItem(
+                          value: ThemeMode.light,
+                          child: Text('Light'),
+                        ),
+                        DropdownMenuItem(
+                          value: ThemeMode.dark,
+                          child: Text('Dark'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.format_color_fill),
+                    title: Text('Chat Bubble Theme'),
+                    subtitle: Text('Choose how messages look'),
+                    trailing: DropdownButton<ChatBubbleTheme>(
+                      value: themeProvider.chatBubbleTheme,
+                      onChanged: (ChatBubbleTheme? newValue) {
+                        if (newValue != null) {
+                          themeProvider.setChatBubbleTheme(newValue);
+                        }
+                      },
+                      items: const [
+                        DropdownMenuItem(
+                          value: ChatBubbleTheme.gradient,
+                          child: Text('Gradient'),
+                        ),
+                        DropdownMenuItem(
+                          value: ChatBubbleTheme.solidGray,
+                          child: Text('Solid Gray/Black'),
+                        ),
+                        DropdownMenuItem(
+                          value: ChatBubbleTheme.solidPurple,
+                          child: Text('Solid Purple'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               );
-            },
+            }
+          ),
+          SwitchListTile(
+            secondary: Icon(Icons.volume_off_outlined),
+            title: Text('Mute App Sounds'),
+            subtitle: Text('Turn off interaction sounds (e.g., likes, saves)'),
+            value: _muteAppSounds,
+            onChanged: _toggleMuteAppSounds,
+            activeColor: AppColors.primary,
           ),
           ListTile(
-            leading: const Icon(Icons.record_voice_over),
-            title: const Text('Reading Voice'),
+            leading: Icon(Icons.record_voice_over),
+            title: Text('Reading Voice'),
             onTap: () {
               Navigator.push(
                 context,
@@ -55,17 +146,17 @@ class SettingsScreen extends StatelessWidget {
             },
           ),
           ListTile(
-            leading: const Icon(Icons.volume_off_outlined),
-            title: const Text('Mute Contacts'),
+            leading: Icon(Icons.volume_off_outlined),
+            title: Text('Mute Contacts'),
             onTap: () {},
           ),
 
-          const Divider(),
+          Divider(),
           _buildSectionHeader('Support'),
           ListTile(
-            leading: const Icon(Icons.help_outline),
-            title: const Text('Help & Support'),
-            subtitle: const Text('Contact us or view FAQs'),
+            leading: Icon(Icons.help_outline),
+            title: Text('Help & Support'),
+            subtitle: Text('Contact us or view FAQs'),
             onTap: () {
               Navigator.push(
                 context,
@@ -74,11 +165,11 @@ class SettingsScreen extends StatelessWidget {
             },
           ),
 
-          const Divider(),
+          Divider(),
           _buildSectionHeader('Spiritual Tools'),
           ListTile(
-            leading: const Icon(Icons.alarm),
-            title: const Text('Set Prayer Time / Alarm'),
+            leading: Icon(Icons.alarm),
+            title: Text('Set Prayer Time / Alarm'),
             onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Prayer alarm coming soon')),
@@ -86,18 +177,42 @@ class SettingsScreen extends StatelessWidget {
             },
           ),
 
-          const Divider(),
+          Divider(),
           _buildSectionHeader('Data & Backup'),
           ListTile(
-            leading: const Icon(Icons.cloud_upload_outlined),
-            title: const Text('Back up to Google Drive'),
-            subtitle: const Text('Save notes, insights, and profile to Drive'),
+            leading: Icon(Icons.cloud_upload_outlined),
+            title: Text('Back up to Google Drive'),
+            subtitle: Text('Save notes, insights, and profile to Drive'),
             onTap: () async {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Starting backup to Google Drive...'),
+              final proceed = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Beta Testing Notice'),
+                  content: const Text(
+                    'We are currently in beta! When you connect your Google Drive, Google may show a warning saying this app isn\'t verified yet.\n\nJust click "Advanced" and then "Continue" to safely enable backups.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Proceed'),
+                    ),
+                  ],
                 ),
               );
+
+              if (proceed != true) return;
+
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Starting backup to Google Drive...'),
+                  ),
+                );
+              }
               try {
                 await BackupService().backupToGoogleDrive();
                 if (context.mounted) {
@@ -115,9 +230,9 @@ class SettingsScreen extends StatelessWidget {
             },
           ),
           ListTile(
-            leading: const Icon(Icons.cloud_download_outlined),
-            title: const Text('Restore from Google Drive'),
-            subtitle: const Text('Restore previously backed up data'),
+            leading: Icon(Icons.cloud_download_outlined),
+            title: Text('Restore from Google Drive'),
+            subtitle: Text('Restore previously backed up data'),
             onTap: () async {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
@@ -141,43 +256,56 @@ class SettingsScreen extends StatelessWidget {
             },
           ),
 
-          const Divider(),
+          Divider(),
           _buildSectionHeader('About'),
           ListTile(
-            leading: const Icon(Icons.help_outline),
-            title: const Text('Help & Feedback'),
+            leading: Icon(Icons.help_outline),
+            title: Text('Help & Feedback'),
             onTap: () {},
           ),
           ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('About Platform'),
+            leading: Icon(Icons.info_outline),
+            title: Text('About Platform'),
             onTap: () {},
           ),
 
-          const Divider(),
+          Divider(),
           _buildSectionHeader('Danger Zone'),
           ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('Log Out', style: TextStyle(color: Colors.red)),
+            leading: Icon(Icons.logout, color: Colors.red),
+            title: Text('Log Out', style: TextStyle(color: Colors.red)),
             onTap: () async {
               Navigator.pop(context);
               await AuthService().signOut();
             },
           ),
           ListTile(
-            leading: const Icon(Icons.delete_forever, color: Colors.red),
-            title: const Text(
+            leading: Icon(Icons.delete_forever, color: Colors.red),
+            title: Text(
               'Delete Account',
               style: TextStyle(color: Colors.red),
             ),
             onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
+                SnackBar(
                   content: Text('Account deletion requires re-auth.'),
                 ),
               );
             },
           ),
+          if (_appVersion.isNotEmpty) ...[
+            SizedBox(height: 16),
+            Center(
+              child: Text(
+                'Version $_appVersion',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            SizedBox(height: 32),
+          ],
         ],
       ),
     );
@@ -185,11 +313,11 @@ class SettingsScreen extends StatelessWidget {
 
   Widget _buildSectionHeader(String title) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Text(
         title,
-        style: const TextStyle(
-          color: Colors.black87,
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.onSurface,
           fontWeight: FontWeight.bold,
           letterSpacing: 0.5,
         ),

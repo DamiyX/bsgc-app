@@ -122,9 +122,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final bytes = await image.readAsBytes();
       final compressed = await FlutterImageCompress.compressWithList(
         bytes,
-        minWidth: 400,
-        minHeight: 400,
-        quality: 70,
+        minWidth: 1000,
+        minHeight: 1000,
+        quality: 85,
       );
 
       final url = await StorageService.uploadFile(compressed, folder: 'profiles');
@@ -186,7 +186,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       try {
         if (user != null) {
           // Update Auth Profile
-          await user!.updateDisplayName(_nameController.text.trim());
+          try {
+            await user!.updateDisplayName(_nameController.text.trim()).timeout(const Duration(seconds: 3));
+          } catch (_) {}
 
           // Update Firestore
           await FirebaseFirestore.instance
@@ -200,7 +202,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     validPhones.first, // keep string for backward compatibility
                 'gender': _selectedGender ?? 'Male',
                 'updatedAt': Timestamp.now(),
-              }, SetOptions(merge: true));
+              }, SetOptions(merge: true)).timeout(const Duration(seconds: 3));
 
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -232,24 +234,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Edit Profile'),
-        backgroundColor: Colors.white,
+        title: Text('Edit Profile'),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black87),
-        systemOverlayStyle: const SystemUiOverlayStyle(
-          statusBarColor: Colors.transparent,
-          statusBarIconBrightness: Brightness.dark,
-          statusBarBrightness: Brightness.light,
-        ),
-      ),
-      backgroundColor: Colors.white,
+        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),      ),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: _isLoading
-          ? const Center(
+          ? Center(
               child: CircularProgressIndicator(color: AppColors.gradientEnd),
             )
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
+              padding: EdgeInsets.all(24.0),
               child: Form(
                 key: _formKey,
                 child: Column(
@@ -260,15 +256,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         children: [
                           CircleAvatar(
                             radius: 50,
-                            backgroundColor: Colors.grey[200],
+                            backgroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
                             backgroundImage: user?.photoURL != null
                                 ? NetworkImage(user!.photoURL!)
                                 : null,
                             child: user?.photoURL == null
-                                ? const Icon(
+                                ? Icon(
                                     Icons.person,
                                     size: 50,
-                                    color: Colors.grey,
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                                   )
                                 : null,
                           ),
@@ -278,12 +274,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             child: GestureDetector(
                               onTap: _pickImage,
                               child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: const BoxDecoration(
+                                padding: EdgeInsets.all(8),
+                                decoration: BoxDecoration(
                                   color: AppColors.gradientEnd,
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(
+                                child: Icon(
                                   Icons.camera_alt,
                                   color: Colors.white,
                                   size: 20,
@@ -294,16 +290,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 32),
+                    SizedBox(height: 32),
 
-                    const Text(
+                    Text(
                       'Full Name',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: Colors.black54,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    SizedBox(height: 8),
                     TextFormField(
                       controller: _nameController,
                       decoration: InputDecoration(
@@ -312,24 +308,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: AppColors.gradientEnd, width: 2.0),
+                          borderSide: BorderSide(color: AppColors.gradientEnd, width: 2.0),
                         ),
-                        prefixIcon: const Icon(Icons.person_outline),
+                        prefixIcon: Icon(Icons.person_outline),
                       ),
                       validator: (val) => val == null || val.isEmpty
                           ? 'Name is required'
                           : null,
                     ),
-                    const SizedBox(height: 24),
+                    SizedBox(height: 24),
 
-                    const Text(
+                    Text(
                       'About Yourself',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: Colors.black54,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    SizedBox(height: 8),
                     TextFormField(
                       controller: _bioController,
                       maxLength: 150,
@@ -340,21 +336,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: AppColors.gradientEnd, width: 2.0),
+                          borderSide: BorderSide(color: AppColors.gradientEnd, width: 2.0),
                         ),
-                        prefixIcon: const Icon(Icons.info_outline),
+                        prefixIcon: Icon(Icons.info_outline),
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: 12),
 
-                    const Text(
+                    Text(
                       'Email Address',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: Colors.black54,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    SizedBox(height: 8),
                     TextFormField(
                       controller: _emailController,
                       enabled: false,
@@ -362,25 +358,25 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        prefixIcon: const Icon(Icons.email_outlined),
-                        fillColor: Colors.grey[100],
+                        prefixIcon: Icon(Icons.email_outlined),
+                        fillColor: Theme.of(context).colorScheme.onSurfaceVariant,
                         filled: true,
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    SizedBox(height: 24),
 
-                    const Text(
+                    Text(
                       'Phone Numbers',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: Colors.black54,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    SizedBox(height: 8),
 
                     ...List.generate(_phoneControllers.length, (index) {
                       return Padding(
-                        padding: const EdgeInsets.only(bottom: 12.0),
+                        padding: EdgeInsets.only(bottom: 12.0),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -393,7 +389,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                   ),
                                   focusedBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
-                                    borderSide: const BorderSide(color: AppColors.gradientEnd, width: 2.0),
+                                    borderSide: BorderSide(color: AppColors.gradientEnd, width: 2.0),
                                   ),
                                 ),
                                 initialCountryCode: 'NG',
@@ -405,7 +401,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             ),
                             if (_phoneControllers.length > 1)
                               IconButton(
-                                icon: const Icon(
+                                icon: Icon(
                                   Icons.remove_circle_outline,
                                   color: Colors.red,
                                 ),
@@ -420,23 +416,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       alignment: Alignment.centerLeft,
                       child: TextButton.icon(
                         onPressed: _addPhoneNumberField,
-                        icon: const Icon(Icons.add, color: AppColors.gradientEnd),
-                        label: const Text(
+                        icon: Icon(Icons.add, color: AppColors.gradientEnd),
+                        label: Text(
                           'Add another number',
                           style: TextStyle(color: AppColors.gradientEnd),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    SizedBox(height: 24),
 
-                    const Text(
+                    Text(
                       'Gender',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: Colors.black54,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    SizedBox(height: 8),
                     DropdownButtonFormField<String>(
                       initialValue: _selectedGender,
                       decoration: InputDecoration(
@@ -445,9 +441,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: AppColors.gradientEnd, width: 2.0),
+                          borderSide: BorderSide(color: AppColors.gradientEnd, width: 2.0),
                         ),
-                        prefixIcon: const Icon(Icons.wc),
+                        prefixIcon: Icon(Icons.wc),
                       ),
                       items: ['Male', 'Female'].map((String val) {
                         return DropdownMenuItem(value: val, child: Text(val));
@@ -458,7 +454,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         }
                       },
                     ),
-                    const SizedBox(height: 48),
+                    SizedBox(height: 48),
 
                     SizedBox(
                       width: double.infinity,
@@ -471,7 +467,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           ),
                         ),
                         onPressed: _saveProfile,
-                        child: const Text(
+                        child: Text(
                           'Save Changes',
                           style: TextStyle(
                             color: Colors.white,

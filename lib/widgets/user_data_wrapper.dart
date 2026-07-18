@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:bsgc_app/screens/main_hall_screen.dart';
 import 'package:bsgc_app/screens/onboarding_screen.dart';
 import 'package:bsgc_app/screens/inviter_selection_screen.dart';
+import '../theme.dart';
 
 class UserDataWrapper extends StatelessWidget {
   const UserDataWrapper({super.key});
@@ -12,7 +13,7 @@ class UserDataWrapper extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(body: Center(child: CircularProgressIndicator(color: AppColors.gradientEnd)));
     }
 
     return FutureBuilder<DocumentSnapshot>(
@@ -22,8 +23,8 @@ class UserDataWrapper extends StatelessWidget {
           .get(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+          return Scaffold(
+            body: Center(child: CircularProgressIndicator(color: AppColors.gradientEnd)),
           );
         }
 
@@ -58,3 +59,4 @@ class UserDataWrapper extends StatelessWidget {
     );
   }
 }
+

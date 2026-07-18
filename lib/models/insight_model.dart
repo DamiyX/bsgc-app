@@ -11,6 +11,7 @@ class InsightModel {
   final List<String> seenBy;
   final List<String> likedBy; // Add likedBy field
   final DateTime createdAt;
+  final DateTime updatedAt;
   final DateTime expiresAt;
 
   InsightModel({
@@ -24,6 +25,7 @@ class InsightModel {
     this.seenBy = const [],
     this.likedBy = const [], // Default to empty
     required this.createdAt,
+    required this.updatedAt,
     required this.expiresAt,
   });
 
@@ -40,6 +42,7 @@ class InsightModel {
       seenBy: List<String>.from(data['seenBy'] ?? []),
       likedBy: List<String>.from(data['likedBy'] ?? []), // Parse likedBy
       createdAt: (data['createdAt'] as Timestamp).toDate(),
+      updatedAt: data['updatedAt'] != null ? (data['updatedAt'] as Timestamp).toDate() : (data['createdAt'] as Timestamp).toDate(),
       expiresAt: (data['expiresAt'] as Timestamp).toDate(),
     );
   }
@@ -55,6 +58,7 @@ class InsightModel {
       'seenBy': seenBy,
       'likedBy': likedBy, // Serialize likedBy
       'createdAt': Timestamp.fromDate(createdAt),
+      'updatedAt': Timestamp.fromDate(updatedAt),
       'expiresAt': Timestamp.fromDate(expiresAt),
     };
   }

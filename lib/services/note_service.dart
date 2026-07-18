@@ -17,12 +17,21 @@ class NoteService {
   }
 
   Future<void> saveNote(NoteModel note) async {
-    await _firestore
-        .collection('users')
-        .doc(note.authorUid)
-        .collection('notes')
-        .doc(note.id)
-        .set(note.toMap());
+    try {
+      await _firestore
+          .collection('users')
+          .doc(note.authorUid)
+          .collection('notes')
+          .doc(note.id)
+          .set(note.toMap())
+          .timeout(const Duration(seconds: 3));
+    } catch (e) {
+      if (e.toString().contains('TimeoutException')) {
+        // Assume offline or slow connection, proceed locally
+      } else {
+        rethrow;
+      }
+    }
   }
 
   Future<void> deleteNote(String userId, String noteId) async {

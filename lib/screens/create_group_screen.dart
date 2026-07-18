@@ -180,16 +180,16 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     final picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
+      lastDate: DateTime.now().add(Duration(days: 365 * 5)),
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
+            colorScheme: ColorScheme.light(
               primary: AppColors.gradientEnd,
               secondary: AppColors.gradientEnd,
               surface: Colors.white,
               onPrimary: Colors.white,
-              onSurface: Colors.black87,
+              onSurface: Theme.of(context).colorScheme.onSurface,
             ),
             dialogBackgroundColor: Colors.white,
           ),
@@ -277,35 +277,29 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('Add Plan', style: TextStyle(color: Colors.black87)),
-        backgroundColor: Colors.white,
+        title: Text('Add Plan', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87))),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black87),
-        systemOverlayStyle: const SystemUiOverlayStyle(
-          statusBarColor: Colors.transparent,
-          statusBarIconBrightness: Brightness.dark,
-          statusBarBrightness: Brightness.light,
-        ),
-      ),
+        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),      ),
       body: _isLoading
-          ? const Center(
+          ? Center(
               child: CircularProgressIndicator(color: AppColors.gradientEnd),
             )
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
+              padding: EdgeInsets.all(16.0),
               child: Form(
                 key: _formKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     TextFormField(
-                      cursorColor: Colors.black,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      cursorColor: Theme.of(context).colorScheme.onSurface,
+                      style: TextStyle(fontWeight: FontWeight.bold),
                       decoration: InputDecoration(
                         labelText: 'Group Name',
-                        labelStyle: const TextStyle(color: AppColors.primary),
+                        labelStyle: TextStyle(color: AppColors.primary),
                         border: const OutlineInputBorder(),
                         focusedBorder: OutlineInputBorder(
                           borderSide: BorderSide(color: AppColors.gradientEnd.withValues(alpha: 0.5)),
@@ -315,16 +309,16 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                           val == null || val.isEmpty ? 'Required' : null,
                       onChanged: (val) => _groupName = val,
                     ),
-                    const SizedBox(height: 24),
+                    SizedBox(height: 24),
 
-                    const Text(
+                    Text(
                       'Plan Type',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: 12),
 
                     _buildPlanTypeCard(
                       title: 'Bible',
@@ -334,7 +328,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       isSelected: _groupType == 'Bible',
                       onTap: () => setState(() => _groupType = 'Bible'),
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: 12),
                     _buildPlanTypeCard(
                       title: 'Topic',
                       description:
@@ -343,14 +337,14 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       isSelected: _groupType == 'Topic',
                       onTap: () => setState(() => _groupType = 'Topic'),
                     ),
-                    const SizedBox(height: 24),
+                    SizedBox(height: 24),
 
                     if (_groupType == 'Bible') ...[
-                      const Text(
+                      Text(
                         'Select Book',
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      const SizedBox(height: 8),
+                      SizedBox(height: 8),
                       DropdownButtonFormField<String>(
                         decoration: InputDecoration(
                           border: const OutlineInputBorder(),
@@ -359,7 +353,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                           ),
                         ),
                         initialValue: _selectedBook,
-                        hint: const Text('Choose a Bible Book'),
+                        hint: Text('Choose a Bible Book'),
                         items: _bibleBooks.map((book) {
                           return DropdownMenuItem(
                             value: book,
@@ -369,11 +363,11 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                         onChanged: (val) => setState(() => _selectedBook = val),
                       ),
                     ] else ...[
-                      const Text(
+                      Text(
                         'Select Topic',
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      const SizedBox(height: 8),
+                      SizedBox(height: 8),
                       DropdownButtonFormField<String>(
                         decoration: InputDecoration(
                           border: const OutlineInputBorder(),
@@ -382,7 +376,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                           ),
                         ),
                         initialValue: _selectedTopic,
-                        hint: const Text('Choose a Topic'),
+                        hint: Text('Choose a Topic'),
                         items: _commonTopics.map((topic) {
                           return DropdownMenuItem(
                             value: topic,
@@ -396,15 +390,15 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                           });
                         },
                       ),
-                      const SizedBox(height: 12),
-                      const Text(
+                      SizedBox(height: 12),
+                      Text(
                         'Or type your own topic:',
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      const SizedBox(height: 8),
+                      SizedBox(height: 8),
                       TextFormField(
                         controller: _customTopicController,
-                        cursorColor: Colors.black,
+                        cursorColor: Theme.of(context).colorScheme.onSurface,
                         decoration: InputDecoration(
                           hintText: 'Custom topic',
                           border: const OutlineInputBorder(),
@@ -420,23 +414,23 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       ),
                     ],
 
-                    const SizedBox(height: 24),
-                    const Text(
+                    SizedBox(height: 24),
+                    Text(
                       'Duration',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: 12),
                     ListTile(
                       shape: RoundedRectangleBorder(
-                        side: const BorderSide(color: Colors.black12),
+                        side: BorderSide(color: Theme.of(context).dividerColor),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      leading: const Icon(
+                      leading: Icon(
                         Icons.calendar_today,
-                        color: Colors.black87,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
                       ),
                       title: Text(
                         _startDate == null || _endDate == null
@@ -446,7 +440,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       onTap: _selectDateRange,
                     ),
 
-                    const SizedBox(height: 40),
+                    SizedBox(height: 40),
                     SizedBox(
                       width: double.infinity,
                       height: 50,
@@ -456,14 +450,14 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                           backgroundColor: AppColors.gradientEnd,
                           foregroundColor: Colors.white,
                         ),
-                        icon: const Icon(Icons.check),
-                        label: const Text(
+                        icon: Icon(Icons.check),
+                        label: Text(
                           'Create Group & Invite',
                           style: TextStyle(fontSize: 16),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    SizedBox(height: 24),
                   ],
                 ),
               ),
@@ -481,26 +475,26 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(16),
         decoration: BoxDecoration(
           border: Border.all(
-            color: isSelected ? AppColors.primary : Colors.black12,
+            color: isSelected ? AppColors.primary : Theme.of(context).colorScheme.onSurface,
             width: isSelected ? 2 : 1,
           ),
           borderRadius: BorderRadius.circular(12),
           color: isSelected
               ? AppColors.primary.withValues(alpha: 0.05)
-              : Colors.white,
+              : Theme.of(context).colorScheme.surface,
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(
               icon,
-              color: isSelected ? AppColors.primary : Colors.black54,
+              color: isSelected ? AppColors.primary : Theme.of(context).colorScheme.onSurfaceVariant,
               size: 28,
             ),
-            const SizedBox(width: 16),
+            SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -510,13 +504,13 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: isSelected ? AppColors.primary : Colors.black87,
+                      color: isSelected ? AppColors.primary : Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  SizedBox(height: 4),
                   Text(
                     description,
-                    style: const TextStyle(color: Colors.black54),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
                   ),
                 ],
               ),

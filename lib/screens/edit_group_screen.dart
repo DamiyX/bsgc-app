@@ -72,33 +72,33 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Edit Group Details'),
-        backgroundColor: Colors.white,
+        title: Text('Edit Group Details'),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       ),
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: _isLoading
-          ? Center(child: CircularProgressIndicator())
+          ? Center(child: CircularProgressIndicator(color: AppColors.gradientEnd))
           : SingleChildScrollView(
               child: Padding(
-                padding: const EdgeInsets.all(24.0),
+                padding: EdgeInsets.all(24.0),
                 child: Form(
                   key: _formKey,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Group Info',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      const SizedBox(height: 24),
+                      SizedBox(height: 24),
                       TextFormField(
                         controller: _nameController,
                         decoration: InputDecoration(
                           labelText: 'Group Name',
-                          prefixIcon: const Icon(Icons.group),
+                          prefixIcon: Icon(Icons.group),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -108,12 +108,12 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                                 ? 'Please enter a name'
                                 : null,
                       ),
-                      const SizedBox(height: 16),
+                      SizedBox(height: 16),
                       TextFormField(
                         controller: _descController,
                         decoration: InputDecoration(
                           labelText: 'Description',
-                          prefixIcon: const Icon(Icons.description),
+                          prefixIcon: Icon(Icons.description),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -121,7 +121,7 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                         ),
                         maxLines: 4,
                       ),
-                      const SizedBox(height: 32),
+                      SizedBox(height: 32),
                       SizedBox(
                         width: double.infinity,
                         height: 50,
@@ -133,7 +133,7 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                             ),
                           ),
                           onPressed: _saveGroup,
-                          child: const Text(
+                          child: Text(
                             'Save Changes',
                             style: TextStyle(
                               color: Colors.white,
@@ -158,3 +158,4 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
     super.dispose();
   }
 }
+

@@ -49,13 +49,14 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
         body: body,
         themeId: 'theme_0', // Default fallback
         createdAt: now,
+        updatedAt: now,
         expiresAt: now.add(const Duration(days: 3)),
       );
 
-      await _insightService.createInsight(insight); 
+      _insightService.createInsight(insight); 
       
       // Artificial delay so the user sees it "loading"
-      await Future.delayed(const Duration(milliseconds: 500));
+      await Future.delayed(const Duration(milliseconds: 300));
       
       if (mounted) {
         setState(() {
@@ -85,20 +86,20 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black87),
-        title: const Text('Add Insight', style: TextStyle(color: Colors.black87)),
+        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
+        title: Text('Add Insight', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87))),
         actions: [
           if (_isSuccess)
-            const Padding(
+            Padding(
               padding: EdgeInsets.all(16.0),
               child: Icon(Icons.check_circle, color: AppColors.gradientEnd, size: 28),
             )
           else if (_isPublishing)
-            const Padding(
+            Padding(
               padding: EdgeInsets.all(16.0),
               child: SizedBox(
                 width: 20,
@@ -109,33 +110,33 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
           else
             TextButton(
               onPressed: _publishInsight,
-              child: const Text(
+              child: Text(
                 'Publish',
-                style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 16),
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87), fontWeight: FontWeight.bold, fontSize: 16),
               ),
             ),
         ],
       ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               TextField(
-                cursorColor: Colors.black,
+                cursorColor: Theme.of(context).colorScheme.onSurface,
                 controller: _titleController,
                 maxLines: null,
-                style: const TextStyle(
-                  color: Colors.black,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                   height: 1.2,
                 ),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: 'Title',
                   hintStyle: TextStyle(
-                    color: Colors.black38,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
@@ -145,23 +146,23 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: 16),
               Expanded(
                 child: TextField(
-                  cursorColor: Colors.black,
+                  cursorColor: Theme.of(context).colorScheme.onSurface,
                   controller: _bodyController,
                   maxLines: null,
                   expands: true,
                   textAlignVertical: TextAlignVertical.top,
-                  style: const TextStyle(
-                    color: Colors.black87,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
                     fontSize: 16,
                     height: 1.5,
                   ),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: 'Type your insight...',
                     hintStyle: TextStyle(
-                      color: Colors.black38,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                       fontSize: 16,
                     ),
                     border: InputBorder.none,

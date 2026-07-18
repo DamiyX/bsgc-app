@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/theme_provider.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:flutter/services.dart';
@@ -8,7 +10,10 @@ import '../models/group_model.dart';
 import '../models/message_model.dart';
 import '../services/chat_service.dart';
 import '../services/audio_service.dart';
+import '../services/notification_service.dart';
+import '../services/contact_cache_service.dart';
 import '../widgets/voice_message_bubble.dart';
+import '../widgets/expandable_rich_text.dart';
 import 'group_details_screen.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../theme.dart';
@@ -21,7 +26,6 @@ import '../widgets/bible_verse_bottom_sheet.dart';
 import '../widgets/add_member_sheet.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 
 enum TtsState { playing, paused, stopped }
 
@@ -74,7 +78,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
   // Pagination
   int _messageLimit = 20;
   bool _isLoadingMore = false;
-  bool _hasMoreMessages = true;
+  final bool _hasMoreMessages = true;
 
   void _onScroll() {
     if (_scrollController.hasClients) {
@@ -112,6 +116,36 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     if (_scrollController.hasClients) {
       _scrollController.jumpTo(0.0);
     }
+  }
+
+  String _getReplyMessageSummary(MessageModel msg) {
+    if (msg.isDeleted) return 'Deleted message';
+    if (msg.parts.isEmpty) return '';
+
+    List<String> summaries = [];
+    bool hasMultiple = msg.parts.length > 1;
+    
+    for (var part in msg.parts) {
+      if (part.type == MessageType.text) {
+        String text = part.content;
+        if (hasMultiple) {
+            String singleLine = text.replaceAll('\n', ' ').trim();
+            if (singleLine.length > 50) {
+               singleLine = singleLine.substring(0, 50) + '...';
+            }
+            summaries.add(singleLine);
+        } else {
+            summaries.add(text);
+        }
+      } else if (part.type == MessageType.voice) {
+        summaries.add('🎤 Voice Note');
+      } else if (part.type == MessageType.image) {
+        summaries.add('📷 Photo');
+      } else if (part.type == MessageType.video) {
+        summaries.add('🎥 Video');
+      }
+    }
+    return summaries.join('\n');
   }
 
   @override
@@ -155,7 +189,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     int index = widget.group.members.indexOf(userId);
     if (index < 0) {
       int asciiSum = 0;
-      for (int i = 0; i < userId.length; i++) asciiSum += userId.codeUnitAt(i);
+      for (int i = 0; i < userId.length; i++) {
+        asciiSum += userId.codeUnitAt(i);
+      }
       index = asciiSum;
     }
     return colors[index % colors.length];
@@ -253,7 +289,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
         _chatService.sendHybridMessage(
           widget.group.id,
           partsToSend,
-          replyToMessageId: _replyToMessageId,
+          replyToMessageId: replyId,
         );
         _replyToMessageId = null;
         if (_scrollController.hasClients) {
@@ -372,6 +408,11 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
 
   Future<void> _uploadAndSendAttachment(Uint8List bytes, String extension, MessageType type, String mimeType) async {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Uploading ${type.name}...')));
+    final replyId = _replyToMessageId;
+    setState(() {
+      _replyToMessageId = null;
+      _replyToMessage = null;
+    });
     try {
       Uint8List uploadBytes = bytes;
       if (type == MessageType.image) {
@@ -390,6 +431,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
         _chatService.sendHybridMessage(
           widget.group.id,
           [MessagePart(type: type, content: url)],
+          replyToMessageId: replyId,
         );
         if (_scrollController.hasClients) {
           _jumpToBottom();
@@ -416,8 +458,8 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.image, color: Colors.blue),
-              title: const Text('Image'),
+              leading: Icon(Icons.image, color: Colors.blue),
+              title: Text('Image'),
               onTap: () async {
                 Navigator.pop(context);
                 final result = await ImagePicker().pickImage(source: ImageSource.gallery);
@@ -428,8 +470,8 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.videocam, color: Colors.red),
-              title: const Text('Video'),
+              leading: Icon(Icons.videocam, color: Colors.red),
+              title: Text('Video'),
               onTap: () async {
                 Navigator.pop(context);
                 final result = await ImagePicker().pickVideo(source: ImageSource.gallery);
@@ -440,8 +482,8 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.insert_drive_file, color: Colors.orange),
-              title: const Text('Document'),
+              leading: Icon(Icons.insert_drive_file, color: Colors.orange),
+              title: Text('Document'),
               onTap: () async {
                 Navigator.pop(context);
                 final result = await FilePicker.platform.pickFiles(type: FileType.any, withData: true);
@@ -461,11 +503,11 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Message'),
+        title: Text('Delete Message'),
         content: Text(forEveryone ? 'Delete this message for everyone?' : 'Delete this message for yourself?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: Text('Delete', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -480,6 +522,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
 
   void _toggleStar(MessageModel msg) async {
     final isStarred = msg.starredBy.contains(_currentUserId);
+    if (!isStarred) {
+      NotificationService().playActionSound();
+    }
     await _chatService.toggleStarMessage(widget.group.id, msg.id, isStarred);
   }
 
@@ -487,11 +532,11 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Clear Chat'),
-        content: const Text('Are you sure you want to clear all messages for yourself? This action cannot be undone.'),
+        title: Text('Clear Chat'),
+        content: Text('Are you sure you want to clear all messages for yourself? This action cannot be undone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Clear', style: TextStyle(color: Colors.red))),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: Text('Clear', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -518,8 +563,8 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.reply),
-              title: const Text('Reply'),
+              leading: Icon(Icons.reply),
+              title: Text('Reply'),
               onTap: () {
                 Navigator.pop(context);
                 _setReply(message);
@@ -527,10 +572,10 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
             ),
             ListTile(
               leading: Icon(
-                message.starredBy.contains(_currentUserId) ? Icons.star : Icons.star_border,
-                color: message.starredBy.contains(_currentUserId) ? Colors.orange : null,
+                message.starredBy.contains(_currentUserId) ? Icons.thumb_up : Icons.thumb_up_alt_outlined,
+                color: message.starredBy.contains(_currentUserId) ? Theme.of(context).colorScheme.onSurface : null,
               ),
-              title: Text(message.starredBy.contains(_currentUserId) ? 'Unstar' : 'Star'),
+              title: Text(message.starredBy.contains(_currentUserId) ? 'Unlike' : 'Like'),
               onTap: () {
                 Navigator.pop(context);
                 _toggleStar(message);
@@ -538,24 +583,24 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
             ),
             if (isMe) ...[
               ListTile(
-                leading: const Icon(Icons.edit),
-                title: const Text('Edit'),
+                leading: Icon(Icons.edit),
+                title: Text('Edit'),
                 onTap: () {
                   Navigator.pop(context);
                   _beginEditMessage(message);
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.delete, color: Colors.redAccent),
-                title: const Text('Delete for Me', style: TextStyle(color: Colors.redAccent)),
+                leading: Icon(Icons.delete, color: Colors.redAccent),
+                title: Text('Delete for Me', style: TextStyle(color: Colors.redAccent)),
                 onTap: () {
                   Navigator.pop(context);
                   _deleteMessage(message, false);
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.delete_forever, color: Colors.redAccent),
-                title: const Text('Delete for Everyone', style: TextStyle(color: Colors.redAccent)),
+                leading: Icon(Icons.delete_forever, color: Colors.redAccent),
+                title: Text('Delete for Everyone', style: TextStyle(color: Colors.redAccent)),
                 onTap: () {
                   Navigator.pop(context);
                   _deleteMessage(message, true);
@@ -641,68 +686,79 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFAFA),
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(kToolbarHeight),
-        child: GestureDetector(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.bug_report, color: Colors.transparent),
+            onPressed: _seedMockMessages,
+          ),
+          PopupMenuButton<String>(
+            icon: Icon(Icons.more_vert, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
+            onSelected: (value) {
+              if (value == 'clear') {
+                _confirmClearChat();
+              } else if (value == 'add_members') {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (context) => AddMemberSheet(groupId: widget.group.id),
+                );
+              } else if (value == 'theme_gradient') {
+                Provider.of<ThemeProvider>(context, listen: false).setChatBubbleTheme(ChatBubbleTheme.gradient);
+              } else if (value == 'theme_gray') {
+                Provider.of<ThemeProvider>(context, listen: false).setChatBubbleTheme(ChatBubbleTheme.solidGray);
+              } else if (value == 'theme_purple') {
+                Provider.of<ThemeProvider>(context, listen: false).setChatBubbleTheme(ChatBubbleTheme.solidPurple);
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'add_members',
+                child: Text('Add Members'),
+              ),
+              const PopupMenuItem(
+                value: 'theme_gradient',
+                child: Text('Use Gradient Bubbles'),
+              ),
+              const PopupMenuItem(
+                value: 'theme_gray',
+                child: Text('Use Gray/Black Bubbles'),
+              ),
+              const PopupMenuItem(
+                value: 'theme_purple',
+                child: Text('Use Solid Purple Bubbles'),
+              ),
+              const PopupMenuItem(
+                value: 'clear',
+                child: Text('Clear Chat'),
+              ),
+            ],
+          ),
+        ],
+        title: GestureDetector(
           onTap: () {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => GroupDetailsScreen(group: widget.group)),
             );
           },
-          child: AppBar(
-            backgroundColor: Colors.white,
-            surfaceTintColor: Colors.transparent,
-            elevation: 0,
-            iconTheme: const IconThemeData(color: Colors.black87),
-            systemOverlayStyle: const SystemUiOverlayStyle(
-              statusBarColor: Colors.transparent,
-              statusBarIconBrightness: Brightness.dark,
-              statusBarBrightness: Brightness.light,
-            ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.bug_report, color: Colors.transparent),
-                onPressed: _seedMockMessages,
-              ),
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert, color: Colors.black87),
-                onSelected: (value) {
-                  if (value == 'clear') {
-                    _confirmClearChat();
-                  } else if (value == 'add_members') {
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (context) => AddMemberSheet(groupId: widget.group.id),
-                    );
-                  }
-                },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'add_members',
-                    child: Text('Add Members'),
-                  ),
-                  const PopupMenuItem(
-                    value: 'clear',
-                    child: Text('Clear Chat'),
-                  ),
-                ],
-              ),
-            ],
-            title: Row(
+          child: Row(
               children: [
                 if (widget.group.photoUrl != null && widget.group.photoUrl!.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.only(right: 12.0),
+                    padding: EdgeInsets.only(right: 12.0),
                     child: Container(
                       width: 32,
                       height: 48,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(4),
-                        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 1))],
+                        boxShadow: [BoxShadow(color: Theme.of(context).dividerColor, blurRadius: 2, offset: Offset(0, 1))],
                         image: DecorationImage(
                           image: NetworkImage(widget.group.photoUrl!),
                           fit: BoxFit.cover,
@@ -716,22 +772,22 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                     children: [
                       Text(
                         widget.group.name,
-                        style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w600, fontSize: 18),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87), fontWeight: FontWeight.w600, fontSize: 18),
                       ),
                       Row(
                         children: [
                           Text(
                             '${widget.group.members.length} members, 1 online',
-                            style: const TextStyle(color: Colors.black54, fontSize: 12),
+                            style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 12),
                           ),
                           if (widget.group.pinnedScripture.isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            const Text('•', style: TextStyle(color: Colors.black54, fontSize: 12)),
-                            const SizedBox(width: 8),
+                            SizedBox(width: 8),
+                            Text('•', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 12)),
+                            SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 widget.group.pinnedScripture,
-                                style: const TextStyle(fontFamily: 'Merriweather', fontStyle: FontStyle.italic, color: Colors.black54, fontSize: 12),
+                                style: TextStyle(fontFamily: 'Merriweather', fontStyle: FontStyle.italic, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 12),
                                 maxLines: 1, overflow: TextOverflow.ellipsis,
                               ),
                             ),
@@ -745,7 +801,6 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
             ),
           ),
         ),
-      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -761,10 +816,10 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                         }
                         
                         if (snapshot.connectionState == ConnectionState.waiting && _cachedMessages.isEmpty) {
-                          return const Center(child: CircularProgressIndicator(color: Colors.black));
+                          return Center(child: CircularProgressIndicator(color: AppColors.gradientEnd));
                         }
                         if (snapshot.hasError && _cachedMessages.isEmpty) {
-                          return const Center(child: Text('Error loading messages'));
+                          return Center(child: Text('Error loading messages'));
                         }
                         
                         final messages = _cachedMessages
@@ -784,8 +839,8 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                         }
 
                         if (messages.isEmpty) {
-                          return const Center(
-                            child: Text('This room is quiet. Share an insight.', style: TextStyle(color: Colors.black54)),
+                          return Center(
+                            child: Text('This room is quiet. Share an insight.', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54))),
                           );
                         }
 
@@ -797,13 +852,13 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                           child: ListView.builder(
                             controller: _scrollController,
                             reverse: true,
-                            padding: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 48), // Increased bottom padding
+                            padding: EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 48), // Increased bottom padding
                             itemCount: messages.length + (_isLoadingMore && _hasMoreMessages ? 1 : 0),
                             itemBuilder: (context, index) {
                               if (index == messages.length) {
-                                return const Padding(
+                                return Padding(
                                   padding: EdgeInsets.symmetric(vertical: 16.0),
-                                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                                  child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.gradientEnd)),
                                 );
                               }
                               
@@ -819,9 +874,22 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
 
                               return Container(
                                 key: _messageKeys.putIfAbsent(message.id, () => GlobalKey()),
-                                child: GestureDetector(
-                                  onLongPress: () => _showBubbleMenu(message),
-                                  child: _buildMessageBubble(message, isMe, messages, showAvatar),
+                                child: Dismissible(
+                                  key: Key('dismiss_${message.id}'),
+                                  direction: DismissDirection.startToEnd,
+                                  confirmDismiss: (direction) async {
+                                    _setReply(message);
+                                    return false; // Don't actually dismiss
+                                  },
+                                  background: Container(
+                                    alignment: Alignment.centerLeft,
+                                    padding: EdgeInsets.only(left: 24.0),
+                                    child: Icon(Icons.reply, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                                  ),
+                                  child: GestureDetector(
+                                    onLongPress: () => _showBubbleMenu(message),
+                                    child: _buildMessageBubble(message, isMe, messages, showAvatar, index),
+                                  ),
                                 ),
                               );
                             },
@@ -843,12 +911,12 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                             width: 44,
                             height: 44,
                             decoration: BoxDecoration(
-                              color: Colors.grey[300],
+                              color: Theme.of(context).colorScheme.surfaceContainerHighest,
                               shape: BoxShape.circle,
-                              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))],
+                              boxShadow: [BoxShadow(color: Theme.of(context).dividerColor, blurRadius: 4, offset: Offset(0, 2))],
                             ),
-                            child: const Center(
-                              child: Icon(Icons.arrow_downward, color: Colors.black87, size: 20),
+                            child: Center(
+                              child: Icon(Icons.arrow_downward, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87), size: 20),
                             ),
                           ),
                         ).animate().fade().scale(),
@@ -866,7 +934,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
 
   Widget _buildAvatar(MessageModel message) {
     final color = _getAvatarColor(message.senderId);
-    final progress = widget.group.readingProgress[message.senderId] ?? 0.0;
+    final progress = widget.group.groupType == 'Bible' 
+        ? (widget.group.readingProgress[message.senderId] ?? 0.0) 
+        : 1.0;
     final showPercentage = _showProgressForMessage[message.id] ?? false;
 
     return GestureDetector(
@@ -891,30 +961,29 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          if (widget.group.groupType == 'Bible')
-            SizedBox(
-              width: 32,
-              height: 32,
-              child: CircularProgressIndicator(
-                value: progress,
-                strokeWidth: 2.0,
-                backgroundColor: Colors.black12,
-                valueColor: AlwaysStoppedAnimation<Color>(color),
-              ),
+          SizedBox(
+            width: 32,
+            height: 32,
+            child: CircularProgressIndicator(
+              value: progress,
+              strokeWidth: 2.0,
+              backgroundColor: Theme.of(context).colorScheme.onSurface,
+              valueColor: AlwaysStoppedAnimation<Color>(color),
             ),
+          ),
           if (showPercentage)
             Container(
               width: 26,
               height: 26,
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.black12),
+                color: Theme.of(context).cardColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: Theme.of(context).dividerColor),
               ),
               alignment: Alignment.center,
               child: Text(
                 '${(progress * 100).toInt()}%',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: color),
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: color),
               ),
             )
           else
@@ -922,13 +991,14 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
               width: 26,
               height: 26,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                color: Colors.black12,
+                shape: BoxShape.circle,
+                color: Theme.of(context).dividerColor,
               ),
-              clipBehavior: Clip.antiAlias,
-              child: message.senderPhotoUrl != null && message.senderPhotoUrl!.isNotEmpty
-                  ? Image.network(message.senderPhotoUrl!, fit: BoxFit.cover)
-                  : const Icon(Icons.person, size: 14, color: Colors.black45),
+              child: ClipOval(
+                child: message.senderPhotoUrl != null && message.senderPhotoUrl!.isNotEmpty
+                    ? Image.network(message.senderPhotoUrl!, fit: BoxFit.cover)
+                    : Icon(Icons.person, size: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45)),
+              ),
             ),
         ],
       ),
@@ -1004,12 +1074,13 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
   Widget _buildLightningEffect(String senderId) {
     final color = _getAvatarColor(senderId);
     return LayoutBuilder(
+      key: UniqueKey(),
       builder: (context, constraints) {
         return Container(
           width: 4,
           height: constraints.maxHeight,
           clipBehavior: Clip.hardEdge,
-          decoration: const BoxDecoration(),
+          decoration: BoxDecoration(),
           child: Stack(
             children: [
               Positioned(
@@ -1041,64 +1112,212 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     );
   }
 
-  Widget _buildAIThreadMessage(MessageModel message, List<MessageModel> allMessages) {
+   Widget _buildAIThreadMessage(MessageModel message, List<MessageModel> allMessages, int index) {
+    bool isFirstInGroup = index == allMessages.length - 1 || allMessages[index + 1].senderId != message.senderId;
+    bool isLastInGroup = index == 0 || allMessages[index - 1].senderId != message.senderId;
+
+    int messagesInGroup = 1;
+    if (isLastInGroup) {
+      int curr = index + 1;
+      while (curr < allMessages.length && allMessages[curr].senderId == message.senderId) {
+        messagesInGroup++;
+        curr++;
+      }
+    }
+
+    MessageModel? replyMsg;
+    if (message.replyToMessageId != null) {
+      try {
+        replyMsg = allMessages.firstWhere((m) => m.id == message.replyToMessageId);
+      } catch (e) {
+        replyMsg = null;
+      }
+    }
+
     List<Widget> threadNodes = [];
-    for (var part in message.parts) {
-      if (part.type == MessageType.text) {
-        final paragraphs = part.content.split(RegExp(r'\n\n|\s{3,}'));
-        for (var p in paragraphs) {
-          final text = p.trim();
+    if (replyMsg != null) {
+       threadNodes.add(
+           GestureDetector(
+             onTap: () => _scrollToMessage(replyMsg!.id, allMessages),
+             child: Container(
+                margin: EdgeInsets.only(bottom: 8),
+                padding: EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border(left: BorderSide(color: _getAvatarColor(replyMsg.senderId), width: 3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      ContactCacheService().getContactName(replyMsg.senderId, replyMsg.senderName),
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: _getAvatarColor(replyMsg.senderId)),
+                    ),
+                    Text(
+                      _getReplyMessageSummary(replyMsg),
+                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+           )
+       );
+    }
+
+    if (message.isDeleted) {
+      threadNodes.add(
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildAvatar(message),
+            SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    ContactCacheService().getContactName(message.senderId, message.senderName),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _getAvatarColor(message.senderId)),
+                  ),
+                  SizedBox(height: 4),
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Theme.of(context).dividerColor),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.block, size: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                        SizedBox(width: 8),
+                        Text('Deleted message', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontStyle: FontStyle.italic)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      for (var part in message.parts) {
+        if (part.type == MessageType.text) {
+          final text = part.content.trim();
           if (text.isNotEmpty) {
              threadNodes.add(_buildThreadTextNode(text));
           }
+        } else if (part.type == MessageType.voice) {
+          threadNodes.add(_buildThreadVoiceNode(part, message));
+        } else if (part.type == MessageType.image) {
+          threadNodes.add(
+            Padding(
+              padding: EdgeInsets.only(bottom: 8.0),
+              child: GestureDetector(
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => Scaffold(
+                        backgroundColor: Colors.black,
+                        appBar: AppBar(
+                          backgroundColor: Colors.black,
+                          iconTheme: IconThemeData(color: Colors.white),
+                        ),
+                        body: Center(
+                          child: InteractiveViewer(
+                            child: Image.network(part.content),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.network(
+                    part.content,
+                    width: 250,
+                    height: 250,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Container(
+                        width: 250,
+                        height: 250,
+                        color: Theme.of(context).dividerColor,
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    },
+                    errorBuilder: (_, _, _) => Container(
+                      width: 250,
+                      height: 250,
+                      color: Theme.of(context).dividerColor,
+                      child: Icon(Icons.broken_image, size: 50, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45)),
+                    ),
+                  ),
+                ),
+              ),
+            )
+          );
         }
-      } else if (part.type == MessageType.voice) {
-        threadNodes.add(_buildThreadVoiceNode(part, message));
       }
     }
     return Padding(
-      padding: const EdgeInsets.only(bottom: 36.0, top: 12.0, left: 16.0, right: 16.0),
+      padding: EdgeInsets.only(
+        bottom: isLastInGroup ? 36.0 : 0.0, 
+        top: isFirstInGroup ? 12.0 : 0.0, 
+        left: 16.0, 
+        right: 16.0
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(
-                message.senderName,
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _getAvatarColor(message.senderId)),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                DateFormat('h:mm a').format(message.timestamp),
-                style: const TextStyle(fontSize: 12, color: Colors.black54),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
+          if (isFirstInGroup)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(
+                  ContactCacheService().getContactName(message.senderId, message.senderName),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: _getAvatarColor(message.senderId)),
+                ),
+                SizedBox(width: 8),
+                Text(
+                  DateFormat('h:mm a').format(message.timestamp),
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                ),
+              ],
+            ),
+          if (isFirstInGroup) SizedBox(height: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: threadNodes.map((node) => _buildThreadRow(node, message.senderId, message.id == _highlightedMessageId)).toList(),
           ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              _buildAvatar(message),
-              const SizedBox(width: 8),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildActionIcon(Icons.copy_outlined, () => _copyMessage(message)),
-                  _buildActionIcon((_speakingMessageId == message.id && _ttsState == TtsState.playing) ? Icons.pause : Icons.volume_up_outlined, () => _speakMessage(message)),
-                  _buildActionIcon(message.starredBy.contains(_currentUserId) ? Icons.thumb_up : Icons.thumb_up_outlined, () => _toggleStar(message), message.starredBy.contains(_currentUserId) ? AppColors.primary : Colors.black54),
-                  _buildActionIcon(Icons.more_horiz, () => _showBubbleMenu(message)),
-                ],
-              )
-            ],
-          )
+          if (isLastInGroup)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                _buildAvatar(message),
+                SizedBox(width: 8),
+                if (!message.isDeleted)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildActionIcon(Icons.copy_outlined, () => _copyMessage(message)),
+                      _buildActionIcon((_speakingMessageId == message.id && _ttsState == TtsState.playing) ? Icons.pause : Icons.volume_up_outlined, () => _speakMessage(message)),
+                      _buildActionIcon(message.starredBy.contains(_currentUserId) ? Icons.thumb_up : Icons.thumb_up_alt_outlined, () => _toggleStar(message), message.starredBy.contains(_currentUserId) ? (Theme.of(context).brightness == Brightness.dark ? Colors.white : AppColors.primary) : Theme.of(context).colorScheme.onSurfaceVariant),
+                      _buildActionIcon(Icons.more_horiz, () => _showBubbleMenu(message)),
+                    ],
+                  )
+              ],
+            )
         ],
-      ).animate().fade(duration: 300.ms).slideY(begin: 0.1, curve: Curves.easeOut),
+      ),
     );
   }
 
@@ -1112,10 +1331,10 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
             child: Stack(
               children: [
                 Positioned(
-                  left: 23,
+                  left: 15,
                   top: 0,
                   bottom: 0,
-                  child: Container(width: 2, color: Colors.black12),
+                  child: Container(width: 2, color: Theme.of(context).dividerColor),
                 ),
                 if (isHighlighted)
                   Positioned(
@@ -1141,7 +1360,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.only(bottom: 16.0, top: 4.0),
+              padding: EdgeInsets.only(bottom: 16.0, top: 4.0),
               child: child,
             ),
           ),
@@ -1151,42 +1370,38 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
   }
 
   Widget _buildRichText(String text, TextStyle defaultStyle, TextStyle linkStyle) {
-    return RichText(
-      text: TextSpan(
-        children: ScriptureParser.parseText(
-          text: text,
-          defaultStyle: defaultStyle,
-          linkStyle: linkStyle,
-          onReferenceTap: (reference) {
-            showDialog(
-              context: context,
-              builder: (context) => Dialog(
-                backgroundColor: Colors.transparent,
-                insetPadding: const EdgeInsets.symmetric(horizontal: 16),
-                child: BibleVerseBottomSheet(reference: reference),
-              ),
-            );
-          },
-        ),
-      ),
+    return ExpandableRichText(
+      text: text,
+      defaultStyle: defaultStyle,
+      linkStyle: linkStyle,
+      onReferenceTap: (reference) {
+        showDialog(
+          context: context,
+          builder: (context) => Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: EdgeInsets.symmetric(horizontal: 16),
+            child: BibleVerseBottomSheet(reference: reference),
+          ),
+        );
+      },
     );
   }
 
   Widget _buildThreadTextNode(String text) {
     return _buildRichText(
       text,
-      const TextStyle(fontSize: 15, color: Colors.black87, height: 1.4),
-      const TextStyle(fontSize: 15, color: Colors.orange, height: 1.4, fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
+      TextStyle(fontSize: 15, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87), height: 1.4),
+      TextStyle(fontSize: 15, color: Colors.purpleAccent, height: 1.4, fontWeight: FontWeight.bold, decoration: TextDecoration.underline, decorationColor: Colors.purpleAccent),
     );
   }
 
   Widget _buildThreadVoiceNode(MessagePart part, MessageModel message) {
     return Container(
-      padding: const EdgeInsets.all(4),
+      padding: EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.black12),
+        border: Border.all(color: Theme.of(context).dividerColor),
       ),
       child: VoiceMessageBubble(
         audioUrl: part.content,
@@ -1197,44 +1412,65 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     );
   }
 
-  Widget _buildActionIcon(IconData icon, VoidCallback onTap, [Color color = Colors.black54]) {
+  Widget _buildActionIcon(IconData icon, VoidCallback onTap, [Color? color]) { color ??= Theme.of(context).colorScheme.onSurfaceVariant;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(4),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
+        padding: EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
         child: Icon(icon, size: 18, color: color),
       ),
     );
   }
 
-  Widget _buildMessageBubble(MessageModel message, bool isMe, List<MessageModel> allMessages, bool showAvatar) {
-    if (!isMe && !message.isDeleted) {
-      return _buildAIThreadMessage(message, allMessages);
+  Widget _buildMessageBubble(MessageModel message, bool isMe, List<MessageModel> allMessages, bool showAvatar, int index) {
+    if (!isMe) {
+      return _buildAIThreadMessage(message, allMessages, index);
     }
 
     if (message.isDeleted) {
       return Padding(
-        padding: const EdgeInsets.only(bottom: 16.0),
+        padding: EdgeInsets.only(bottom: 16.0),
         child: Row(
           mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.black12),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
+            if (!isMe) ...[
+              if (showAvatar) _buildAvatar(message) else SizedBox(width: 32),
+              SizedBox(width: 8),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.block, size: 14, color: Colors.black54),
-                  SizedBox(width: 8),
-                  Text('This message was deleted', style: TextStyle(color: Colors.black54, fontStyle: FontStyle.italic)),
+                  if (!isMe && showAvatar)
+                    Padding(
+                      padding: EdgeInsets.only(left: 4.0, bottom: 4.0),
+                      child: Text(
+                        ContactCacheService().getContactName(message.senderId, message.senderName),
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _getAvatarColor(message.senderId)),
+                      ),
+                    ),
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Theme.of(context).dividerColor),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.block, size: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                        SizedBox(width: 8),
+                        Text('This message was deleted', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontStyle: FontStyle.italic)),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
+            if (isMe) SizedBox(width: 40),
           ],
         ),
       );
@@ -1253,20 +1489,47 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
 
     return Padding(
       padding: EdgeInsets.only(bottom: isMe ? 16.0 : 36.0, top: isMe ? 0 : 8.0),
-      child: IntrinsicHeight(
+      child: Stack(
+        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+        children: [
+          if (message.id == _highlightedMessageId)
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: _getAvatarColor(message.senderId).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ).animate(onPlay: (controller) {
+                controller.forward(from: 0).then((_) {
+                  Future.delayed(const Duration(milliseconds: 400), () {
+                    if (mounted) controller.forward(from: 0);
+                  });
+                });
+              }).fadeIn(duration: 300.ms).fadeOut(duration: 800.ms, delay: 300.ms),
+            ),
+          IntrinsicHeight(
         child: Row(
           mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             if (!isMe) ...[
-              if (showAvatar) _buildAvatar(message) else const SizedBox(width: 32),
-              const SizedBox(width: 8),
+              if (showAvatar) _buildAvatar(message) else SizedBox(width: 32),
+              SizedBox(width: 8),
               if (message.id == _highlightedMessageId)
                 Padding(
-                  padding: const EdgeInsets.only(right: 4.0),
+                  padding: EdgeInsets.only(right: 4.0),
                   child: _buildLightningEffect(message.senderId),
                 )
             ],
+            if (isMe && message.id == _highlightedMessageId)
+              Padding(
+                padding: EdgeInsets.only(right: 8.0, bottom: 8.0),
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: _buildLightningEffect(message.senderId),
+                ),
+              ),
           
           Flexible(
             child: Column(
@@ -1274,30 +1537,36 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
               children: [
                 if (!isMe)
                   Padding(
-                    padding: const EdgeInsets.only(left: 4.0, bottom: 4.0),
+                    padding: EdgeInsets.only(left: 4.0, bottom: 4.0),
                     child: Text(
-                      message.senderName,
+                      ContactCacheService().getContactName(message.senderId, message.senderName),
                       style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _getAvatarColor(message.senderId)),
                     ),
                   ),
 
                 if (isStandaloneAudio) 
                   Container(
-                    padding: const EdgeInsets.all(4),
+                    padding: EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: isMe ? null : Colors.white,
-                      gradient: isMe 
-                          ? const LinearGradient(
-                              colors: [AppColors.gradientStart, AppColors.gradientEnd],
+                      color: isMe 
+                          ? (Provider.of<ThemeProvider>(context).chatBubbleTheme == ChatBubbleTheme.solidGray
+                              ? (Theme.of(context).brightness == Brightness.dark ? Colors.grey[800] : Colors.black) 
+                              : (Provider.of<ThemeProvider>(context).chatBubbleTheme == ChatBubbleTheme.solidPurple 
+                                  ? AppColors.primary 
+                                  : null)) 
+                          : Theme.of(context).cardColor,
+                      gradient: (isMe && Provider.of<ThemeProvider>(context).chatBubbleTheme == ChatBubbleTheme.gradient)
+                          ? LinearGradient(
+                              colors: [AppColors.chatBubbleGradientStart, AppColors.chatBubbleGradientEnd],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             )
                           : null,
                       borderRadius: BorderRadius.circular(16).copyWith(
-                        bottomRight: isMe ? Radius.zero : const Radius.circular(16),
-                        bottomLeft: !isMe ? Radius.zero : const Radius.circular(16),
+                        bottomRight: isMe ? Radius.zero : Radius.circular(16),
+                        bottomLeft: !isMe ? Radius.zero : Radius.circular(16),
                       ),
-                      border: isMe ? null : Border.all(color: Colors.black12),
+                      border: isMe ? null : Border.all(color: Theme.of(context).dividerColor),
                     ),
                     child: VoiceMessageBubble(
                       audioUrl: message.parts.first.content,
@@ -1308,21 +1577,27 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                   )
                 else
                   Container(
-                    padding: const EdgeInsets.all(4),
+                    padding: EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: isMe ? null : Colors.white,
-                      gradient: isMe 
-                          ? const LinearGradient(
-                              colors: [AppColors.gradientStart, AppColors.gradientEnd],
+                      color: isMe 
+                          ? (Provider.of<ThemeProvider>(context).chatBubbleTheme == ChatBubbleTheme.solidGray
+                              ? (Theme.of(context).brightness == Brightness.dark ? Colors.grey[800] : Colors.black) 
+                              : (Provider.of<ThemeProvider>(context).chatBubbleTheme == ChatBubbleTheme.solidPurple 
+                                  ? AppColors.primary 
+                                  : null)) 
+                          : Theme.of(context).cardColor,
+                      gradient: (isMe && Provider.of<ThemeProvider>(context).chatBubbleTheme == ChatBubbleTheme.gradient)
+                          ? LinearGradient(
+                              colors: [AppColors.chatBubbleGradientStart, AppColors.chatBubbleGradientEnd],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             )
                           : null,
                       borderRadius: BorderRadius.circular(16).copyWith(
-                        bottomRight: isMe ? Radius.zero : const Radius.circular(16),
-                        bottomLeft: !isMe ? Radius.zero : const Radius.circular(16),
+                        bottomRight: isMe ? Radius.zero : Radius.circular(16),
+                        bottomLeft: !isMe ? Radius.zero : Radius.circular(16),
                       ),
-                      border: isMe ? null : Border.all(color: Colors.black12),
+                      border: isMe ? null : Border.all(color: Theme.of(context).dividerColor),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1331,10 +1606,10 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                           GestureDetector(
                             onTap: () => _scrollToMessage(replyMsg!.id, allMessages),
                             child: Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              padding: const EdgeInsets.all(8),
+                              margin: EdgeInsets.only(bottom: 8),
+                              padding: EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: isMe ? Colors.white.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.05),
+                                color: isMe ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.15) : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border(left: BorderSide(color: _getAvatarColor(replyMsg.senderId), width: 3)),
                               ),
@@ -1342,13 +1617,13 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    replyMsg.senderName,
+                                    ContactCacheService().getContactName(replyMsg.senderId, replyMsg.senderName),
                                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: _getAvatarColor(replyMsg.senderId)),
                                   ),
                                   Text(
-                                    replyMsg.isDeleted ? 'Deleted message' : (replyMsg.parts.isNotEmpty && replyMsg.parts.first.type == MessageType.text ? replyMsg.parts.first.content : '🎤 Voice Note'),
-                                    style: TextStyle(fontSize: 12, color: isMe ? Colors.white70 : Colors.black54),
-                                    maxLines: 3,
+                                    _getReplyMessageSummary(replyMsg),
+                                    style: TextStyle(fontSize: 12, color: isMe ? Colors.white70 : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+                                    maxLines: 4,
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ],
@@ -1358,16 +1633,16 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                         ...message.parts.map((part) {
                           if (part.type == MessageType.text) {
                             return Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                               child: _buildRichText(
                                 part.content,
-                                TextStyle(color: isMe ? Colors.white : Colors.black87, fontSize: 15),
-                                const TextStyle(color: Colors.orange, fontSize: 15, fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
+                                TextStyle(color: isMe ? Colors.white : Theme.of(context).colorScheme.onSurface, fontSize: 15),
+                                TextStyle(color: Colors.purpleAccent, fontSize: 15, fontWeight: FontWeight.bold, decoration: TextDecoration.underline, decorationColor: Colors.purpleAccent),
                               ),
                             );
                         } else if (part.type == MessageType.voice) {
                           return Padding(
-                            padding: const EdgeInsets.all(2.0),
+                            padding: EdgeInsets.all(2.0),
                             child: VoiceMessageBubble(
                               audioUrl: part.content,
                               isMe: isMe,
@@ -1377,43 +1652,78 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                           );
                         } else if (part.type == MessageType.image) {
                             return Padding(
-                              padding: const EdgeInsets.all(4.0),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: Image.network(
-                                  part.content,
-                                  width: 250,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 100),
+                              padding: EdgeInsets.all(4.0),
+                              child: GestureDetector(
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => Scaffold(
+                                        backgroundColor: Colors.black,
+                                        appBar: AppBar(
+                                          backgroundColor: Colors.black,
+                                          iconTheme: IconThemeData(color: Colors.white),
+                                        ),
+                                        body: Center(
+                                          child: InteractiveViewer(
+                                            child: Image.network(part.content),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Image.network(
+                                    part.content,
+                                    width: 250,
+                                    height: 250,
+                                    fit: BoxFit.cover,
+                                    loadingBuilder: (context, child, loadingProgress) {
+                                      if (loadingProgress == null) return child;
+                                      return Container(
+                                        width: 250,
+                                        height: 250,
+                                        color: Colors.white24,
+                                        child: Center(child: CircularProgressIndicator(color: Colors.white)),
+                                      );
+                                    },
+                                    errorBuilder: (_, _, _) => Container(
+                                      width: 250,
+                                      height: 250,
+                                      color: Colors.white24,
+                                      child: Icon(Icons.broken_image, size: 50, color: Colors.white),
+                                    ),
+                                  ),
                                 ),
                               ),
                             );
                           } else if (part.type == MessageType.video) {
                             return Padding(
-                              padding: const EdgeInsets.all(8.0),
+                              padding: EdgeInsets.all(8.0),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.videocam, color: Colors.redAccent, size: 32),
-                                  const SizedBox(width: 8),
-                                  Text('Video Attachment', style: TextStyle(color: isMe ? Colors.white : Colors.black87)),
+                                  Icon(Icons.videocam, color: Colors.redAccent, size: 32),
+                                  SizedBox(width: 8),
+                                  Text('Video Attachment', style: TextStyle(color: isMe ? Colors.white : Theme.of(context).colorScheme.onSurface)),
                                 ],
                               ),
                             );
                           } else if (part.type == MessageType.document) {
                             return Padding(
-                              padding: const EdgeInsets.all(8.0),
+                              padding: EdgeInsets.all(8.0),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.insert_drive_file, color: Colors.orange, size: 32),
-                                  const SizedBox(width: 8),
-                                  Text('Document', style: TextStyle(color: isMe ? Colors.white : Colors.black87)),
+                                  Icon(Icons.insert_drive_file, color: Colors.orange, size: 32),
+                                  SizedBox(width: 8),
+                                  Text('Document', style: TextStyle(color: isMe ? Colors.white : Theme.of(context).colorScheme.onSurface)),
                                 ],
                               ),
                             );
                           }
-                          return const SizedBox();
+                          return SizedBox();
                         }),
                       ],
                     ),
@@ -1423,14 +1733,27 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (message.isEdited)
-                      const Padding(
+                      Padding(
                         padding: EdgeInsets.only(top: 4.0, right: 4.0),
-                        child: Text('(edited)', style: TextStyle(fontSize: 10, color: Colors.black54)),
+                        child: Text('(edited)', style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54))),
                       ),
                     if (message.starredBy.isNotEmpty)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 4.0),
-                        child: Icon(Icons.star, size: 14, color: Colors.orange),
+                      Container(
+                        margin: EdgeInsets.only(top: 4.0),
+                        padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Theme.of(context).dividerColor),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('👍', style: TextStyle(fontSize: 12)),
+                            SizedBox(width: 4),
+                            Text('${message.starredBy.length}', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black)),
+                          ],
+                        ),
                       ),
                   ],
                 ),
@@ -1441,36 +1764,39 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
           if (isMe) ...[
             if (message.id == _highlightedMessageId)
               Padding(
-                padding: const EdgeInsets.only(left: 4.0),
+                padding: EdgeInsets.only(left: 4.0),
                 child: _buildLightningEffect(message.senderId),
               ),
-            const SizedBox(width: 8),
-            if (showAvatar) _buildAvatar(message) else const SizedBox(width: 32),
-          ]
+            SizedBox(width: 8),
+            if (showAvatar) _buildAvatar(message) else SizedBox(width: 32),
+          ],
         ],
       ),
-    )).animate().fade(duration: 300.ms).slideY(begin: 0.1, curve: Curves.easeOut);
+    ),
+        ],
+      ),
+    );
   }
 
   Widget _buildInputArea() {
     return Container(
-      margin: const EdgeInsets.only(left: 12, right: 12, bottom: 12),
+      margin: EdgeInsets.only(left: 12, right: 12, bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 4))],
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(50),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 10, offset: Offset(0, 4))],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (_editingMessageId != null)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               color: Colors.blueAccent.withValues(alpha: 0.1),
               child: Row(
                 children: [
-                  const Icon(Icons.edit, size: 16, color: Colors.blueAccent),
-                  const SizedBox(width: 8),
+                  Icon(Icons.edit, size: 16, color: Colors.blueAccent),
+                  SizedBox(width: 8),
                   const Expanded(
                     child: Text(
                       'Editing Message',
@@ -1478,10 +1804,10 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, size: 16, color: Colors.blueAccent),
+                    icon: Icon(Icons.close, size: 16, color: Colors.blueAccent),
                     onPressed: () => setState(() => _editingMessageId = null),
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
+                    constraints: BoxConstraints(),
                   ),
                 ],
               ),
@@ -1489,20 +1815,31 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
 
           if (_replyToMessageId != null && _replyToMessage != null)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: Colors.black.withValues(alpha: 0.02),
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.02),
               child: Row(
                 children: [
-                  const Icon(Icons.reply, size: 16, color: Colors.black54),
-                  const SizedBox(width: 8),
+                  Icon(Icons.reply, size: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                  SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      'Replying to ${_replyToMessage!.senderName}',
-                      style: const TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.bold),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          ContactCacheService().getContactName(_replyToMessage!.senderId, _replyToMessage!.senderName),
+                          style: TextStyle(fontSize: 12, color: _getAvatarColor(_replyToMessage!.senderId), fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          _getReplyMessageSummary(_replyToMessage!),
+                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, size: 16),
+                    icon: Icon(Icons.close, size: 16),
                     onPressed: () => setState(() => _replyToMessageId = null),
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
@@ -1514,7 +1851,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
           // WYSIWYG Editor Block
           Flexible(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -1522,10 +1859,10 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                   for (int i = 0; i < _draftParts.length; i++)
                     if (_draftParts[i].type == MessageType.text)
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 8.0),
+                        padding: EdgeInsets.only(bottom: 8.0),
                         child: Scrollbar(
                           child: TextField(
-                            cursorColor: Colors.black,
+                            cursorColor: Theme.of(context).colorScheme.onSurface,
                             controller: TextEditingController.fromValue(
                               TextEditingValue(
                                 text: _draftParts[i].content,
@@ -1538,20 +1875,20 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                             maxLines: 4,
                             minLines: 1,
                             keyboardType: TextInputType.multiline,
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               border: InputBorder.none,
                               focusedBorder: InputBorder.none,
                               enabledBorder: InputBorder.none,
                               isDense: true,
                               contentPadding: EdgeInsets.zero,
                             ),
-                            style: const TextStyle(fontSize: 16, color: Colors.black87),
+                            style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
                           ),
                         ),
                       )
                     else
                       Container(
-                        margin: const EdgeInsets.only(bottom: 8.0),
+                        margin: EdgeInsets.only(bottom: 8.0),
                         child: Row(
                           children: [
                             Expanded(
@@ -1564,7 +1901,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.close, color: Colors.redAccent),
+                              icon: Icon(Icons.close, color: Colors.redAccent),
                               onPressed: () => _removeDraftPart(i),
                             ),
                           ],
@@ -1574,41 +1911,41 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                   // Active Typing / Recording Row
                   if (_isRecording)
                     Padding(
-                      padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                      padding: EdgeInsets.only(top: 8.0, bottom: 8.0),
                       child: Row(
                         children: [
-                          const Icon(Icons.mic, color: Colors.redAccent)
+                          Icon(Icons.mic, color: Colors.redAccent)
                               .animate(onPlay: (controller) => controller.repeat(reverse: true))
                               .fade(begin: 0.5, end: 1.0, duration: 500.ms),
-                          const SizedBox(width: 8),
+                          SizedBox(width: 8),
                           Text(
                             '${(_recordingDuration ~/ 60).toString().padLeft(2, '0')}:${(_recordingDuration % 60).toString().padLeft(2, '0')}',
-                            style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 16),
+                            style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 16),
                           ),
-                          const Spacer(),
+                          Spacer(),
                           GestureDetector(
                             onTap: _cancelRecording,
                             child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
+                              padding: EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).cardColor,
                                 shape: BoxShape.circle,
-                                boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4, spreadRadius: 1)],
+                                boxShadow: [BoxShadow(color: Theme.of(context).dividerColor, blurRadius: 4, spreadRadius: 1)],
                               ),
-                              child: const Icon(Icons.close, color: Colors.redAccent, size: 20),
+                              child: Icon(Icons.close, color: Colors.redAccent, size: 20),
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          SizedBox(width: 12),
                           GestureDetector(
                             onTap: _saveRecordingToDraft,
                             child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: const BoxDecoration(
+                              padding: EdgeInsets.all(6),
+                              decoration: BoxDecoration(
                                 color: AppColors.gradientStart,
                                 shape: BoxShape.circle,
-                                boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4, spreadRadius: 1)],
+                                boxShadow: [BoxShadow(color: Theme.of(context).dividerColor, blurRadius: 4, spreadRadius: 1)],
                               ),
-                              child: const Icon(Icons.check, color: Colors.white, size: 20),
+                              child: Icon(Icons.check, color: Colors.white, size: 20),
                             ),
                           ),
                         ],
@@ -1618,84 +1955,65 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
+                        GestureDetector(
+                          onTap: _showAttachmentMenu,
+                          child: Padding(
+                            padding: EdgeInsets.only(bottom: 8.0, right: 16.0, left: 4.0),
+                            child: Icon(Icons.add, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87), size: 22),
+                          ),
+                        ),
                         Expanded(
-                          child: TextField(
-                            cursorColor: Colors.black,
-                            controller: _textController,
-                            maxLines: null,
-                            keyboardType: TextInputType.multiline,
-                            textInputAction: TextInputAction.newline,
-                            style: const TextStyle(fontSize: 15, color: Colors.black87),
-                            decoration: const InputDecoration(
-                              hintText: 'Share a thought...',
-                              border: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              isDense: true,
-                              contentPadding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
+                          child: Scrollbar(
+                            child: TextField(
+                              cursorColor: Theme.of(context).colorScheme.onSurface,
+                              controller: _textController,
+                              maxLines: 12,
+                              minLines: 1,
+                              keyboardType: TextInputType.multiline,
+                              textInputAction: TextInputAction.newline,
+                              style: TextStyle(fontSize: 15, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
+                              decoration: const InputDecoration(
+                                hintText: 'Share a thought...',
+                                border: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
+                              ),
                             ),
                           ),
+                        ),
+                        GestureDetector(
+                          onTap: _startRecording,
+                          child: Container(
+                            padding: EdgeInsets.all(8),
+                            margin: EdgeInsets.only(bottom: 4, left: 4),
+                            child: Icon(Icons.mic, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
+                          ),
+                        ),
+                        ValueListenableBuilder<TextEditingValue>(
+                          valueListenable: _textController,
+                          builder: (context, value, child) {
+                            final hasDrafts = _draftParts.any((p) => p.type == MessageType.voice || (p.type == MessageType.text && p.content.trim().isNotEmpty));
+                            final canSend = value.text.trim().isNotEmpty || hasDrafts;
+                            return GestureDetector(
+                              onTap: canSend ? _sendDraft : null,
+                              child: Container(
+                                padding: EdgeInsets.all(8),
+                                margin: EdgeInsets.only(bottom: 4, left: 4),
+                                decoration: BoxDecoration(
+                                    color: canSend ? AppColors.gradientEnd : AppColors.gradientEnd.withValues(alpha: 0.15),
+                                    shape: BoxShape.circle,
+                                  ),
+                                child: Icon(Icons.arrow_upward, color: canSend ? Colors.white : AppColors.gradientEnd.withValues(alpha: 0.5)),
+                              ),
+                            );
+                          },
                         ),
                       ],
                     ),
                 ],
               ),
-            ),
-          ),
-          
-          // Action Buttons Docked at Bottom Right
-          Padding(
-            padding: const EdgeInsets.only(right: 16, bottom: 12, top: 4, left: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (!_isRecording) ...[
-                  // Add Attachment Button
-                  GestureDetector(
-                    onTap: _showAttachmentMenu,
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.add, color: Colors.black87),
-                    ),
-                  ),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: _startRecording,
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.mic, color: Colors.black87),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  ValueListenableBuilder<TextEditingValue>(
-                    valueListenable: _textController,
-                    builder: (context, value, child) {
-                      // Also check if any text part has content
-                      final hasDrafts = _draftParts.any((p) => p.type == MessageType.voice || (p.type == MessageType.text && p.content.trim().isNotEmpty));
-                      final canSend = value.text.trim().isNotEmpty || hasDrafts;
-                      return GestureDetector(
-                        onTap: canSend ? _sendDraft : null,
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                              color: canSend ? AppColors.gradientEnd : AppColors.gradientEnd.withValues(alpha: 0.15),
-                              shape: BoxShape.circle,
-                            ),
-                          child: Icon(Icons.arrow_upward, color: canSend ? Colors.white : AppColors.gradientEnd.withValues(alpha: 0.5)),
-                        ),
-                      );
-                    },
-                  ),
-                ]
-              ],
             ),
           ),
         ],

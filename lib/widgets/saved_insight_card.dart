@@ -30,12 +30,15 @@ class SavedInsightCard extends StatelessWidget {
         );
       },
       child: Card(
-        color: Colors.white,
-        elevation: 2,
-        margin: const EdgeInsets.only(bottom: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        color: Theme.of(context).cardColor,
+        elevation: 0,
+        margin: EdgeInsets.only(bottom: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: Theme.of(context).dividerColor, width: 1),
+        ),
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -45,31 +48,59 @@ class SavedInsightCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       insight.title.isEmpty ? 'Untitled Insight' : insight.title,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  GestureDetector(
-                    onTap: onDelete,
-                    child: const Icon(Icons.bookmark_remove, color: Colors.black54, size: 20),
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: PopupMenuButton<String>(
+                      padding: EdgeInsets.zero,
+                      icon: Icon(
+                        Icons.more_vert,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                        size: 20,
+                      ),
+                      onSelected: (val) {
+                        if (val == 'delete') {
+                          onDelete();
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete_outline, color: Colors.red),
+                              SizedBox(width: 8),
+                              Text(
+                                'Delete',
+                                style: TextStyle(color: Colors.red),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               Expanded(
                 flex: 0, // In listview, we don't need Expanded here, we can just let it size naturally
                 child: ClickableScriptureText(
                   text: insight.body,
-                  style: TextStyle(color: Colors.grey[800], height: 1.4, fontSize: 14),
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.4, fontSize: 14),
                   maxLines: 4,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               Text(
                 DateFormat('MMM d, yyyy').format(insight.createdAt),
-                style: const TextStyle(color: Colors.black54, fontSize: 12),
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 12),
               ),
             ],
           ),

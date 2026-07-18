@@ -13,31 +13,45 @@ class MyInsightsScreen extends StatelessWidget {
   final InsightService _insightService = InsightService();
   final String _currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  void _deleteInsight(BuildContext context, String id) async {
+  void _deleteInsight(BuildContext context, InsightModel insight) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Insight?'),
-        content: const Text('This will permanently delete this insight.'),
+        title: Text('Delete Insight?'),
+        content: Text('This will permanently delete this insight.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text('Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            child: Text('Delete', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
     );
 
     if (confirm == true) {
-      await _insightService.deleteInsight(id);
+      await _insightService.deleteInsight(insight.id);
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Insight deleted')));
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Insight deleted', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            behavior: SnackBarBehavior.floating,
+            elevation: 0,
+            duration: const Duration(seconds: 3),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            action: SnackBarAction(
+              label: 'UNDO',
+              textColor: AppColors.gradientStart,
+              onPressed: () async {
+                await _insightService.createInsight(insight);
+              },
+            ),
+          ),
+        );
       }
     }
   }
@@ -45,14 +59,14 @@ class MyInsightsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black87),
-        title: const Text(
+        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
+        title: Text(
           'My Insights',
-          style: TextStyle(color: Colors.black87),
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
         ),
       ),
       body: SafeArea(
@@ -65,33 +79,33 @@ class MyInsightsScreen extends StatelessWidget {
                 ),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
+                    return Center(
                       child: CircularProgressIndicator(color: AppColors.gradientEnd),
                     );
                   }
                   if (snapshot.hasError) {
-                    return const Center(child: Text('Error loading insights'));
+                    return Center(child: Text('Error loading insights'));
                   }
                   final insights = snapshot.data ?? [];
 
                   if (insights.isEmpty) {
-                    return const Center(
+                    return Center(
                       child: Text(
                         'You have no active notes.',
-                        style: TextStyle(color: Colors.black54),
+                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
                       ),
                     );
                   }
 
                   return ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+                    padding: EdgeInsets.symmetric(horizontal: 0, vertical: 8),
                     itemCount: insights.length,
-                    separatorBuilder: (context, index) => const Divider(height: 1, indent: 76),
+                    separatorBuilder: (context, index) => Divider(height: 1, indent: 76),
                     itemBuilder: (context, index) {
                       final insight = insights[index];
                       final user = FirebaseAuth.instance.currentUser;
                       return ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                         onTap: () {
                           Navigator.push(
                             context,
@@ -109,8 +123,8 @@ class MyInsightsScreen extends StatelessWidget {
                           );
                         },
                         leading: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(
+                          padding: EdgeInsets.all(4),
+                          decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             gradient: SweepGradient(
                               colors: [
@@ -123,49 +137,49 @@ class MyInsightsScreen extends StatelessWidget {
                             ),
                           ),
                           child: Container(
-                            padding: const EdgeInsets.all(2),
-                            decoration: const BoxDecoration(
+                            padding: EdgeInsets.all(2),
+                            decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               color: Colors.white,
                             ),
                             child: CircleAvatar(
                               radius: 22,
-                              backgroundColor: Colors.grey[200],
+                              backgroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
                               backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
-                              child: user?.photoURL == null ? const Icon(Icons.person, color: Colors.black45) : null,
+                              child: user?.photoURL == null ? Icon(Icons.person, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45)) : null,
                             ),
                           ),
                         ),
                         title: Text(
                           insight.title.isEmpty ? 'Untitled Note' : insight.title,
-                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: Colors.black87),
+                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         subtitle: Padding(
-                          padding: const EdgeInsets.only(top: 4),
+                          padding: EdgeInsets.only(top: 4),
                           child: Row(
                             children: [
                               Text(
                                 DateFormat('MMM d, HH:mm').format(insight.createdAt),
-                                style: const TextStyle(color: Colors.black54, fontSize: 13),
+                                style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 13),
                               ),
-                              const SizedBox(width: 12),
-                              const Icon(Icons.visibility_outlined, size: 14, color: Colors.black54),
-                              const SizedBox(width: 4),
-                              Text('${insight.seenBy.length}', style: const TextStyle(color: Colors.black54, fontSize: 13)),
-                              const SizedBox(width: 12),
-                              const Icon(Icons.favorite_border, size: 14, color: Colors.black54),
-                              const SizedBox(width: 4),
-                              Text('${insight.likedBy.length}', style: const TextStyle(color: Colors.black54, fontSize: 13)),
+                              SizedBox(width: 12),
+                              Icon(Icons.visibility_outlined, size: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                              SizedBox(width: 4),
+                              Text('${insight.seenBy.length}', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 13)),
+                              SizedBox(width: 12),
+                              Icon(Icons.favorite_border, size: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                              SizedBox(width: 4),
+                              Text('${insight.likedBy.length}', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 13)),
                             ],
                           ),
                         ),
                         trailing: PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert, color: Colors.black54),
+                          icon: Icon(Icons.more_vert, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
                           onSelected: (val) {
                             if (val == 'delete') {
-                              _deleteInsight(context, insight.id);
+                              _deleteInsight(context, insight);
                             }
                           },
                           itemBuilder: (context) => [
@@ -183,20 +197,20 @@ class MyInsightsScreen extends StatelessWidget {
             ),
             // Bottom area with encryption text
             Container(
-              padding: const EdgeInsets.symmetric(
+              padding: EdgeInsets.symmetric(
                 horizontal: 16.0,
                 vertical: 12.0,
               ),
               color: Colors.white,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
-                children: const [
+                children: [
                   Icon(Icons.lock_outline, size: 14, color: AppColors.gradientEnd),
                   SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       'Your insights are end-to-end encrypted. They disappear after 3 days.',
-                      style: TextStyle(color: Colors.black54, fontSize: 11),
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 11),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -214,7 +228,7 @@ class MyInsightsScreen extends StatelessWidget {
             MaterialPageRoute(builder: (_) => const CreateInsightScreen()),
           );
         },
-        child: const Icon(Icons.edit, color: Colors.white),
+        child: Icon(Icons.edit, color: Colors.white),
       ),
     );
   }

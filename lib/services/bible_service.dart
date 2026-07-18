@@ -44,8 +44,8 @@ class BibleService {
   String? getVerseText(
     String translation,
     String bookName,
-    int chapter,
-    int startVerse, [
+    int chapter, [
+    int? startVerse,
     int? endVerse,
   ]) {
     final bible = _bibles[translation];
@@ -81,14 +81,15 @@ class BibleService {
     if (chapter < 1 || chapter > targetBook.chapters.length) return null;
     final chapterVerses = targetBook.chapters[chapter - 1];
 
-    if (startVerse < 1 || startVerse > chapterVerses.length) return null;
+    int start = startVerse ?? 1;
+    if (start < 1 || start > chapterVerses.length) return null;
 
-    int end = endVerse ?? startVerse;
+    int end = endVerse ?? (startVerse == null ? chapterVerses.length : start);
     if (end > chapterVerses.length) end = chapterVerses.length;
-    if (end < startVerse) end = startVerse;
+    if (end < start) end = start;
 
     List<String> texts = [];
-    for (int i = startVerse; i <= end; i++) {
+    for (int i = start; i <= end; i++) {
       // verses are 0-indexed in the chapter array
       texts.add('$i. ${chapterVerses[i - 1]}');
     }

@@ -1,11 +1,51 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../services/contact_cache_service.dart';
 import '../theme.dart';
 import 'main_hall_screen.dart';
+
+List<Map<String, dynamic>> _findMatchesInIsolate(Map<String, dynamic> params) {
+  final Set<String> contactPhoneNumbers = params['contactPhoneNumbers'];
+  final List<Map<String, dynamic>> usersData = params['usersData'];
+  final String? currentUserUid = params['currentUserUid'];
+
+  final List<Map<String, dynamic>> matches = [];
+
+  for (final data in usersData) {
+    if (data['id'] == currentUserUid) continue; // Skip self
+    
+    final List<dynamic> userPhones = data['phoneNumbers'] ?? [];
+    
+    bool isMatch = false;
+    for (final up in userPhones) {
+      final normalizedUp = up.toString().replaceAll(RegExp(r'\D'), '');
+      String lookup = normalizedUp;
+      if (normalizedUp.length >= 10) {
+        lookup = normalizedUp.substring(normalizedUp.length - 10);
+      }
+      if (contactPhoneNumbers.contains(lookup)) {
+        isMatch = true;
+        break;
+      }
+    }
+
+    if (isMatch) {
+      matches.add({
+        'uid': data['id'],
+        'displayName': data['displayName'] ?? 'Believer',
+        'photoURL': data['photoURL'] ?? '',
+      });
+    }
+  }
+  
+  return matches;
+}
 
 class InviterSelectionScreen extends StatefulWidget {
   const InviterSelectionScreen({super.key});
@@ -64,40 +104,30 @@ class _InviterSelectionScreenState extends State<InviterSelectionScreen> {
         if (contactPhoneNumbers.isNotEmpty) {
           final usersSnapshot = await FirebaseFirestore.instance.collection('users').get();
           
-          final List<Map<String, dynamic>> matches = [];
+          final List<Map<String, dynamic>> usersData = usersSnapshot.docs.map((doc) {
+            final data = doc.data();
+            data['id'] = doc.id;
+            return data;
+          }).toList();
+
           final currentUserUid = FirebaseAuth.instance.currentUser?.uid;
 
-          for (final doc in usersSnapshot.docs) {
-            if (doc.id == currentUserUid) continue; // Skip self
-            
-            final data = doc.data();
-            final List<dynamic> userPhones = data['phoneNumbers'] ?? [];
-            
-            bool isMatch = false;
-            for (final up in userPhones) {
-              final normalizedUp = up.toString().replaceAll(RegExp(r'\D'), '');
-              String lookup = normalizedUp;
-              if (normalizedUp.length >= 10) {
-                lookup = normalizedUp.substring(normalizedUp.length - 10);
-              }
-              if (contactPhoneNumbers.contains(lookup)) {
-                isMatch = true;
-                break;
-              }
-            }
-
-            if (isMatch) {
-              matches.add({
-                'uid': doc.id,
-                'displayName': data['displayName'] ?? 'Believer',
-                'photoURL': data['photoURL'] ?? '',
-              });
-            }
-          }
+          final matches = await compute(_findMatchesInIsolate, {
+            'contactPhoneNumbers': contactPhoneNumbers,
+            'usersData': usersData,
+            'currentUserUid': currentUserUid,
+          });
 
           if (mounted) {
             setState(() {
               _matchedFriends = matches;
+              _isLoading = false;
+            });
+          }
+        } else {
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
             });
           }
         }
@@ -105,6 +135,7 @@ class _InviterSelectionScreenState extends State<InviterSelectionScreen> {
         if (mounted) {
           setState(() {
             _permissionDenied = true;
+            _isLoading = false;
           });
         }
       }
@@ -121,19 +152,19 @@ class _InviterSelectionScreenState extends State<InviterSelectionScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Contact Permission Needed'),
-        content: const Text('We need contact access to find who invited you. Please enable it in Settings.'),
+        title: Text('Contact Permission Needed'),
+        content: Text('We need contact access to find who invited you. Please enable it in Settings.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text('Cancel'),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               openAppSettings();
             },
-            child: const Text('Open Settings'),
+            child: Text('Open Settings'),
           ),
         ],
       ),
@@ -145,7 +176,7 @@ class _InviterSelectionScreenState extends State<InviterSelectionScreen> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        FirebaseFirestore.instance.collection('users').doc(user.uid).set({
           'referredBy': inviterUid,
         }, SetOptions(merge: true));
 
@@ -171,30 +202,30 @@ class _InviterSelectionScreenState extends State<InviterSelectionScreen> {
       builder: (context) {
         return AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          contentPadding: const EdgeInsets.all(32),
+          contentPadding: EdgeInsets.all(32),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.asset('assets/icon2.png', height: 80)),
-              const SizedBox(height: 24),
-              const Text(
+              SizedBox(height: 24),
+              Text(
                 'Welcome to Braid.',
                 style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: 16),
               Text(
                 'You\'re now part of $inviterName\'s network—a community of believers growing and studying together in faith.',
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 18),
+                style: TextStyle(fontSize: 18),
               ),
-              const SizedBox(height: 16),
-              const Text(
+              SizedBox(height: 16),
+              Text(
                 '"As iron sharpens iron, so one person sharpens another."\n— Proverbs 27:17',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16, fontStyle: FontStyle.italic, color: Colors.grey),
+                style: TextStyle(fontSize: 16, fontStyle: FontStyle.italic, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
-              const SizedBox(height: 32),
+              SizedBox(height: 32),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -202,7 +233,7 @@ class _InviterSelectionScreenState extends State<InviterSelectionScreen> {
                     Navigator.of(context).pop();
                     _navigateToMain();
                   },
-                  child: const Text('Enter Braid'),
+                  child: Text('Enter Braid'),
                 ),
               )
             ],
@@ -215,7 +246,7 @@ class _InviterSelectionScreenState extends State<InviterSelectionScreen> {
   Future<void> _navigateToMain() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'inviterSelectionComplete': true,
       }, SetOptions(merge: true));
     }
@@ -223,28 +254,28 @@ class _InviterSelectionScreenState extends State<InviterSelectionScreen> {
     
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (_) => const MainHallScreen()),
+      MaterialPageRoute(builder: (_) => MainHallScreen()),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('Find Friends', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.white,
+        title: Text('Find Friends', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87), fontWeight: FontWeight.bold)),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
         centerTitle: true,
         actions: [
           TextButton(
             onPressed: _navigateToMain,
-            child: const Text('Skip', style: TextStyle(color: Colors.grey, fontSize: 16)),
+            child: Text('Skip', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 16)),
           ),
         ],
       ),
       body: _isLoading
-          ? const Center(
+          ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -257,18 +288,18 @@ class _InviterSelectionScreenState extends State<InviterSelectionScreen> {
           : _permissionDenied
               ? Center(
                   child: Padding(
-                    padding: const EdgeInsets.all(24.0),
+                    padding: EdgeInsets.all(24.0),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.contacts_outlined, size: 64, color: Colors.grey),
-                        const SizedBox(height: 16),
-                        const Text(
+                        Icon(Icons.contacts_outlined, size: 64, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        SizedBox(height: 16),
+                        Text(
                           'We need contact access to find who invited you.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 16, color: Colors.grey),
+                          style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
                         ),
-                        const SizedBox(height: 24),
+                        SizedBox(height: 24),
                         ElevatedButton(
                           onPressed: () {
                             if (_permissionDenied) {
@@ -288,20 +319,20 @@ class _InviterSelectionScreenState extends State<InviterSelectionScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.group_off_outlined, size: 64, color: Colors.grey),
-                          const SizedBox(height: 16),
-                          const Text(
+                          Icon(Icons.group_off_outlined, size: 64, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          SizedBox(height: 16),
+                          Text(
                             'No friends found on Braid yet.',
                             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                           ),
-                          const SizedBox(height: 24),
+                          SizedBox(height: 24),
                           ElevatedButton(
                             onPressed: _navigateToMain,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.gradientStart,
                               foregroundColor: Colors.white,
                             ),
-                            child: const Text('Continue to App'),
+                            child: Text('Continue to App'),
                           )
                         ],
                       ),
@@ -309,7 +340,7 @@ class _InviterSelectionScreenState extends State<InviterSelectionScreen> {
                   : Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Padding(
+                        Padding(
                           padding: EdgeInsets.all(24.0),
                           child: Text(
                             'Who invited you to Braid?',
@@ -331,13 +362,13 @@ class _InviterSelectionScreenState extends State<InviterSelectionScreen> {
                                       ? NetworkImage(friend['photoURL'])
                                       : null,
                                   child: friend['photoURL'] == ''
-                                      ? const Icon(Icons.person)
+                                      ? Icon(Icons.person)
                                       : null,
                                 ),
-                                title: Text(friend['displayName']),
-                                subtitle: const Text('Tap to select'),
-                                trailing: const Icon(Icons.chevron_right),
-                                onTap: () => _selectInviter(friend['uid'], friend['displayName']),
+                                title: Text(ContactCacheService().getContactName(friend['uid'], friend['displayName'])),
+                                subtitle: Text('Tap to select'),
+                                trailing: Icon(Icons.chevron_right),
+                                onTap: () => _selectInviter(friend['uid'], ContactCacheService().getContactName(friend['uid'], friend['displayName'])),
                               );
                             },
                           ),
