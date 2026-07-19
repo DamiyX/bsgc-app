@@ -29,3 +29,8 @@
 **Mistake**: Triggering a setState that recreates a Firestore Stream when the user scrolls to the top (scroll.offset >= maxScrollExtent) without verifying if more data actually exists.
 **Consequence**: If no more data exists, the scroll position remains at the boundary. The stream recreates, causes a loading spinner, finishes, and the boundary condition instantly triggers the setState again, causing an infinite, glitchy loading loop.
 **Solution**: Always implement a _hasMoreMessages boolean flag. Compare the returned document count to the _messageLimit. If they are fewer, set _hasMoreMessages = false and completely block the scroll listener from triggering any further stream fetches.
+
+## 7. Adaptive Launcher Icon Clipping & Color Mismatches
+**Mistake**: Placing a square image foreground with a solid background directly onto an adaptive icon canvas without proper scaling or matching background colors.
+**Consequence**: Android masks circular/squircle shapes, clipping the corners of the square foreground and showing the fallback background (e.g. solid white) at the edges, causing a distorted and unpolished look.
+**Solution**: Scale the foreground symbol/logo down to between 50% and 72% of the canvas size to ensure it resides inside the Android safe zone. If the logo has a background gradient that cannot be separated, mathematically project the gradient border radially to the edges of the canvas to create a solid square image, and match `adaptive_icon_background` in `pubspec.yaml` to the brand's primary color to hide any movement/reveal borders.
