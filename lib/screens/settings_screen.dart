@@ -5,6 +5,8 @@ import '../theme.dart';
 import 'edit_profile_screen.dart';
 import 'tts_settings_screen.dart';
 import 'support_chat_screen.dart';
+import 'about_platform_screen.dart';
+import 'faq_screen.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -16,7 +18,7 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  String _appVersion = '1.3.1 (VS Code Build)';
+  String _appVersion = '2.1 MVP';
   bool _muteAppSounds = false;
 
   @override
@@ -115,6 +117,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         DropdownMenuItem(
                           value: ChatBubbleTheme.solidPurple,
                           child: Text('Solid Purple'),
+                        ),
+                        DropdownMenuItem(
+                          value: ChatBubbleTheme.darkGray,
+                          child: Text('Dark Gray'),
                         ),
                         DropdownMenuItem(
                           value: ChatBubbleTheme.lightGray,
@@ -263,14 +269,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Divider(),
           _buildSectionHeader('About'),
           ListTile(
-            leading: Icon(Icons.help_outline),
-            title: Text('Help & Feedback'),
-            onTap: () {},
+            leading: Icon(Icons.question_answer_outlined),
+            title: Text('FAQs'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const FaqScreen()),
+              );
+            },
           ),
           ListTile(
             leading: Icon(Icons.info_outline),
             title: Text('About Platform'),
-            onTap: () {},
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AboutPlatformScreen()),
+              );
+            },
           ),
 
           Divider(),

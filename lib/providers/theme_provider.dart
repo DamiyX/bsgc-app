@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum ChatBubbleTheme { gradient, solidPurple, lightGray, dark }
+enum ChatBubbleTheme { gradient, solidPurple, lightGray, dark, darkGray }
 
 class ThemeProvider extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.light;
@@ -37,7 +37,7 @@ class ThemeProvider extends ChangeNotifier {
       _chatBubbleTheme = ChatBubbleTheme.values[themeIndex];
     } else {
       bool useSimple = prefs.getBool('use_simple_chat_color') ?? false;
-      _chatBubbleTheme = useSimple ? ChatBubbleTheme.solidGray : ChatBubbleTheme.gradient;
+      _chatBubbleTheme = useSimple ? ChatBubbleTheme.lightGray : ChatBubbleTheme.gradient;
     }
 
     if (savedMode != null) {

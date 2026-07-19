@@ -45,7 +45,7 @@ class _FoyerScreenState extends State<FoyerScreen> {
               ),
               SizedBox(height: 16),
               Text(
-                'Where faith meets fellowship',
+                'Fellowship beyond Sundays. Weaving believers together.',
                 style: TextStyle(
                   fontSize: 16,
                   color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),

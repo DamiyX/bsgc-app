@@ -716,6 +716,8 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                 Provider.of<ThemeProvider>(context, listen: false).setChatBubbleTheme(ChatBubbleTheme.solidPurple);
               } else if (value == 'theme_light_gray') {
                 Provider.of<ThemeProvider>(context, listen: false).setChatBubbleTheme(ChatBubbleTheme.lightGray);
+              } else if (value == 'theme_dark_gray') {
+                Provider.of<ThemeProvider>(context, listen: false).setChatBubbleTheme(ChatBubbleTheme.darkGray);
               } else if (value == 'theme_dark') {
                 Provider.of<ThemeProvider>(context, listen: false).setChatBubbleTheme(ChatBubbleTheme.dark);
               }
@@ -732,6 +734,10 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
               const PopupMenuItem(
                 value: 'theme_purple',
                 child: Text('Use Solid Purple Bubbles'),
+              ),
+              const PopupMenuItem(
+                value: 'theme_dark_gray',
+                child: Text('Use Dark Gray Bubbles'),
               ),
               const PopupMenuItem(
                 value: 'theme_light_gray',
@@ -801,6 +807,13 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                           ]
                         ],
                       ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       body: SafeArea(
         child: Stack(
           children: [
@@ -898,22 +911,25 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
             if (_showScrollToBottom)
               Positioned(
                 bottom: 100, // Move button above input area
-                right: 16,
-                child: GestureDetector(
-                  onTap: _smoothScrollToBottom,
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).brightness == Brightness.dark ? Colors.grey[800] : Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2))],
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: GestureDetector(
+                    onTap: _smoothScrollToBottom,
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).brightness == Brightness.dark ? Colors.grey[800] : Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2))],
+                      ),
+                      child: Center(
+                        child: Icon(Icons.arrow_downward, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black87, size: 20),
+                      ),
                     ),
-                    child: Center(
-                      child: Icon(Icons.arrow_downward, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black87, size: 20),
-                    ),
-                  ),
-                ).animate().fade().scale(),
+                  ).animate().fade().scale(),
+                ),
               ),
             Positioned(
               bottom: 0,
@@ -1432,6 +1448,8 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     switch (theme) {
       case ChatBubbleTheme.solidPurple:
+        return AppColors.gradientEnd;
+      case ChatBubbleTheme.darkGray:
         return AppColors.primary;
       case ChatBubbleTheme.lightGray:
         return isDark ? Colors.grey[800] : const Color(0xFFF4F4F4);

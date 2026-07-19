@@ -15,3 +15,7 @@
 ## Widget Lifecycle Control
 **Decision**: Removed ValueKey from page viewers in favor of didUpdateWidget.
 **Reason**: Using ValueKey on a widget forces Flutter to entirely destroy and recreate the widget tree when the underlying data ID changes, which causes extremely jarring UI flickering (especially for bottom navigation bars). Overriding didUpdateWidget allows the state to gracefully reset animations while preserving the widget structure, resulting in smooth transitions.
+
+## Adaptive Launcher Icon Styling
+**Decision**: Configured adaptive Android launcher icons with a custom radial-padded crop of `icon 6.png` with a canvas crop factor of 1840x1840 and `#8E54E9` (brand purple) background.
+**Reason**: To avoid over-zooming the logo, we changed the crop bounding box size from 1380x1380 to 1840x1840 centered at `(1152, 932)`. This leaves the full purple circular icon with its original dimensions (about 72.8% of the canvas width), and mathematically projects the gradient border outwards to replace the off-white background with a seamless purple margin. This gives the icon a balanced, unclipped, and premium look.
