@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -258,7 +259,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             radius: 50,
                             backgroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
                             backgroundImage: user?.photoURL != null
-                                ? NetworkImage(user!.photoURL!)
+                                ? CachedNetworkImageProvider(user!.photoURL!)
                                 : null,
                             child: user?.photoURL == null
                                 ? Icon(

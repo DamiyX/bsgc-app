@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
@@ -426,10 +427,10 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
 
   Widget _buildGroupImage() {
     if (_group.photoUrl != null && _group.photoUrl!.isNotEmpty) {
-      return Image.network(
+      return CachedNetworkImage(imageUrl: 
         _group.photoUrl!,
         fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
+        errorWidget: (context, url, error) {
           return _fallbackGroupGraphic();
         },
       );
@@ -997,7 +998,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
                                             (_tappedMemberId != uid &&
                                                 photo != null &&
                                                 photo.isNotEmpty)
-                                            ? NetworkImage(photo)
+                                            ? CachedNetworkImageProvider(photo)
                                             : null,
                                         child: _tappedMemberId == uid
                                             ? Text(

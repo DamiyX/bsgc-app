@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -156,7 +157,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                             child: GestureDetector(
                                               onTap: () => Navigator.pop(context),
                                               child: InteractiveViewer(
-                                                child: Image.network(_photoUrl, fit: BoxFit.contain),
+                                                child: CachedNetworkImage(imageUrl: _photoUrl, fit: BoxFit.contain),
                                               ),
                                             ),
                                           ),
@@ -182,7 +183,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         child: CircleAvatar(
                                           radius: 40,
                                           backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                          backgroundImage: _photoUrl.isNotEmpty ? NetworkImage(_photoUrl) : null,
+                                          backgroundImage: _photoUrl.isNotEmpty ? CachedNetworkImageProvider(_photoUrl) : null,
                                           child: _photoUrl.isEmpty 
                                               ? Icon(Icons.person, size: 40, color: Theme.of(context).colorScheme.onSurfaceVariant)
                                               : null,

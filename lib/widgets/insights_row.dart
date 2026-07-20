@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/insight_model.dart';
@@ -8,10 +9,22 @@ import '../screens/my_insights_screen.dart';
 import '../services/contact_cache_service.dart';
 import '../theme.dart';
 
-class InsightsRow extends StatelessWidget {
-  final InsightService _insightService = InsightService();
+class InsightsRow extends StatefulWidget {
+  const InsightsRow({super.key});
 
-  InsightsRow({super.key});
+  @override
+  State<InsightsRow> createState() => _InsightsRowState();
+}
+
+class _InsightsRowState extends State<InsightsRow> {
+  final InsightService _insightService = InsightService();
+  late Stream<List<InsightModel>> _insightsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _insightsStream = _insightService.getActiveInsights();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +45,7 @@ class InsightsRow extends StatelessWidget {
         SizedBox(
           height: 130,
           child: StreamBuilder<List<InsightModel>>(
-            stream: _insightService.getActiveInsights(),
+            stream: _insightsStream,
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return Center(child: Text('Error loading insights'));
@@ -146,7 +159,7 @@ class InsightsRow extends StatelessWidget {
                       child: CircleAvatar(
                         radius: 40,
                         backgroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                        backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
+                        backgroundImage: user?.photoURL != null ? CachedNetworkImageProvider(user!.photoURL!) : null,
                         child: user?.photoURL == null ? Icon(Icons.person, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45), size: 40) : null,
                       ),
                     ),
@@ -255,7 +268,7 @@ class InsightsRow extends StatelessWidget {
                     child: CircleAvatar(
                       radius: 40,
                       backgroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                      backgroundImage: authorPhotoUrl != null ? NetworkImage(authorPhotoUrl) : null,
+                      backgroundImage: authorPhotoUrl != null ? CachedNetworkImageProvider(authorPhotoUrl) : null,
                       child: authorPhotoUrl == null ? Icon(Icons.person, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45), size: 40) : null,
                     ),
                   ),

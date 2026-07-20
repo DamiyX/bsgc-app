@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import '../theme.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -145,7 +146,7 @@ class MyInsightsScreen extends StatelessWidget {
                             child: CircleAvatar(
                               radius: 22,
                               backgroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                              backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
+                              backgroundImage: user?.photoURL != null ? CachedNetworkImageProvider(user!.photoURL!) : null,
                               child: user?.photoURL == null ? Icon(Icons.person, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45)) : null,
                             ),
                           ),

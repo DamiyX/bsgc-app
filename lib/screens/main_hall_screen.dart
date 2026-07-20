@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -23,20 +24,53 @@ import 'profile_screen.dart';
 import 'settings_screen.dart';
 import 'create_note_screen.dart';
 import '../services/contact_cache_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-class MainHallScreen extends StatelessWidget {
+class MainHallScreen extends StatefulWidget {
   const MainHallScreen({super.key});
+
+  @override
+  State<MainHallScreen> createState() => _MainHallScreenState();
+}
+
+class _MainHallScreenState extends State<MainHallScreen> {
+  final ChatService chatService = ChatService();
+  late final Stream<List<GroupModel>> _groupsStream;
+  List<GroupModel>? _cachedGroups;
+
+  @override
+  void initState() {
+    super.initState();
+    _groupsStream = chatService.getUserGroups();
+    // Initialize push notifications when user enters the main hall
+    NotificationService().init();
+    // Sync local phone contacts for overriding Google names
+    ContactCacheService().syncContactsInBackground();
+    _checkActiveRoute();
+  }
+
+  Future<void> _checkActiveRoute() async {
+    final prefs = await SharedPreferences.getInstance();
+    final activeGroupId = prefs.getString('active_group_id');
+    final timestamp = prefs.getInt('active_route_timestamp') ?? 0;
+    
+    if (activeGroupId != null) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      // Restore if minimized within last 60 minutes
+      if (now - timestamp < 60 * 60 * 1000) {
+        final doc = await FirebaseFirestore.instance.collection('groups').doc(activeGroupId).get();
+        if (doc.exists && mounted) {
+          final group = GroupModel.fromFirestore(doc);
+          Navigator.push(context, MaterialPageRoute(builder: (_) => StudyRoomScreen(group: group)));
+        }
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-    final chatService = ChatService();
 
-    // Initialize push notifications when user enters the main hall
-    NotificationService().init();
-    
-    // Sync local phone contacts for overriding Google names
-    ContactCacheService().syncContactsInBackground();
 
     return Scaffold(
       appBar: AppBar(
@@ -93,17 +127,21 @@ class MainHallScreen extends StatelessWidget {
       ),
       body: SafeArea(
         child: StreamBuilder<List<GroupModel>>(
-          stream: chatService.getUserGroups(),
+          stream: _groupsStream,
           builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
+            if (snapshot.hasData) {
+              _cachedGroups = snapshot.data!;
+            }
+
+            if (_cachedGroups == null && snapshot.connectionState == ConnectionState.waiting) {
               return Center(
                 child: CircularProgressIndicator(color: AppColors.gradientEnd),
               );
             }
-            if (snapshot.hasError) {
+            if (snapshot.hasError && _cachedGroups == null) {
               return Center(child: Text('Error loading groups'));
             }
-            final groups = snapshot.data ?? [];
+            final groups = _cachedGroups ?? [];
 
             return CustomScrollView(
               slivers: [

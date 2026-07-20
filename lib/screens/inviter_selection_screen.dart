@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -359,7 +360,7 @@ class _InviterSelectionScreenState extends State<InviterSelectionScreen> {
                               return ListTile(
                                 leading: CircleAvatar(
                                   backgroundImage: friend['photoURL'] != ''
-                                      ? NetworkImage(friend['photoURL'])
+                                      ? CachedNetworkImageProvider(friend['photoURL'])
                                       : null,
                                   child: friend['photoURL'] == ''
                                       ? Icon(Icons.person)

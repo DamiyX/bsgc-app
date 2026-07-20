@@ -15,6 +15,7 @@ import 'package:provider/provider.dart';
 import 'package:bsgc_app/providers/theme_provider.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:bsgc_app/services/backup_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 @pragma('vm:entry-point')
 void callbackDispatcher() {
@@ -34,6 +35,8 @@ void callbackDispatcher() {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  final prefs = await SharedPreferences.getInstance();
+
   try {
     await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
     
@@ -52,17 +55,10 @@ void main() async {
     debugPrint('Failed to initialize Crashlytics: $e');
   }
 
-  try {
-    await BibleService().init();
-  } catch (e) {
-    debugPrint('Failed to initialize BibleService: $e');
-  }
-
-  try {
-    await DeepLinkService().init();
-  } catch (e) {
-    debugPrint('Failed to initialize DeepLinkService: $e');
-  }
+  await Future.wait([
+    BibleService().init().catchError((e) => debugPrint('Failed to initialize BibleService: $e')),
+    DeepLinkService().init().catchError((e) => debugPrint('Failed to initialize DeepLinkService: $e')),
+  ]);
 
   if (!kIsWeb) {
     try {
@@ -86,7 +82,7 @@ void main() async {
 
   runApp(
     ChangeNotifierProvider(
-      create: (_) => ThemeProvider(),
+      create: (_) => ThemeProvider(prefs),
       child: const BraidApp(),
     ),
   );
@@ -112,23 +108,44 @@ class BraidApp extends StatelessWidget {
   }
 }
 
-class AuthWrapper extends StatelessWidget {
+class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  late final Stream<User?> _authStream;
+  bool _hasReceivedData = false;
+  Widget? _lastScreen;
+
+  @override
+  void initState() {
+    super.initState();
+    _authStream = AuthService().userStream;
+  }
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
-      stream: AuthService().userStream,
+      stream: _authStream,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.hasData || snapshot.data != null) {
+          _hasReceivedData = true;
+          _lastScreen = const UserDataWrapper();
+        } else if (snapshot.connectionState == ConnectionState.active && !snapshot.hasData) {
+          _hasReceivedData = true;
+          _lastScreen = const FoyerScreen();
+        }
+
+        if (!_hasReceivedData) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator(color: AppColors.gradientEnd)),
           );
         }
-        if (snapshot.hasData) {
-          return const UserDataWrapper();
-        }
-        return const FoyerScreen();
+
+        return _lastScreen ?? const FoyerScreen();
       },
     );
   }

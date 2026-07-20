@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../models/bible_model.dart';
 
@@ -33,8 +34,8 @@ class BibleService {
   Future<void> _loadTranslation(String name, String path) async {
     try {
       final String response = await rootBundle.loadString(path);
-      final List<dynamic> data = json.decode(response);
-      _bibles[name] = BibleModel.fromJson(name, data);
+      final dynamic data = await compute(jsonDecode, response);
+      _bibles[name] = BibleModel.fromJson(name, data as List<dynamic>);
     } catch (e) {
       print('Failed to load Bible $name: $e');
     }

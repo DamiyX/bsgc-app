@@ -44,12 +44,17 @@ class _FoyerScreenState extends State<FoyerScreen> {
                 ),
               ),
               SizedBox(height: 16),
-              Text(
-                'Fellowship beyond Sundays. Weaving believers together.',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                  letterSpacing: 1.2,
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  'Fellowship beyond Sundays. Weaving believers together.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontStyle: FontStyle.italic,
+                    color: AppColors.gradientEnd,
+                    letterSpacing: 1.2,
+                  ),
                 ),
               ),
               SizedBox(height: 64),

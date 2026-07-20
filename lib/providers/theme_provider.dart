@@ -10,8 +10,8 @@ class ThemeProvider extends ChangeNotifier {
   ThemeMode get themeMode => _themeMode;
   ChatBubbleTheme get chatBubbleTheme => _chatBubbleTheme;
 
-  ThemeProvider() {
-    _loadTheme();
+  ThemeProvider(SharedPreferences prefs) {
+    _loadTheme(prefs);
   }
 
   void setThemeMode(ThemeMode mode) async {
@@ -28,8 +28,7 @@ class ThemeProvider extends ChangeNotifier {
     await prefs.setInt('chat_bubble_theme', theme.index);
   }
 
-  Future<void> _loadTheme() async {
-    final prefs = await SharedPreferences.getInstance();
+  void _loadTheme(SharedPreferences prefs) {
     final savedMode = prefs.getString('theme_mode');
     
     int? themeIndex = prefs.getInt('chat_bubble_theme');
@@ -48,9 +47,6 @@ class ThemeProvider extends ChangeNotifier {
       } else {
         _themeMode = ThemeMode.light;
       }
-      notifyListeners();
-    } else {
-      notifyListeners();
     }
   }
 }

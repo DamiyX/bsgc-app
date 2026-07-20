@@ -255,15 +255,23 @@ class ChatService {
     if (memberIds.isEmpty) return [];
     
     try {
-      // Note: `whereIn` accepts max 10 elements. If a group grows >10, we'll need batching.
-      // Since group max is 12, we can just split or fetch individually. Fetching individually is safer for prototypes.
       List<Map<String, dynamic>> profiles = [];
+      
+      // Firestore whereIn supports up to 10 elements.
+      for (int i = 0; i < memberIds.length; i += 10) {
+        final chunk = memberIds.sublist(i, i + 10 > memberIds.length ? memberIds.length : i + 10);
+        final snap = await _firestore.collection('users').where(FieldPath.documentId, whereIn: chunk).get();
+        
+        profiles.addAll(snap.docs.map((doc) {
+          final data = doc.data();
+          data['uid'] = doc.id;
+          return data;
+        }));
+      }
+      
+      // Fallback for missing profiles
       for (String uid in memberIds) {
-        final doc = await _firestore.collection('users').doc(uid).get();
-        if (doc.exists && doc.data() != null) {
-          profiles.add(doc.data()!);
-        } else {
-          // Fallback if profile not found
+        if (!profiles.any((p) => p['uid'] == uid)) {
           profiles.add({
             'uid': uid,
             'displayName': 'Unknown Believer',

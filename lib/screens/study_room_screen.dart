@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'package:provider/provider.dart';
@@ -22,6 +23,7 @@ import 'package:bsgc_app/services/storage_service.dart';
 import 'dart:async';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/scripture_parser.dart';
 import '../widgets/bible_verse_bottom_sheet.dart';
 import '../widgets/add_member_sheet.dart';
@@ -41,7 +43,7 @@ class StudyRoomScreen extends StatefulWidget {
   State<StudyRoomScreen> createState() => _StudyRoomScreenState();
 }
 
-class _StudyRoomScreenState extends State<StudyRoomScreen> {
+class _StudyRoomScreenState extends State<StudyRoomScreen> with WidgetsBindingObserver {
 
   final FlutterTts _flutterTts = FlutterTts();
   String? _speakingMessageId;
@@ -152,8 +154,11 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_onScroll);
     _messagesStream = _chatService.getGroupMessages(widget.group.id, limit: _messageLimit);
+    
+    _saveActiveRoute();
     
     if (widget.showAddMemberPrompt) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -167,8 +172,28 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     }
   }
 
+  Future<void> _saveActiveRoute() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('active_group_id', widget.group.id);
+    await prefs.setInt('active_route_timestamp', DateTime.now().millisecondsSinceEpoch);
+  }
+
+  void _clearActiveRoute() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('active_group_id');
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      _saveActiveRoute();
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _clearActiveRoute();
     for (var timer in _progressTimers.values) {
       timer.cancel();
     }
@@ -694,10 +719,6 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
         elevation: 0,
         iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
         actions: [
-          IconButton(
-            icon: Icon(Icons.bug_report, color: Colors.transparent),
-            onPressed: _seedMockMessages,
-          ),
           PopupMenuButton<String>(
             icon: Icon(Icons.more_vert, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
             onSelected: (value) {
@@ -773,7 +794,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                         borderRadius: BorderRadius.circular(4),
                         boxShadow: [BoxShadow(color: Theme.of(context).dividerColor, blurRadius: 2, offset: Offset(0, 1))],
                         image: DecorationImage(
-                          image: NetworkImage(widget.group.photoUrl!),
+                          image: CachedNetworkImageProvider(widget.group.photoUrl!),
                           fit: BoxFit.cover,
                         ),
                       ),
@@ -862,7 +883,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                     child: ListView.builder(
                       controller: _scrollController,
                       reverse: true,
-                      padding: EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 120), // Increased bottom padding for input area
+                      padding: EdgeInsets.only(left: 8, right: 8, top: 8, bottom: 120), // Increased bottom padding for input area
                       itemCount: messages.length + (_isLoadingMore && _hasMoreMessages ? 1 : 0),
                       itemBuilder: (context, index) {
                         if (index == messages.length) {
@@ -935,14 +956,21 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
               bottom: 0,
               left: 0,
               right: 0,
-              child: ClipRect(
-                child: BackdropFilter(
-                  filter: ui.ImageFilter.blur(sigmaX: 12.0, sigmaY: 12.0),
-                  child: Container(
-                    color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.7),
-                    child: _buildInputArea(),
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.0),
+                      Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.8),
+                      Theme.of(context).scaffoldBackgroundColor,
+                    ],
+                    stops: const [0.0, 0.4, 1.0],
                   ),
                 ),
+                padding: const EdgeInsets.only(top: 32),
+                child: _buildInputArea(),
               ),
             ),
           ],
@@ -1015,7 +1043,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
               ),
               child: ClipOval(
                 child: message.senderPhotoUrl != null && message.senderPhotoUrl!.isNotEmpty
-                    ? Image.network(message.senderPhotoUrl!, fit: BoxFit.cover)
+                    ? CachedNetworkImage(imageUrl: message.senderPhotoUrl!, fit: BoxFit.cover)
                     : Icon(Icons.person, size: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45)),
               ),
             ),
@@ -1164,7 +1192,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border(left: BorderSide(color: _getAvatarColor(replyMsg.senderId), width: 3)),
+                  border: Border(bottom: BorderSide(color: _getAvatarColor(replyMsg.senderId), width: 2)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1249,7 +1277,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                         ),
                         body: Center(
                           child: InteractiveViewer(
-                            child: Image.network(part.content),
+                            child: CachedNetworkImage(imageUrl: part.content),
                           ),
                         ),
                       ),
@@ -1258,13 +1286,12 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                 },
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: Image.network(
+                  child: CachedNetworkImage(imageUrl: 
                     part.content,
                     width: 250,
                     height: 250,
                     fit: BoxFit.cover,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
+                    placeholder: (context, url) {
                       return Container(
                         width: 250,
                         height: 250,
@@ -1272,7 +1299,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                         child: Center(child: CircularProgressIndicator()),
                       );
                     },
-                    errorBuilder: (_, _, _) => Container(
+                    errorWidget: (context, url, error) => Container(
                       width: 250,
                       height: 250,
                       color: Theme.of(context).dividerColor,
@@ -1290,7 +1317,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
       padding: EdgeInsets.only(
         bottom: isLastInGroup ? 36.0 : 0.0, 
         top: isFirstInGroup ? 12.0 : 0.0, 
-        left: 16.0, 
+        left: 8.0, 
         right: 16.0
       ),
       child: Column(
@@ -1647,7 +1674,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                               decoration: BoxDecoration(
                                 color: isMe ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.15) : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border(left: BorderSide(color: _getAvatarColor(replyMsg.senderId), width: 3)),
+                                border: Border(bottom: BorderSide(color: _getAvatarColor(replyMsg.senderId), width: 2)),
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1701,7 +1728,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                                         ),
                                         body: Center(
                                           child: InteractiveViewer(
-                                            child: Image.network(part.content),
+                                            child: CachedNetworkImage(imageUrl: part.content),
                                           ),
                                         ),
                                       ),
@@ -1710,13 +1737,12 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                                 },
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(12),
-                                  child: Image.network(
+                                  child: CachedNetworkImage(imageUrl: 
                                     part.content,
                                     width: 250,
                                     height: 250,
                                     fit: BoxFit.cover,
-                                    loadingBuilder: (context, child, loadingProgress) {
-                                      if (loadingProgress == null) return child;
+                                    placeholder: (context, url) {
                                       return Container(
                                         width: 250,
                                         height: 250,
@@ -1724,7 +1750,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                                         child: Center(child: CircularProgressIndicator(color: Colors.white)),
                                       );
                                     },
-                                    errorBuilder: (_, _, _) => Container(
+                                    errorWidget: (context, url, error) => Container(
                                       width: 250,
                                       height: 250,
                                       color: Colors.white24,
@@ -1820,7 +1846,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(50),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 10, offset: Offset(0, 4))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 16, offset: Offset(0, 0))],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

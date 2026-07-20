@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -632,7 +633,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                 radius: 16,
                 backgroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
                 backgroundImage: comment.authorPhotoUrl != null
-                    ? NetworkImage(comment.authorPhotoUrl!)
+                    ? CachedNetworkImageProvider(comment.authorPhotoUrl!)
                     : null,
                 child: comment.authorPhotoUrl == null
                     ? Icon(Icons.person, size: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54))
@@ -962,8 +963,8 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                         height: 3,
                         decoration: BoxDecoration(
                           color: idx <= widget.insightIndex
-                              ? Theme.of(context).colorScheme.onSurface
-                              : Theme.of(context).colorScheme.onSurface,
+                              ? AppColors.gradientEnd
+                              : Colors.grey.withValues(alpha: 0.3),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -986,7 +987,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                           radius: 20,
                           backgroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
                           backgroundImage: widget.insight.authorPhotoUrl != null
-                              ? NetworkImage(widget.insight.authorPhotoUrl!)
+                              ? CachedNetworkImageProvider(widget.insight.authorPhotoUrl!)
                               : null,
                           child: widget.insight.authorPhotoUrl == null
                               ? Icon(Icons.person, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45))

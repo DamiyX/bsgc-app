@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
@@ -599,7 +600,7 @@ class _AddMemberSheetState extends State<AddMemberSheet> {
     }
 
     Widget avatarWidget = CircleAvatar(
-      backgroundImage: NetworkImage(contact['photo']),
+      backgroundImage: CachedNetworkImageProvider(contact['photo']),
       radius: 24,
     );
 
@@ -618,7 +619,7 @@ class _AddMemberSheetState extends State<AddMemberSheet> {
             ),
           ),
           CircleAvatar(
-            backgroundImage: NetworkImage(contact['photo']),
+            backgroundImage: CachedNetworkImageProvider(contact['photo']),
             radius: 22, // Slightly smaller to fit inside ring
           ),
         ],
