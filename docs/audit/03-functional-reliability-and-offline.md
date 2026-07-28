@@ -290,7 +290,9 @@ The client uses `saved_insights`, but rules do not authorize it. Saving/listing 
 
 No explicit audience enforcement, report, block, or moderation system exists.
 
-Recommended MVP: remove the global ephemeral feed and replace it later with group-scoped/deliberately shared Reflections.
+Recommended MVP: preserve the contacts-based Insights concept, but do not ship the current unscoped feed. Build and test an explicit connection/audience model so only the author’s approved contacts receive the Insight. Comments remain visible to that Insight’s eligible audience without giving commenters access to one another’s separate Insights. If the secure audience model cannot be completed for the first beta, temporarily hide Insights rather than expose the wrong audience.
+
+The three-day expiry is a separate product decision. Braid can retain a lightweight expiring contacts feed while allowing authors to keep their own Insight history and viewers to save valuable Insights. Alternatively, durable study Reflections and temporary Updates can become separate content types. This should be validated with users rather than silently renaming or removing the feature.
 
 ## 10. Notes defects
 

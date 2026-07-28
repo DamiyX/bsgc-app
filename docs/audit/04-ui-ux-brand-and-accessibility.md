@@ -137,23 +137,29 @@ Behavior:
 - attach Scripture context;
 - support edit/version behavior explicitly.
 
-## 7. Redesign Insights
+## 7. Strengthen contacts-based Insights
 
-The current Stories implementation encourages fast checking and expiring visibility.
+Insights serve a distinct product job: believers can share what they learned beyond a twelve-person study circle, and their approved contacts can ask questions or contribute under that Insight. Preserve that capability.
 
-Recommended replacement: **Reflections**
+Required experience and product rules:
 
-- durable by default;
-- tied to Scripture/study;
-- explicit audience;
-- group scoped for MVP;
-- thoughtful comments;
-- save to Journal;
-- resurface after a useful interval;
-- no global public feed;
-- no popularity ranking.
+- the author’s approved contacts are the audience;
+- a viewer never gains access to another commenter’s separate Insights merely because both commented under the same author;
+- comments remain open to the eligible audience of the parent Insight;
+- audience is visible before publishing;
+- Scripture/study references can be attached;
+- users can save a valuable Insight;
+- the author retains a personal history even if contact visibility expires;
+- the feed is recent/contact-based, not ranked by popularity;
+- reactions may express “Helpful,” “Amen,” or encouragement, but do not create leaderboards or public status.
 
-If short-lived updates are retained, separate them as “Updates” and do not present them as substantial study reflections.
+The three-day expiry should be validated. Three viable options are:
+
+1. Keep Insights contact-visible for three days while retaining the author’s private history and allowing saves.
+2. Make Insights durable and chronological.
+3. Keep durable Insights and introduce a separate temporary “Updates” type for short-lived announcements/check-ins.
+
+The smallest safe MVP is option 1 if expiry is central to the intended rhythm. The implementation must still enforce audience access and pagination.
 
 ## 8. Healthy engagement
 
@@ -172,7 +178,7 @@ Avoid:
 - aggressive streak loss;
 - infinite/global feed;
 - popularity-based ranking;
-- referral reach as status;
+- public/competitive referral reach as status;
 - notification copy designed only to create curiosity;
 - excessive seen/like metrics.
 
@@ -330,6 +336,7 @@ Recommended profile:
 - personal Journal shortcuts visible only to owner;
 - group memberships;
 - privacy controls.
+- a private “people you welcomed” invitation-impact section, focused on invitees who became active in study circles rather than a public follower-like rank.
 
 Remove gender unless there is a clear, consented feature requirement. Never default unknown data to Male.
 

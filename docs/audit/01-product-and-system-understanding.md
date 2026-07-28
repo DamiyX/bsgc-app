@@ -8,7 +8,7 @@ Braid is an Android-first Flutter/Firebase application for small-group Bible stu
 - book- or topic-based study periods;
 - group chat and media;
 - private Notes;
-- short-lived public or social Insights;
+- short-lived, intended contacts-based Insights (currently implemented without the required audience filter);
 - Scripture recognition and reading;
 - profiles, referrals, and contact-based discovery;
 - notifications and backup.
@@ -129,9 +129,9 @@ The support copy says Braid rejects addictive, viral social media. The interface
 
 These mechanics reward checking and visibility more than reflection and application.
 
-### 5.2 Trusted network versus global Insights
+### 5.2 Trusted-network intent versus unscoped Insights implementation
 
-The FAQ describes contact-oriented visibility, but the implementation queries all unexpired Insights. The product promise, query, and rules do not describe the same audience.
+The intended product rule is valuable: an author’s approved contacts can see that author’s Insight and interact under it, while those viewers do not automatically gain access to one another’s separate Insights. The implementation currently queries all unexpired Insights without applying that relationship rule. “Global” in this audit means global among signed-in Braid users, not public on the open internet. The product promise, query, and rules must describe and enforce the same audience.
 
 ### 5.3 Study plan versus dated group chat
 
@@ -145,9 +145,11 @@ The twelve-member cap implies trust, but group documents are broadly readable an
 
 Notes and Insights use separate creation experiences. There is no simple path from a private reflection to an intentional group share. Users must understand product-internal record types instead of expressing one thought and choosing an audience.
 
-### 5.6 Deliberate growth versus referral metrics
+### 5.6 Evangelism intent versus status-like presentation
 
-Referral and second-degree reach are highly visible, but study completion, application follow-through, prayer support, and learning history are less prominent. The product measures acquisition more visibly than formation.
+The intended purpose of referrals is to encourage believers to welcome others into Braid and record their contribution to forming new study relationships. That is consistent with the mission. The risk comes from presenting referral and second-degree reach like a public follower/status count while study completion, application follow-through, prayer support, and learning history are less prominent.
+
+Preserve invitation-impact tracking, but frame it as “people you welcomed” or “friends who joined through your invitation,” preferably private by default. Measure whether invitees become active in study circles, not only how large a referral tree becomes. Avoid leaderboards or public rank.
 
 ## 6. Recommended product definition
 
@@ -178,6 +180,7 @@ Recommended principles:
 - Storage-backed voice messages.
 - Private journal/reflections.
 - Intentional sharing of a reflection to a group.
+- Contacts-based Insights with comments and carefully designed reactions, backed by real audience enforcement.
 - KJV and WEB offline Scripture.
 - Basic profile/preferences.
 - Notification preferences.
@@ -188,7 +191,7 @@ Recommended principles:
 - Google Drive backup/restore.
 - Video attachments.
 - Document attachments.
-- Global Stories-style Insights.
+- The current unscoped query that exposes every active Insight to every signed-in user.
 - Dummy/unavailable translations.
 - Simulated support chat.
 - Prayer Alarm placeholder.
@@ -196,7 +199,7 @@ Recommended principles:
 - Unverified contact discovery.
 - Multiple cosmetic bubble themes.
 - Unsupported edit/delete/reaction actions.
-- Referral reach as a primary profile statistic.
+- Public/competitive referral reach as a primary profile statistic; retain private invitation-impact tracking.
 
 This is not a reduction of product quality. It concentrates the MVP on a smaller set of correct, safe, and distinctive journeys.
 

@@ -56,7 +56,7 @@ The order below is deliberate. UI polish must not be implemented on top of insec
 2. Split private/public/device user data.
 3. Add explicit group `ownerId`, lifecycle, roles, and member records.
 4. Define message immutability and per-user state.
-5. Define Reflection audience and ownership.
+5. Define Insight/Reflection audience and ownership, including the rule that only an author’s approved contacts can read that author’s contacts-scoped Insight.
 6. Define reports/blocks.
 7. Rewrite Firestore rules with field allowlists/type/length checks.
 8. Rewrite Storage paths/rules with ownership, membership, type, and size.
@@ -80,7 +80,7 @@ The order below is deliberate. UI polish must not be implemented on top of insec
 
 ### Tasks
 
-1. Remove global user downloads and required contact access.
+1. Remove global user-directory downloads and stop treating unverified phone numbers as trusted relationships.
 2. Implement server-generated expiring/revocable invite tokens.
 3. Configure one canonical `/join/{token}` route.
 4. Correct Manifest intent filters.
@@ -88,8 +88,10 @@ The order below is deliberate. UI polish must not be implemented on top of insec
 6. Support installed/not-installed/authenticated/unauthenticated continuations.
 7. Add QR sharing.
 8. Handle full, expired, revoked, already-member, and blocked cases.
-9. Request no contact permission in the MVP.
-10. Add analytics without storing token/phone content.
+9. Create an explicit accepted-connection graph from invitations so contacts-based Insights can work without exposing the user directory.
+10. If WhatsApp-style phone discovery is required for the first beta, implement it as an explicit opt-in, verified-phone, server-side matching service that returns only matches. Otherwise defer phone-book discovery while keeping invite-created connections.
+11. Add a disconnect/remove-synced-contacts control if phone discovery is enabled.
+12. Add analytics without storing raw invite-token, phone, contact-list, message, or Insight content.
 
 ### Acceptance criteria
 
@@ -98,6 +100,8 @@ The order below is deliberate. UI polish must not be implemented on top of insec
 - capacity enforced atomically;
 - revoked/expired tokens fail safely;
 - no client downloads the users collection.
+- Insight audience relationships can be resolved without exposing unrelated accounts.
+- phone discovery, if enabled, never returns or downloads the global directory.
 
 ## 6. Phase 3 — Core group lifecycle
 
@@ -183,22 +187,27 @@ The order below is deliberate. UI polish must not be implemented on top of insec
 1. Implement semantic design tokens.
 2. Add Today, Groups, Journal, Me navigation.
 3. Redesign group around Plan/Reflections/Discussion/Prayer.
-4. Merge Note/Insight creation into Reflection composer.
-5. Keep audience explicit and group-scoped.
-6. Remove global Stories feed.
-7. Add Journal search/filter and revisit flow.
-8. Deemphasize referral metrics.
-9. Redesign settings around privacy/notifications/storage/data/safety.
-10. Replace logo/launcher/splash with optimized brand assets.
-11. Bundle intentional fonts.
-12. Add complete loading/empty/error/offline states.
+4. Share the underlying draft/composer building blocks between private Notes, group Reflections, and contacts-based Insights without erasing their different audiences and lifecycles.
+5. Keep audience explicit: Only me, selected group, or approved contacts.
+6. Replace the unscoped active-Insights query with a paginated contacts feed that enforces the author-viewer relationship.
+7. Preserve comments for eligible viewers; do not let shared participation under one Insight grant access to commenters’ separate Insights.
+8. Retain reactions with noncompetitive presentation and no popularity-ranked feed.
+9. Add Journal search/filter and revisit flow.
+10. Reframe referrals as private invitation impact (“people you welcomed”), not public follower-like status.
+11. Redesign settings around privacy/notifications/storage/data/safety.
+12. Replace logo/launcher/splash with optimized brand assets.
+13. Bundle intentional fonts.
+14. Add complete loading/empty/error/offline states.
 
 ### Acceptance criteria
 
 - primary value is understandable without explanation;
 - current study action is one tap from Today;
 - private reflection can later be shared deliberately;
-- no global feed leaks content;
+- contacts can discover and discuss eligible Insights outside their study groups;
+- no noncontact can read an author’s contacts-only Insight;
+- participation under one Insight does not expose commenters’ independent Insights;
+- referral impact encourages successful invitations without leaderboards or public rank;
 - every core async screen has all states;
 - light/dark themes use semantic tokens.
 
@@ -236,7 +245,7 @@ The order below is deliberate. UI polish must not be implemented on top of insec
 5. Add foreground/background/terminated routing.
 6. Derive trusted sender/group names server-side.
 7. Add lock-screen preview preferences.
-8. Replace global/unbounded queries.
+8. Replace global/unbounded queries, including the active-Insights listener, with bounded audience-scoped feeds.
 9. Replace seen/liked arrays.
 10. Remove sequential N+1 referral/member reads.
 11. Add cleanup for invites/tokens/orphan uploads.
@@ -251,6 +260,20 @@ The order below is deliberate. UI polish must not be implemented on top of insec
 - all list queries bounded/paginated;
 - no O(all users) client operation;
 - load-test query/write counts documented.
+
+### Product outcome measurements
+
+Measure outcomes that represent fellowship and study rather than vanity:
+
+- percentage of published Insights viewed by at least one eligible contact;
+- percentage receiving a substantive comment/question;
+- percentage of Insight viewers who later participate in a study circle;
+- percentage of accepted invitees who become active in a group;
+- weekly percentage of active groups completing a planned study step;
+- percentage of private reflections deliberately shared to a group or contacts;
+- access-control test/telemetry confirming zero successful noncontact reads.
+
+Do not use total likes, raw referral-tree size, or total posts as the primary success measure.
 
 ## 12. Phase 9 — Bible, backup, and deferred features
 
@@ -348,6 +371,7 @@ Do not open an external beta until all are true:
 - P0 authorization/privacy issues fixed and tested;
 - group invitation works;
 - no global user-directory download;
+- contacts-only Insight access is enforced and tested;
 - account deletion works;
 - report/block/moderation exists;
 - unsupported features hidden;
