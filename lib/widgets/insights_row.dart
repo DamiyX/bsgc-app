@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/insight_model.dart';
@@ -8,9 +7,12 @@ import '../screens/view_insight_screen.dart';
 import '../screens/my_insights_screen.dart';
 import '../services/contact_cache_service.dart';
 import '../theme.dart';
+import 'braid_media.dart';
 
 class InsightsRow extends StatefulWidget {
-  const InsightsRow({super.key});
+  final bool embedded;
+
+  const InsightsRow({super.key, this.embedded = false});
 
   @override
   State<InsightsRow> createState() => _InsightsRowState();
@@ -31,17 +33,18 @@ class _InsightsRowState extends State<InsightsRow> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
-          child: Text(
-            'Insights',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
+        if (!widget.embedded)
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+            child: Text(
+              'Insights',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
+              ),
             ),
           ),
-        ),
         SizedBox(
           height: 130,
           child: StreamBuilder<List<InsightModel>>(
@@ -156,11 +159,11 @@ class _InsightsRowState extends State<InsightsRow> {
                         shape: BoxShape.circle,
                         color: Theme.of(context).scaffoldBackgroundColor,
                       ),
-                      child: CircleAvatar(
+                      child: BraidAvatar(
+                        identity: user?.uid ?? 'me',
+                        displayName: user?.displayName ?? 'You',
+                        imageUrl: user?.photoURL,
                         radius: 40,
-                        backgroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                        backgroundImage: user?.photoURL != null ? CachedNetworkImageProvider(user!.photoURL!) : null,
-                        child: user?.photoURL == null ? Icon(Icons.person, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45), size: 40) : null,
                       ),
                     ),
                 ),
@@ -265,11 +268,11 @@ class _InsightsRowState extends State<InsightsRow> {
                       shape: BoxShape.circle,
                       color: Theme.of(context).scaffoldBackgroundColor,
                     ),
-                    child: CircleAvatar(
+                    child: BraidAvatar(
+                      identity: userInsights.first.authorUid,
+                      displayName: authorName,
+                      imageUrl: authorPhotoUrl,
                       radius: 40,
-                      backgroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                      backgroundImage: authorPhotoUrl != null ? CachedNetworkImageProvider(authorPhotoUrl) : null,
-                      child: authorPhotoUrl == null ? Icon(Icons.person, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45), size: 40) : null,
                     ),
                   ),
                 ),

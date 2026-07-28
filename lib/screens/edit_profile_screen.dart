@@ -1,14 +1,14 @@
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:bsgc_app/services/storage_service.dart';
 import 'dart:async';
-import 'package:intl_phone_field/intl_phone_field.dart';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../services/storage_service.dart';
 import '../theme.dart';
-import 'package:flutter/services.dart';
+import '../widgets/braid_media.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -19,466 +19,235 @@ class EditProfileScreen extends StatefulWidget {
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
-  final user = FirebaseAuth.instance.currentUser;
-
-  late TextEditingController _nameController;
-  late TextEditingController _bioController;
-  late TextEditingController _emailController;
-
-  final List<TextEditingController> _phoneControllers = [];
-  final List<String> _completePhoneNumbers = [];
-
-  String? _selectedGender;
-  bool _isLoading = false;
+  final _user = FirebaseAuth.instance.currentUser;
+  late final TextEditingController _nameController;
+  late final TextEditingController _bioController;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _isLoading = true;
-    _nameController = TextEditingController(text: user?.displayName ?? '');
-    _emailController = TextEditingController(text: user?.email ?? '');
+    _nameController = TextEditingController(text: _user?.displayName ?? '');
     _bioController = TextEditingController();
     _loadProfile();
   }
 
   Future<void> _loadProfile() async {
-    if (user != null) {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user!.uid)
+    final user = _user;
+    if (user == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users_public')
+          .doc(user.uid)
           .get();
-      if (doc.exists && doc.data() != null) {
-        final data = doc.data()!;
-        if (mounted) {
-          setState(() {
-            _bioController.text = data['bio'] ?? '';
-            _selectedGender = data['gender'];
-
-            // Load phone numbers
-            List<dynamic> phones = data['phoneNumbers'] ?? [];
-            if (phones.isEmpty && data['phone'] != null) {
-              phones = [data['phone']]; // fallback for old data structure
-            }
-
-            if (phones.isEmpty) {
-              // Add at least one empty field
-              _phoneControllers.add(TextEditingController());
-              _completePhoneNumbers.add('');
-            } else {
-              for (String phone in phones) {
-                _phoneControllers.add(
-                  TextEditingController(text: _getLocalPhoneNumber(phone)),
-                );
-                _completePhoneNumbers.add(phone);
-              }
-            }
-
-            _isLoading = false;
-          });
-        }
-      } else {
-        if (mounted) setState(() => _isLoading = false);
+      final data = snapshot.data();
+      if (data != null) {
+        _nameController.text =
+            data['displayName']?.toString() ?? _nameController.text;
+        _bioController.text = data['bio']?.toString() ?? '';
       }
-    } else {
+    } catch (_) {
+      // Firestore serves cached data when available; the form remains usable
+      // with the authenticated profile if no cached public document exists.
+    } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  /// Strips the country code from a stored phone number to get just the local digits.
-  String _getLocalPhoneNumber(String phone) {
-    if (phone.isEmpty) return '';
-    if (phone.startsWith('+234')) return phone.substring(4);
-    if (phone.startsWith('234')) return phone.substring(3);
-    if (phone.startsWith('+')) {
-      final withoutPlus = phone.substring(1);
-      if (withoutPlus.length > 3) return withoutPlus.substring(3);
-      return withoutPlus;
-    }
-    return phone;
-  }
-
-  void _addPhoneNumberField() {
-    setState(() {
-      _phoneControllers.add(TextEditingController());
-      _completePhoneNumbers.add('');
-    });
-  }
-
-  void _removePhoneNumberField(int index) {
-    setState(() {
-      _phoneControllers[index].dispose();
-      _phoneControllers.removeAt(index);
-      _completePhoneNumbers.removeAt(index);
-    });
-  }
-
   Future<void> _pickImage() async {
+    final user = _user;
+    if (user == null || _isLoading) return;
+
+    final image = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (image == null) return;
+    setState(() => _isLoading = true);
+
     try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-      if (image == null) return;
-
-      setState(() => _isLoading = true);
-
-      final bytes = await image.readAsBytes();
       final compressed = await FlutterImageCompress.compressWithList(
-        bytes,
+        await image.readAsBytes(),
         minWidth: 1000,
         minHeight: 1000,
-        quality: 85,
+        quality: 82,
+        format: CompressFormat.jpeg,
       );
-
-      final url = await StorageService.uploadFile(compressed, folder: 'profiles');
-      
-      if (url.isEmpty) {
-        throw Exception('Firebase Storage upload failed');
-      }
-
-      if (user != null) {
-        await user!.updatePhotoURL(url);
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user!.uid)
-            .update({'photoURL': url});
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Profile picture updated successfully!'),
-            ),
-          );
-        }
-      }
-    } on TimeoutException {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Upload timed out. It may finish in the background.'),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to update picture: $e')));
-      }
+      final url = await StorageService.uploadProfileImage(
+        bytes: compressed,
+        userId: user.uid,
+      );
+      await FirebaseFirestore.instance
+          .collection('users_public')
+          .doc(user.uid)
+          .update({
+            'photoUrl': url,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+      await user.updatePhotoURL(url);
+      _showMessage('Profile picture updated.');
+    } on FirebaseException catch (error) {
+      _showMessage(_friendlyError(error));
+    } catch (_) {
+      _showMessage('The picture could not be uploaded. Please try again.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _saveProfile() async {
-    if (_formKey.currentState!.validate()) {
-      // Validate phone numbers (filter out empties, ensure at least one is valid)
-      final validPhones = _completePhoneNumbers
-          .where((p) => p.isNotEmpty)
-          .toList();
-      if (validPhones.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please enter at least one valid phone number'),
-          ),
-        );
-        return;
+    if (!_formKey.currentState!.validate()) return;
+    final user = _user;
+    if (user == null) return;
+
+    setState(() => _isLoading = true);
+    final displayName = _nameController.text.trim();
+    try {
+      await FirebaseFirestore.instance
+          .collection('users_public')
+          .doc(user.uid)
+          .update({
+            'displayName': displayName,
+            'bio': _bioController.text.trim(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+      if (user.displayName != displayName) {
+        try {
+          await user.updateDisplayName(displayName);
+        } catch (_) {
+          // Firestore remains the canonical in-app profile source.
+        }
       }
-
-      setState(() => _isLoading = true);
-      try {
-        if (user != null) {
-          // Update Auth Profile
-          try {
-            await user!.updateDisplayName(_nameController.text.trim()).timeout(const Duration(seconds: 3));
-          } catch (_) {}
-
-          // Update Firestore
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(user!.uid)
-              .set({
-                'displayName': _nameController.text.trim(),
-                'bio': _bioController.text.trim(),
-                'phoneNumbers': validPhones,
-                'phone':
-                    validPhones.first, // keep string for backward compatibility
-                'gender': _selectedGender ?? 'Male',
-                'updatedAt': Timestamp.now(),
-              }, SetOptions(merge: true)).timeout(const Duration(seconds: 3));
-
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Profile updated successfully!')),
-            );
-            Navigator.pop(context, true);
-          }
-        }
-      } on TimeoutException {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Profile update queued offline.')),
-          );
-          Navigator.pop(context, true);
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to update profile: $e')),
-          );
-        }
-      } finally {
-        if (mounted) setState(() => _isLoading = false);
-      }
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } on FirebaseException catch (error) {
+      _showMessage(_friendlyError(error));
+    } catch (_) {
+      _showMessage('Your profile could not be saved. Please try again.');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  String _friendlyError(FirebaseException error) {
+    if (error.code == 'unavailable' ||
+        error.code == 'network-request-failed') {
+      return 'You appear to be offline. Reconnect and try again.';
+    }
+    if (error.code == 'permission-denied') {
+      return 'Your profile could not be updated securely.';
+    }
+    return 'Your profile could not be updated. Please try again.';
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
+    final user = _user;
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Edit Profile'),
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),      ),
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(title: const Text('Edit profile')),
       body: _isLoading
-          ? Center(
-              child: CircularProgressIndicator(color: AppColors.gradientEnd),
-            )
-          : SingleChildScrollView(
-              padding: EdgeInsets.all(24.0),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Stack(
+          ? const Center(child: CircularProgressIndicator())
+          : SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 560),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          CircleAvatar(
-                            radius: 50,
-                            backgroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                            backgroundImage: user?.photoURL != null
-                                ? CachedNetworkImageProvider(user!.photoURL!)
-                                : null,
-                            child: user?.photoURL == null
-                                ? Icon(
-                                    Icons.person,
-                                    size: 50,
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                  )
-                                : null,
+                          Center(
+                            child: Stack(
+                              children: [
+                                BraidAvatar(
+                                  identity: user?.uid ?? 'me',
+                                  displayName: user?.displayName ?? 'You',
+                                  imageUrl: user?.photoURL,
+                                  radius: 52,
+                                ),
+                                Positioned(
+                                  right: 0,
+                                  bottom: 0,
+                                  child: Semantics(
+                                    button: true,
+                                    label: 'Change profile picture',
+                                    child: IconButton.filled(
+                                      onPressed: _pickImage,
+                                      icon: const Icon(
+                                        Icons.photo_camera_outlined,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: GestureDetector(
-                              onTap: _pickImage,
-                              child: Container(
-                                padding: EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: AppColors.gradientEnd,
-                                  shape: BoxShape.circle,
+                          const SizedBox(height: 32),
+                          TextFormField(
+                            controller: _nameController,
+                            textCapitalization: TextCapitalization.words,
+                            autofillHints: const [AutofillHints.name],
+                            maxLength: 80,
+                            decoration: const InputDecoration(
+                              labelText: 'Display name',
+                              prefixIcon: Icon(Icons.person_outline_rounded),
+                              border: OutlineInputBorder(),
+                            ),
+                            validator: (value) {
+                              if ((value?.trim().length ?? 0) < 2) {
+                                return 'Enter at least two characters.';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _bioController,
+                            textCapitalization: TextCapitalization.sentences,
+                            minLines: 3,
+                            maxLines: 5,
+                            maxLength: 300,
+                            decoration: const InputDecoration(
+                              labelText: 'About you',
+                              hintText:
+                                  'A short introduction for your study groups',
+                              alignLabelWithHint: true,
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Braid does not publish your email or request your '
+                            'phone contacts.',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                 ),
-                                child: Icon(
-                                  Icons.camera_alt,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                              ),
+                          ),
+                          const SizedBox(height: 28),
+                          SizedBox(
+                            height: 54,
+                            child: FilledButton(
+                              onPressed: _saveProfile,
+                              child: const Text('Save changes'),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    SizedBox(height: 32),
-
-                    Text(
-                      'Full Name',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    TextFormField(
-                      controller: _nameController,
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: AppColors.gradientEnd, width: 2.0),
-                        ),
-                        prefixIcon: Icon(Icons.person_outline),
-                      ),
-                      validator: (val) => val == null || val.isEmpty
-                          ? 'Name is required'
-                          : null,
-                    ),
-                    SizedBox(height: 24),
-
-                    Text(
-                      'About Yourself',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    TextFormField(
-                      controller: _bioController,
-                      maxLength: 150,
-                      decoration: InputDecoration(
-                        hintText: 'Share a brief bio...',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: AppColors.gradientEnd, width: 2.0),
-                        ),
-                        prefixIcon: Icon(Icons.info_outline),
-                      ),
-                    ),
-                    SizedBox(height: 12),
-
-                    Text(
-                      'Email Address',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    TextFormField(
-                      controller: _emailController,
-                      enabled: false,
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        prefixIcon: Icon(Icons.email_outlined),
-                        fillColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                        filled: true,
-                      ),
-                    ),
-                    SizedBox(height: 24),
-
-                    Text(
-                      'Phone Numbers',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
-                      ),
-                    ),
-                    SizedBox(height: 8),
-
-                    ...List.generate(_phoneControllers.length, (index) {
-                      return Padding(
-                        padding: EdgeInsets.only(bottom: 12.0),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: IntlPhoneField(
-                                controller: _phoneControllers[index],
-                                decoration: InputDecoration(
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(color: AppColors.gradientEnd, width: 2.0),
-                                  ),
-                                ),
-                                initialCountryCode: 'NG',
-                                onChanged: (phone) {
-                                  _completePhoneNumbers[index] =
-                                      phone.completeNumber;
-                                },
-                              ),
-                            ),
-                            if (_phoneControllers.length > 1)
-                              IconButton(
-                                icon: Icon(
-                                  Icons.remove_circle_outline,
-                                  color: Colors.red,
-                                ),
-                                onPressed: () => _removePhoneNumberField(index),
-                              ),
-                          ],
-                        ),
-                      );
-                    }),
-
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        onPressed: _addPhoneNumberField,
-                        icon: Icon(Icons.add, color: AppColors.gradientEnd),
-                        label: Text(
-                          'Add another number',
-                          style: TextStyle(color: AppColors.gradientEnd),
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: 24),
-
-                    Text(
-                      'Gender',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: _selectedGender,
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: AppColors.gradientEnd, width: 2.0),
-                        ),
-                        prefixIcon: Icon(Icons.wc),
-                      ),
-                      items: ['Male', 'Female'].map((String val) {
-                        return DropdownMenuItem(value: val, child: Text(val));
-                      }).toList(),
-                      onChanged: (val) {
-                        if (val != null) {
-                          setState(() => _selectedGender = val);
-                        }
-                      },
-                    ),
-                    SizedBox(height: 48),
-
-                    SizedBox(
-                      width: double.infinity,
-                      height: 54,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.gradientEnd,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        onPressed: _saveProfile,
-                        child: Text(
-                          'Save Changes',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -488,11 +257,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _emailController.dispose();
     _bioController.dispose();
-    for (var c in _phoneControllers) {
-      c.dispose();
-    }
     super.dispose();
   }
 }

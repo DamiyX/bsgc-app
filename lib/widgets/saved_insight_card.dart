@@ -88,14 +88,11 @@ class SavedInsightCard extends StatelessWidget {
                 ],
               ),
               SizedBox(height: 8),
-              Expanded(
-                flex: 0, // In listview, we don't need Expanded here, we can just let it size naturally
-                child: ClickableScriptureText(
-                  text: insight.body,
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.4, fontSize: 14),
-                  maxLines: 4,
-                  overflow: TextOverflow.ellipsis,
-                ),
+              ClickableScriptureText(
+                text: insight.body,
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.4, fontSize: 14),
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
               ),
               SizedBox(height: 8),
               Text(

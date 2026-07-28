@@ -1,30 +1,29 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:async';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_svg/flutter_svg.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import '../services/chat_service.dart';
-import '../models/group_model.dart';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:bsgc_app/services/storage_service.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'study_room_screen.dart';
-import 'create_group_screen.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import '../theme.dart';
-import '../widgets/insights_row.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import 'package:flutter_speed_dial/flutter_speed_dial.dart';
-
+import '../models/group_model.dart';
+import '../models/insight_model.dart';
+import '../models/note_model.dart';
+import '../services/chat_service.dart';
+import '../services/deep_link_service.dart';
+import '../services/note_service.dart';
 import '../services/notification_service.dart';
-import 'profile_screen.dart';
-import 'settings_screen.dart';
+import '../theme.dart';
+import '../widgets/braid_media.dart';
+import '../widgets/insights_row.dart';
+import '../widgets/note_card.dart';
+import 'create_group_screen.dart';
+import 'create_insight_screen.dart';
 import 'create_note_screen.dart';
-import '../services/contact_cache_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'profile_screen.dart';
+import 'safety_center_screen.dart';
+import 'settings_screen.dart';
+import 'study_room_screen.dart';
+import 'view_insight_screen.dart';
 
 class MainHallScreen extends StatefulWidget {
   const MainHallScreen({super.key});
@@ -34,905 +33,1173 @@ class MainHallScreen extends StatefulWidget {
 }
 
 class _MainHallScreenState extends State<MainHallScreen> {
-  final ChatService chatService = ChatService();
+  final ChatService _chatService = ChatService();
+  final DeepLinkService _deepLinkService = DeepLinkService();
+  final NotificationService _notificationService = NotificationService();
+  final NoteService _noteService = NoteService();
+  final TextEditingController _journalSearchController =
+      TextEditingController();
+
   late final Stream<List<GroupModel>> _groupsStream;
   List<GroupModel>? _cachedGroups;
+  int _selectedIndex = 0;
+  bool _isRedeemingInvite = false;
+  bool _showNotificationOffer = false;
+  bool _enablingNotifications = false;
+  String _journalQuery = '';
 
   @override
   void initState() {
     super.initState();
-    _groupsStream = chatService.getUserGroups();
-    // Initialize push notifications when user enters the main hall
-    NotificationService().init();
-    // Sync local phone contacts for overriding Google names
-    ContactCacheService().syncContactsInBackground();
-    _checkActiveRoute();
+    _groupsStream = _chatService.getUserGroups();
+    unawaited(_initializeNotifications());
+    _deepLinkService.pendingInviteToken.addListener(_onPendingInviteChanged);
+    _notificationService.destination.addListener(
+      _onNotificationDestinationChanged,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_redeemPendingInvite());
+      unawaited(_openNotificationDestination());
+    });
   }
 
-  Future<void> _checkActiveRoute() async {
-    final prefs = await SharedPreferences.getInstance();
-    final activeGroupId = prefs.getString('active_group_id');
-    final timestamp = prefs.getInt('active_route_timestamp') ?? 0;
-    
-    if (activeGroupId != null) {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      // Restore if minimized within last 60 minutes
-      if (now - timestamp < 60 * 60 * 1000) {
-        final doc = await FirebaseFirestore.instance.collection('groups').doc(activeGroupId).get();
-        if (doc.exists && mounted) {
-          final group = GroupModel.fromFirestore(doc);
-          Navigator.push(context, MaterialPageRoute(builder: (_) => StudyRoomScreen(group: group)));
-        }
-      }
+  Future<void> _initializeNotifications() async {
+    try {
+      await _notificationService.init();
+      final shouldOffer = await _notificationService.shouldOfferPermission();
+      if (mounted) setState(() => _showNotificationOffer = shouldOffer);
+    } catch (_) {
+      // Notification availability must never block the rest of the study app.
     }
+  }
+
+  Future<void> _enableNotifications() async {
+    if (_enablingNotifications) return;
+    setState(() => _enablingNotifications = true);
+    try {
+      await _notificationService.updatePreferences(
+        enabled: true,
+        messages: true,
+        insights: true,
+        previewContent: false,
+      );
+      if (mounted) setState(() => _showNotificationOffer = false);
+    } catch (_) {
+      if (mounted) {
+        _showMessage(
+          'Notification permission was not enabled. You can retry in Settings.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _enablingNotifications = false);
+    }
+  }
+
+  Future<void> _dismissNotificationOffer() async {
+    await _notificationService.dismissPermissionOffer();
+    if (mounted) setState(() => _showNotificationOffer = false);
+  }
+
+  @override
+  void dispose() {
+    _deepLinkService.pendingInviteToken.removeListener(_onPendingInviteChanged);
+    _notificationService.destination.removeListener(
+      _onNotificationDestinationChanged,
+    );
+    _journalSearchController.dispose();
+    super.dispose();
+  }
+
+  void _onPendingInviteChanged() {
+    if (_deepLinkService.pendingInviteToken.value != null) {
+      unawaited(_redeemPendingInvite());
+    }
+  }
+
+  void _onNotificationDestinationChanged() {
+    if (_notificationService.destination.value != null) {
+      unawaited(_openNotificationDestination());
+    }
+  }
+
+  Future<void> _openNotificationDestination() async {
+    if (!mounted) return;
+    final destination = _notificationService.destination.value;
+    final groupId = destination?.groupId;
+    final insightId = destination?.insightId;
+    if ((groupId == null || groupId.isEmpty) &&
+        (insightId == null || insightId.isEmpty)) {
+      return;
+    }
+    _notificationService.destination.value = null;
+
+    try {
+      if (groupId != null && groupId.isNotEmpty) {
+        final snapshot = await FirebaseFirestore.instance
+            .collection('groups')
+            .doc(groupId)
+            .get();
+        if (!snapshot.exists || !mounted) return;
+        await _openGroup(GroupModel.fromFirestore(snapshot));
+      } else if (insightId != null && insightId.isNotEmpty) {
+        final snapshot = await FirebaseFirestore.instance
+            .collection('insights')
+            .doc(insightId)
+            .get();
+        if (!snapshot.exists || !mounted) return;
+        final insight = InsightModel.fromFirestore(snapshot);
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ViewInsightScreen(
+              userInsightsGroups: [
+                [insight],
+              ],
+              initialUserIndex: 0,
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      _showMessage('That study update is not available right now.');
+    }
+  }
+
+  Future<void> _redeemPendingInvite() async {
+    if (_isRedeemingInvite || !mounted) return;
+    final token = await _deepLinkService.getPendingInviteToken();
+    if (token == null || !mounted) return;
+
+    setState(() => _isRedeemingInvite = true);
+    try {
+      final redemption = await _chatService.redeemGroupInvite(token);
+      await _deepLinkService.clearPendingInviteToken(token);
+      if (!mounted) return;
+      _showMessage(
+        redemption.alreadyMember
+            ? 'You are already in this study group.'
+            : 'You joined the study group.',
+      );
+      setState(() => _selectedIndex = 1);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: const Text(
+              'We could not use that invite. Check your connection or ask for a new link.',
+            ),
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: _redeemPendingInvite,
+            ),
+          ),
+        );
+    } finally {
+      if (mounted) setState(() => _isRedeemingInvite = false);
+    }
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openGroup(GroupModel group) async {
+    unawaited(_chatService.resetUnreadCount(group.id));
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => StudyRoomScreen(group: group)),
+    );
+  }
+
+  Future<void> _createGroup() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CreateGroupScreen(chatService: _chatService),
+      ),
+    );
+  }
+
+  Future<void> _openReflectionComposer(List<GroupModel> groups) async {
+    final activeGroups = groups
+        .where((group) => group.lifecycle == 'active')
+        .toList();
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Where should this reflection live?',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'The audience stays explicit. You can keep a thought private before choosing to share it.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _AudienceChoice(
+                icon: Icons.lock_outline_rounded,
+                title: 'Only me',
+                description: 'Write a private journal reflection.',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const CreateNoteScreen(),
+                    ),
+                  );
+                },
+              ),
+              _AudienceChoice(
+                icon: Icons.people_outline_rounded,
+                title: 'Study contacts',
+                description:
+                    'Share an Insight with people you have intentionally connected with.',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const CreateInsightScreen(),
+                    ),
+                  );
+                },
+              ),
+              _AudienceChoice(
+                icon: Icons.groups_2_outlined,
+                title: 'A study group',
+                description: activeGroups.isEmpty
+                    ? 'Join or create a group before sharing there.'
+                    : 'Choose a group, then add your reflection to its discussion.',
+                enabled: activeGroups.isNotEmpty,
+                onTap: () async {
+                  Navigator.pop(sheetContext);
+                  final selected = await _chooseGroup(activeGroups);
+                  if (selected != null && mounted) await _openGroup(selected);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<GroupModel?> _chooseGroup(List<GroupModel> groups) {
+    return showModalBottomSheet<GroupModel>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                'Choose a study group',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            for (final group in groups.where((item) => item.lifecycle == 'active'))
+              ListTile(
+                minTileHeight: 56,
+                leading: BraidCoverImage(
+                  identity: group.id,
+                  imageUrl: group.photoUrl,
+                  width: 44,
+                  height: 44,
+                  borderRadius: 10,
+                  semanticLabel: '${group.name} cover',
+                ),
+                title: Text(group.name),
+                subtitle: Text(_studyLabel(group)),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => Navigator.pop(context, group),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+    final titles = ['Today', 'Groups', 'Journal', 'Me'];
+    return StreamBuilder<List<GroupModel>>(
+      stream: _groupsStream,
+      builder: (context, snapshot) {
+        if (snapshot.hasData) _cachedGroups = snapshot.data;
+        final groups = _cachedGroups ?? const <GroupModel>[];
+        final firstLoad =
+            _cachedGroups == null &&
+            snapshot.connectionState == ConnectionState.waiting;
+        final firstError = snapshot.hasError && _cachedGroups == null;
 
-
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.asset('assets/icon2.png', height: 32)),
-            SizedBox(width: 8),
-            Text(
-              'Braid',
-              style: TextStyle(fontFamily: 'Comfortaa', fontWeight: FontWeight.w600, fontSize: 26, letterSpacing: -0.5),
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(
+              titles[_selectedIndex],
+              style: const TextStyle(
+                fontFamily: 'Comfortaa',
+                fontWeight: FontWeight.w700,
+              ),
             ),
-          ],
-        ),
-        actions: [
-          Padding(
-            padding: EdgeInsets.only(right: 8.0),
-            child: Row(
-              children: [
-                InkWell(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const ProfileScreen()),
-                    );
-                  },
-                  borderRadius: BorderRadius.circular(20),
-                  child: CircleAvatar(
-                    radius: 18,
-                    backgroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                    backgroundImage: user?.photoURL != null
-                        ? NetworkImage(user!.photoURL!)
-                        : null,
-                    child: user?.photoURL == null
-                        ? Icon(Icons.person, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant)
-                        : null,
+            actions: [
+              if (_isRedeemingInvite)
+                const Padding(
+                  padding: EdgeInsets.all(14),
+                  child: SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                 ),
+              if (_selectedIndex == 3)
                 IconButton(
-                  icon: Icon(Icons.menu, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: StreamBuilder<List<GroupModel>>(
-          stream: _groupsStream,
-          builder: (context, snapshot) {
-            if (snapshot.hasData) {
-              _cachedGroups = snapshot.data!;
-            }
-
-            if (_cachedGroups == null && snapshot.connectionState == ConnectionState.waiting) {
-              return Center(
-                child: CircularProgressIndicator(color: AppColors.gradientEnd),
-              );
-            }
-            if (snapshot.hasError && _cachedGroups == null) {
-              return Center(child: Text('Error loading groups'));
-            }
-            final groups = _cachedGroups ?? [];
-
-            return CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(child: InsightsRow()),
-                if (groups.isNotEmpty)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 24.0,
-                        vertical: 8.0,
-                      ),
-                      child: Text(
-                        'Study groups',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
-                        ),
-                      ),
+                  tooltip: 'Settings',
+                  icon: const Icon(Icons.settings_outlined),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const SettingsScreen(),
                     ),
                   ),
-                if (groups.isEmpty)
-                  SliverFillRemaining(
-                    child: Center(
-                      child: Text(
-                        'You are not in any groups yet.',
-                        style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
-                      ),
-                    ),
-                  )
-                else
-                  SliverList(
-                    delegate: SliverChildBuilderDelegate((context, index) {
-                      final group = groups[index];
-                      return Column(
-                        children: [
-                          InkWell(
-                                onTap: () {
-                                  chatService.resetUnreadCount(group.id);
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          StudyRoomScreen(group: group),
-                                    ),
-                                  );
-                                },
-                                child: Padding(
-                                  padding: EdgeInsets.symmetric(
-                                    vertical: 16,
-                                    horizontal: 16,
-                                  ),
-                                  child: Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.center,
-                                    children: [
-                                      Container(
-                                        width: 72,
-                                        height: 96,
-                                        decoration: BoxDecoration(
-                                          color: group.photoUrl == null || group.photoUrl!.isEmpty 
-                                              ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05)
-                                              : Colors.transparent,
-                                          borderRadius: BorderRadius.circular(8),
-                                          image: group.photoUrl != null && group.photoUrl!.isNotEmpty
-                                              ? DecorationImage(
-                                                  image: NetworkImage(group.photoUrl!),
-                                                  fit: BoxFit.cover,
-                                                )
-                                              : null,
-                                        ),
-                                        child: group.photoUrl == null || group.photoUrl!.isEmpty
-                                            ? Icon(
-                                                Icons.book,
-                                                size: 32,
-                                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
-                                              )
-                                            : null,
-                                      ),
-                                      SizedBox(width: 16),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              group.name,
-                                              style: TextStyle(
-                                                fontSize: 18,
-                                                fontWeight: FontWeight.w600,
-                                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
-                                              ),
-                                            ),
-                                            SizedBox(height: 6),
-                                            _buildGroupSubtitle(context, group),
-                                          ],
-                                        ),
-                                      ),
-                                      _buildTrailingInfo(context, group, index),
-                                    ],
-                                  ),
-                                ),
-                              )
-                              .animate()
-                              .fade(duration: 300.ms, delay: (index * 50).ms)
-                              .slideY(
-                                begin: 0.1,
-                                duration: 300.ms,
-                                curve: Curves.easeOutQuad,
-                              ),
-                          if (index < groups.length - 1)
-                            Divider(color: Theme.of(context).dividerColor, height: 1, thickness: 0.5, indent: 92, endIndent: 16),
-                        ],
-                      );
-                    }, childCount: groups.length),
-                  ),
-              ],
-            );
-          },
-        ),
-      ),
-      floatingActionButton: SpeedDial(
-        icon: Icons.add,
-        activeIcon: Icons.close,
-        backgroundColor: AppColors.gradientEnd,
-        foregroundColor: Colors.white,
-        activeBackgroundColor: Colors.redAccent,
-        activeForegroundColor: Colors.white,
-        visible: true,
-        curve: Curves.bounceIn,
-        children: [
-          SpeedDialChild(
-            child: Icon(Icons.description, color: Colors.white),
-            backgroundColor: AppColors.textMain,
-            label: 'Create Note',
-            labelStyle: TextStyle(fontWeight: FontWeight.w500),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const CreateNoteScreen()),
-              );
-            },
-          ),
-          SpeedDialChild(
-            child: Icon(Icons.group_add, color: Colors.white),
-            backgroundColor: AppColors.gradientEnd,
-            label: 'Create Study Group',
-            labelStyle: TextStyle(fontWeight: FontWeight.w500),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => CreateGroupScreen(chatService: chatService),
                 ),
-              );
-            },
+            ],
           ),
-        ],
-      ),
-    );
-  }
-
-  void _showProfileOptions(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: Icon(Icons.image),
-              title: Text('Change Profile Picture'),
-              onTap: () async {
-                Navigator.pop(ctx);
-                await _changeProfilePicture(context);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _changeProfilePicture(BuildContext context) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-    if (pickedFile == null) return;
-
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Uploading new profile picture...')),
-      );
-    }
-
-    try {
-      final bytes = await pickedFile.readAsBytes();
-      final compressed = await FlutterImageCompress.compressWithList(
-        bytes,
-        minWidth: 1000,
-        minHeight: 1000,
-        quality: 85,
-      );
-
-      final url = await StorageService.uploadFile(compressed, folder: 'groups');
-      if (url.isEmpty) {
-        throw Exception('Firebase Storage upload failed');
-      }
-
-      await user.updatePhotoURL(url);
-      FirebaseFirestore.instance.collection('users').doc(user.uid).update(
-        {'photoURL': url},
-      );
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Profile picture updated successfully!'),
+          body: SafeArea(
+            top: false,
+            child: firstLoad
+                ? const Center(child: CircularProgressIndicator())
+                : firstError
+                ? _LoadError(onRetry: () => setState(() {}))
+                : IndexedStack(
+                    index: _selectedIndex,
+                    children: [
+                      _buildToday(groups, snapshot.hasError),
+                      _buildGroups(groups),
+                      _buildJournal(),
+                      _buildMe(),
+                    ],
+                  ),
+          ),
+          floatingActionButton: _buildFloatingActionButton(groups),
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: _selectedIndex,
+            onDestinationSelected: (value) {
+              setState(() => _selectedIndex = value);
+            },
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.wb_sunny_outlined),
+                selectedIcon: Icon(Icons.wb_sunny_rounded),
+                label: 'Today',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.groups_2_outlined),
+                selectedIcon: Icon(Icons.groups_2_rounded),
+                label: 'Groups',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.auto_stories_outlined),
+                selectedIcon: Icon(Icons.auto_stories_rounded),
+                label: 'Journal',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.person_outline_rounded),
+                selectedIcon: Icon(Icons.person_rounded),
+                label: 'Me',
+              ),
+            ],
           ),
         );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to update picture: $e')));
-      }
+      },
+    );
+  }
+
+  Widget? _buildFloatingActionButton(List<GroupModel> groups) {
+    switch (_selectedIndex) {
+      case 0:
+        return FloatingActionButton.extended(
+          tooltip: 'Write a reflection',
+          onPressed: () => _openReflectionComposer(groups),
+          icon: const Icon(Icons.edit_note_rounded),
+          label: const Text('Reflect'),
+        );
+      case 1:
+        return FloatingActionButton.extended(
+          tooltip: 'Create a study group',
+          onPressed: _createGroup,
+          icon: const Icon(Icons.add_rounded),
+          label: const Text('New group'),
+        );
+      case 2:
+        return FloatingActionButton.extended(
+          tooltip: 'Write a private reflection',
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const CreateNoteScreen()),
+          ),
+          icon: const Icon(Icons.edit_rounded),
+          label: const Text('Write'),
+        );
+      default:
+        return null;
     }
   }
 
-  Widget _buildGroupSubtitle(BuildContext context, GroupModel group) {
-    List<Widget> children = [];
+  Widget _buildToday(List<GroupModel> groups, bool showingCachedData) {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final activeGroups = groups
+        .where((group) => group.lifecycle == 'active')
+        .toList();
+    final scheduledGroups = groups
+        .where((group) => group.lifecycle == 'scheduled')
+        .toList();
+    final nextGroup = activeGroups.isNotEmpty
+        ? activeGroups.first
+        : (scheduledGroups.isNotEmpty ? scheduledGroups.first : null);
 
-    // 1. Topic & Progress (Same line)
-    String label = '';
-    String value = '';
-    if (group.groupType == 'Bible') {
-      label = 'Book: ';
-      value = group.studyBook ?? 'None';
-    } else {
-      label = 'Topic: ';
-      value = group.topic ?? 'None';
-    }
-
-    Widget topicWidget = Expanded(
-      child: RichText(
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        text: TextSpan(
-          children: [
-            TextSpan(
-              text: label,
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.purpleAccent),
-            ),
-            TextSpan(
-              text: value,
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurface),
-            ),
-          ],
+    return ListView(
+      key: const PageStorageKey('today'),
+      padding: const EdgeInsets.only(bottom: 112),
+      children: [
+        if (showingCachedData)
+          _StatusBanner(
+            icon: Icons.cloud_off_outlined,
+            text: 'Showing saved information while Braid reconnects.',
+          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _greeting(),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'A quiet place to notice, reflect, and grow together.',
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-    );
-
-    children.add(
-      Row(
-        children: [
-          topicWidget,
-        ],
-      )
-    );
-
-    // 3. Sender & Preview
-    if (group.lastMessageText != null && group.lastMessageText!.isNotEmpty) {
-      String senderName = 'Someone';
-      if (group.lastMessageSenderId != null && group.lastMessageSenderName != null) {
-         senderName = ContactCacheService().getContactName(group.lastMessageSenderId!, group.lastMessageSenderName!);
-         senderName = senderName.split(' ').first;
-      }
-
-      children.add(SizedBox(height: 4));
-      children.add(
-        Text(
-          '$senderName: ${group.lastMessageText}',
-          style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        )
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: children,
-    );
-  }
-
-  Widget _buildTrailingInfo(BuildContext context, GroupModel group, int index) {
-    final user = FirebaseAuth.instance.currentUser;
-    int unreadCount = user != null ? (group.unreadCounts[user.uid] ?? 0) : 0;
-    if (user != null && group.lastMessageSenderId == user.uid) {
-      unreadCount = 0;
-    }
-
-    final hasUnread = unreadCount > 0;
-
-    String timeText = '';
-    if (group.lastMessageTime != null) {
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final yesterday = today.subtract(const Duration(days: 1));
-      final msgDate = DateTime(
-        group.lastMessageTime!.year,
-        group.lastMessageTime!.month,
-        group.lastMessageTime!.day,
-      );
-
-      if (msgDate == today) {
-        timeText = DateFormat('h:mm a').format(group.lastMessageTime!);
-      } else if (msgDate == yesterday) {
-        timeText = 'Yesterday';
-      } else {
-        timeText = DateFormat('MMM d').format(group.lastMessageTime!);
-      }
-    }
-
-    if (timeText.isEmpty && !hasUnread) return SizedBox.shrink();
-
-    return SizedBox(
-      height: 96, // Match the avatar's height for perfect vertical centering
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (timeText.isNotEmpty)
-            Text(
-              timeText,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: hasUnread ? FontWeight.bold : FontWeight.normal,
-                color: hasUnread ? AppColors.gradientEnd : Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          if (hasUnread) ...[
-            SizedBox(height: 6),
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppColors.gradientEnd,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                unreadCount > 99 ? '99+' : unreadCount.toString(),
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
+        if (_showNotificationOffer)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 10, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.notifications_active_outlined),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Know when your study continues',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Not now',
+                          onPressed: _dismissNotificationOffer,
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Enable private-by-default alerts for group messages and '
+                      'contacts’ Insights. Message text stays hidden on the '
+                      'lock screen unless you choose otherwise.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    FilledButton.tonal(
+                      onPressed:
+                          _enablingNotifications ? null : _enableNotifications,
+                      child: Text(
+                        _enablingNotifications
+                            ? 'Enabling…'
+                            : 'Enable notifications',
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ],
-        ],
-      ),
+          ),
+        if (nextGroup != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+            child: _NextStudyCard(
+              group: nextGroup,
+              progress: nextGroup.readingProgress[uid] ?? 0,
+              onTap: () => _openGroup(nextGroup),
+            ),
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+            child: _EmptyTodayCard(onCreateGroup: _createGroup),
+          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 4),
+          child: Text(
+            'From your study contacts',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const InsightsRow(embedded: true),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+          child: OutlinedButton.icon(
+            onPressed: () => _openReflectionComposer(groups),
+            icon: const Icon(Icons.lock_outline_rounded),
+            label: const Text('Start with a private reflection'),
+          ),
+        ),
+      ],
     );
   }
 
-  Future<void> _seedMockData(BuildContext context) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    final firestore = FirebaseFirestore.instance;
-    final batch = firestore.batch();
-
-    // Tiny valid base64 wav header so it doesn't crash AudioPlayer
-    const dummyAudio =
-        'UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-
-    final avatars = {
-      'mock_user_1':
-          'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&q=80', // Woman profile
-      'mock_user_2':
-          'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150&q=80', // Man profile
-      'mock_user_3':
-          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&q=80', // Woman profile
-      'mock_user_4':
-          'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&q=80', // Woman profile
-      user.uid: user.photoURL,
-    };
-
-    final mockNames = {
-      'mock_user_1': 'Grace',
-      'mock_user_2': 'James',
-      'mock_user_3': 'Love',
-      'mock_user_4': 'Dammy',
-    };
-
-    for (var entry in mockNames.entries) {
-      batch.set(firestore.collection('users').doc(entry.key), {
-        'uid': entry.key,
-        'displayName': entry.value,
-        'photoURL': avatars[entry.key],
-      });
+  Widget _buildGroups(List<GroupModel> groups) {
+    if (groups.isEmpty) {
+      return _EmptyGroups(onCreate: _createGroup);
     }
+    return ListView.separated(
+      key: const PageStorageKey('groups'),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 112),
+      itemCount: groups.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final group = groups[index];
+        return _GroupCard(group: group, onTap: () => _openGroup(group));
+      },
+    );
+  }
 
-    // Group 1
-    final g1Ref = firestore.collection('groups').doc('bible_study_group');
-    batch.set(g1Ref, {
-      'name': "Men's Monday Fellowship",
-      'photoUrl':
-          'https://images.unsplash.com/photo-1544411047-c45ba52fb7a0?w=400&q=80', // Bible/reading aesthetic
-      'members': [user.uid, 'mock_user_1', 'mock_user_2'],
-      'readingProgress': {
-        user.uid: 0.0,
-        'mock_user_1': 0.3,
-        'mock_user_2': 0.8,
-      },
-      'pinnedScripture': 'Proverbs 27:17',
-      'groupType': 'Bible',
-      'studyBook': 'Proverbs',
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-
-    final g1Msgs = [
-      {
-        'id': 'mock_user_1',
-        'name': 'Jack',
-        'parts': [
-          {'type': 'text', 'content': 'Welcome to the Monday Fellowship!'},
-        ],
-      },
-      {
-        'id': 'mock_user_2',
-        'name': 'James',
-        'parts': [
-          {
-            'type': 'text',
-            'content':
-                'Looking forward to our study tonight. Who is leading the prayer?',
-          },
-        ],
-      },
-      {
-        'id': 'mock_user_1',
-        'name': 'Jack',
-        'parts': [
-          {
-            'type': 'text',
-            'content': 'I will be leading the opening prayer today.',
-          },
-        ],
-      },
-      {
-        'id': user.uid,
-        'name': user.displayName ?? 'Me',
-        'parts': [
-          {
-            'type': 'text',
-            'content': 'Great! I have some questions on the previous chapter.',
-          },
-        ],
-      },
-      {
-        'id': 'mock_user_1',
-        'name': 'Jack',
-        'parts': [
-          {'type': 'text', 'content': 'Sure, drop them here.'},
-          {'type': 'voice', 'content': dummyAudio, 'durationSeconds': 15},
-        ],
-      },
-      {
-        'id': user.uid,
-        'name': user.displayName ?? 'Me',
-        'parts': [
-          {
-            'type': 'text',
-            'content': 'I was wondering about the context of verse 10.',
-          },
-        ],
-      },
-      {
-        'id': 'mock_user_2',
-        'name': 'James',
-        'parts': [
-          {'type': 'voice', 'content': dummyAudio, 'durationSeconds': 42},
-          {
-            'type': 'text',
-            'content': 'I tried to explain it in this voice note.',
-          },
-        ],
-      },
-      {
-        'id': user.uid,
-        'name': user.displayName ?? 'Me',
-        'parts': [
-          {
-            'type': 'text',
-            'content': 'Wow, that makes so much sense now. Thank you, James!',
-          },
-        ],
-      },
-      {
-        'id': 'mock_user_1',
-        'name': 'Jack',
-        'parts': [
-          {'type': 'text', 'content': 'Exactly! James nailed it.'},
-        ],
-      },
-      {
-        'id': 'mock_user_2',
-        'name': 'James',
-        'parts': [
-          {'type': 'text', 'content': 'Glory to God.'},
-        ],
-      },
-      {
-        'id': 'mock_user_1',
-        'name': 'Jack',
-        'parts': [
-          {
-            'type': 'text',
-            'content': 'Let us prepare for the evening session now.',
-          },
-        ],
-      },
-      {
-        'id': user.uid,
-        'name': user.displayName ?? 'Me',
-        'parts': [
-          {'type': 'text', 'content': 'See you all at 7 PM.'},
-        ],
-      },
-    ];
-
-    DateTime time = DateTime.now().subtract(const Duration(hours: 1));
-    for (var msg in g1Msgs) {
-      final mRef = g1Ref.collection('messages').doc();
-      batch.set(mRef, {
-        'senderId': msg['id'],
-        'senderName': msg['name'],
-        'senderPhotoUrl': avatars[msg['id']],
-        'parts': msg['parts'],
-        'timestamp': time,
-        'starredBy': [],
-      });
-      time = time.add(const Duration(minutes: 5));
+  Widget _buildJournal() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      return const Center(child: Text('Sign in to open your journal.'));
     }
-
-    // Group 2
-    final g2Ref = firestore.collection('groups').doc();
-    batch.set(g2Ref, {
-      'name': 'Proverbs 31 Women',
-      'photoUrl':
-          'https://images.unsplash.com/photo-1490730141103-6cac27aaab94?w=400&q=80', // Nature/grace aesthetic
-      'members': [user.uid, 'mock_user_3', 'mock_user_4'],
-      'readingProgress': {
-        user.uid: 0.0,
-        'mock_user_3': 1.0,
-        'mock_user_4': 0.5,
-      },
-      'pinnedScripture': 'Proverbs 31:25',
-      'groupType': 'Bible',
-      'studyBook': 'Proverbs',
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-
-    final g2Msgs = [
-      {
-        'id': 'mock_user_3',
-        'name': 'Love',
-        'parts': [
-          {
-            'type': 'text',
-            'content': 'Hello everyone! What an amazing service yesterday.',
-          },
-        ],
-      },
-      {
-        'id': 'mock_user_4',
-        'name': 'Dammy',
-        'parts': [
-          {
-            'type': 'text',
-            'content': 'I am still meditating on the message. Truly powerful.',
-          },
-        ],
-      },
-      {
-        'id': user.uid,
-        'name': user.displayName ?? 'Me',
-        'parts': [
-          {'type': 'text', 'content': 'The worship session was my highlight.'},
-        ],
-      },
-      {
-        'id': 'mock_user_3',
-        'name': 'Love',
-        'parts': [
-          {
-            'type': 'text',
-            'content':
-                'I recorded a bit of the worship session, listen to this!',
-          },
-          {'type': 'voice', 'content': dummyAudio, 'durationSeconds': 120},
-        ],
-      },
-      {
-        'id': 'mock_user_4',
-        'name': 'Dammy',
-        'parts': [
-          {
-            'type': 'text',
-            'content': 'Oh my, this brings back the atmosphere.',
-          },
-        ],
-      },
-      {
-        'id': user.uid,
-        'name': user.displayName ?? 'Me',
-        'parts': [
-          {
-            'type': 'text',
-            'content': 'Thank you for sharing that Love, so profound!',
-          },
-        ],
-      },
-      {
-        'id': 'mock_user_3',
-        'name': 'Love',
-        'parts': [
-          {
-            'type': 'text',
-            'content':
-                'You are welcome! Should we start reading Chapter 5 today?',
-          },
-        ],
-      },
-      {
-        'id': 'mock_user_4',
-        'name': 'Dammy',
-        'parts': [
-          {'type': 'text', 'content': 'Yes, I have already started.'},
-        ],
-      },
-      {
-        'id': user.uid,
-        'name': user.displayName ?? 'Me',
-        'parts': [
-          {'type': 'text', 'content': 'I will catch up this evening.'},
-        ],
-      },
-      {
-        'id': 'mock_user_4',
-        'name': 'Dammy',
-        'parts': [
-          {'type': 'text', 'content': 'Take your time.'},
-          {'type': 'voice', 'content': dummyAudio, 'durationSeconds': 5},
-        ],
-      },
-    ];
-
-    time = DateTime.now().subtract(const Duration(minutes: 30));
-    for (var msg in g2Msgs) {
-      final mRef = g2Ref.collection('messages').doc();
-      batch.set(mRef, {
-        'senderId': msg['id'],
-        'senderName': msg['name'],
-        'senderPhotoUrl': avatars[msg['id']],
-        'parts': msg['parts'],
-        'timestamp': time,
-        'starredBy': [],
-      });
-      time = time.add(const Duration(minutes: 3));
-    }
-
-    // Group 3 (Topic)
-    final g3Ref = firestore.collection('groups').doc();
-    batch.set(g3Ref, {
-      'name': 'Faith in Action',
-      'photoUrl':
-          'https://images.unsplash.com/photo-1511895426328-dc8714191300?w=400&q=80', // Community aesthetic
-      'members': [user.uid, 'mock_user_1', 'mock_user_4'],
-      'readingProgress': {
-        user.uid: 0.0,
-        'mock_user_1': 0.0,
-        'mock_user_4': 0.0,
-      },
-      'pinnedScripture': '',
-      'groupType': 'Topic',
-      'topic': 'Grace',
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-
-    final g3Msgs = [
-      {
-        'id': 'mock_user_1',
-        'name': 'Grace',
-        'parts': [
-          {
-            'type': 'text',
-            'content': 'Hi everyone! Excited to discuss Grace this week.',
-          },
-        ],
-      },
-      {
-        'id': user.uid,
-        'name': user.displayName ?? 'Me',
-        'parts': [
-          {
-            'type': 'text',
-            'content': 'Same here. I have been reading some materials on it.',
-          },
-        ],
-      },
-    ];
-
-    time = DateTime.now().subtract(const Duration(minutes: 10));
-    for (var msg in g3Msgs) {
-      final mRef = g3Ref.collection('messages').doc();
-      batch.set(mRef, {
-        'senderId': msg['id'],
-        'senderName': msg['name'],
-        'senderPhotoUrl': avatars[msg['id']],
-        'parts': msg['parts'],
-        'timestamp': time,
-        'starredBy': [],
-      });
-      time = time.add(const Duration(minutes: 2));
-    }
-
-    // Seed Insights
-    final now = DateTime.now();
-
-    final i1Ref = firestore.collection('insights').doc();
-    batch.set(i1Ref, {
-      'id': i1Ref.id,
-      'authorUid': 'mock_user_1',
-      'authorName': 'Grace',
-      'authorPhotoUrl': avatars['mock_user_1'],
-      'title': 'The Law of the Spirit',
-      'body':
-          'I was studying Romans 8:1-4 today and it hit me how powerful the "law of the Spirit of life" is. It completely overrides the law of sin and death, just like how aerodynamics overrides gravity!',
-      'themeId': 'theme_1', // Forest Green
-      'createdAt': Timestamp.fromDate(now.subtract(const Duration(hours: 2))),
-      'expiresAt': Timestamp.fromDate(
-        now.subtract(const Duration(hours: 2)).add(const Duration(days: 3)),
-      ),
-    });
-
-    final i2Ref = firestore.collection('insights').doc();
-    batch.set(i2Ref, {
-      'id': i2Ref.id,
-      'authorUid': 'mock_user_2',
-      'authorName': 'James',
-      'authorPhotoUrl': avatars['mock_user_2'],
-      'title': 'Light & Creation',
-      'body':
-          'Compare Genesis 1:1 with John 1:1-5. The Word was present at the beginning, and the Word brought light into the darkness. Darkness cannot comprehend it.',
-      'themeId': 'theme_5', // Ocean Blue
-      'createdAt': Timestamp.fromDate(now.subtract(const Duration(hours: 5))),
-      'expiresAt': Timestamp.fromDate(
-        now.subtract(const Duration(hours: 5)).add(const Duration(days: 3)),
-      ),
-    });
-
-    // Mock comments for Grace's insight
-    final c1Ref = i1Ref.collection('comments').doc();
-    batch.set(c1Ref, {
-      'id': c1Ref.id,
-      'insightId': i1Ref.id,
-      'authorUid': 'mock_user_2',
-      'authorName': 'James',
-      'authorPhotoUrl': avatars['mock_user_2'],
-      'body': 'This is such a great analogy!',
-      'createdAt': Timestamp.fromDate(
-        now.subtract(const Duration(minutes: 30)),
-      ),
-    });
-
-    await batch.commit();
-
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Rich Hybrid Mock groups seeded successfully!'),
-          backgroundColor: Colors.green,
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: SearchBar(
+            controller: _journalSearchController,
+            hintText: 'Search your reflections',
+            leading: const Icon(Icons.search_rounded),
+            trailing: [
+              if (_journalQuery.isNotEmpty)
+                IconButton(
+                  tooltip: 'Clear search',
+                  onPressed: () {
+                    _journalSearchController.clear();
+                    setState(() => _journalQuery = '');
+                  },
+                  icon: const Icon(Icons.close_rounded),
+                ),
+            ],
+            onChanged: (value) {
+              setState(() => _journalQuery = value.trim().toLowerCase());
+            },
+          ),
         ),
-      );
+        Expanded(
+          child: StreamBuilder<List<NoteModel>>(
+            stream: _noteService.getUserNotes(uid),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError && !snapshot.hasData) {
+                return const _LoadError();
+              }
+              final notes = (snapshot.data ?? const <NoteModel>[])
+                  .where(
+                    (note) =>
+                        _journalQuery.isEmpty ||
+                        note.title.toLowerCase().contains(_journalQuery) ||
+                        note.body.toLowerCase().contains(_journalQuery),
+                  )
+                  .toList();
+              if (notes.isEmpty) {
+                return _EmptyJournal(
+                  hasSearch: _journalQuery.isNotEmpty,
+                  onWrite: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const CreateNoteScreen(),
+                    ),
+                  ),
+                );
+              }
+              return ListView.builder(
+                key: const PageStorageKey('journal'),
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 112),
+                itemCount: notes.length,
+                itemBuilder: (context, index) => NoteCard(
+                  note: notes[index],
+                  onDelete: () => _confirmDeleteNote(uid, notes[index]),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _confirmDeleteNote(String uid, NoteModel note) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete this reflection?'),
+        content: const Text(
+          'This removes it from your journal. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep it'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _noteService.deleteNote(uid, note.id);
+    } catch (_) {
+      if (mounted) _showMessage('Could not delete that reflection.');
     }
+  }
+
+  Widget _buildMe() {
+    final user = FirebaseAuth.instance.currentUser;
+    return ListView(
+      key: const PageStorageKey('me'),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+      children: [
+        Center(
+          child: BraidAvatar(
+            identity: user?.uid ?? 'me',
+            displayName: user?.displayName ?? 'You',
+            imageUrl: user?.photoURL,
+            radius: 48,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          user?.displayName?.trim().isNotEmpty == true
+              ? user!.displayName!.trim()
+              : 'Your space',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Your reflections stay private unless you deliberately share them.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 28),
+        _MeDestination(
+          icon: Icons.person_outline_rounded,
+          title: 'Profile and saved items',
+          description: 'Edit your identity and revisit saved Insights.',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ProfileScreen()),
+          ),
+        ),
+        _MeDestination(
+          icon: Icons.shield_outlined,
+          title: 'Safety center',
+          description: 'Review blocks, reports, and community controls.',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const SafetyCenterScreen(),
+            ),
+          ),
+        ),
+        _MeDestination(
+          icon: Icons.settings_outlined,
+          title: 'Settings',
+          description: 'Privacy, notifications, storage, theme, and account.',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const SettingsScreen()),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _greeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
   }
 }
 
+String _studyLabel(GroupModel group) {
+  if (group.groupType == 'Bible') {
+    return group.studyBook?.isNotEmpty == true
+        ? group.studyBook!
+        : 'Bible study';
+  }
+  return group.topic?.isNotEmpty == true ? group.topic! : 'Topic study';
+}
 
+String _lifecycleLabel(GroupModel group) {
+  switch (group.lifecycle) {
+    case 'scheduled':
+      return group.startDate == null
+          ? 'Starts soon'
+          : 'Starts ${DateFormat('MMM d').format(group.startDate!)}';
+    case 'completed':
+      return 'Completed';
+    case 'archived':
+      return 'Archived';
+    default:
+      return 'In progress';
+  }
+}
+
+class _NextStudyCard extends StatelessWidget {
+  final GroupModel group;
+  final double progress;
+  final VoidCallback onTap;
+
+  const _NextStudyCard({
+    required this.group,
+    required this.progress,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      label:
+          'Continue ${group.name}. ${_lifecycleLabel(group)}. ${(progress * 100).round()} percent complete.',
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        elevation: 0,
+        color: scheme.primaryContainer,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Row(
+              children: [
+                BraidCoverImage(
+                  identity: group.id,
+                  imageUrl: group.photoUrl,
+                  width: 72,
+                  height: 88,
+                  borderRadius: 12,
+                  semanticLabel: '${group.name} cover',
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        group.lifecycle == 'scheduled'
+                            ? 'Your next study'
+                            : 'Continue your study',
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: scheme.onPrimaryContainer,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        group.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: scheme.onPrimaryContainer,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${_studyLabel(group)} • ${_lifecycleLabel(group)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: scheme.onPrimaryContainer),
+                      ),
+                      const SizedBox(height: 12),
+                      LinearProgressIndicator(
+                        value: progress.clamp(0, 1),
+                        minHeight: 6,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.arrow_forward_rounded,
+                  color: scheme.onPrimaryContainer,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GroupCard extends StatelessWidget {
+  final GroupModel group;
+  final VoidCallback onTap;
+
+  const _GroupCard({required this.group, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final progress = group.readingProgress[uid] ?? 0;
+    final unread = group.unreadCounts[uid] ?? 0;
+    return Card(
+      elevation: 0,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              BraidCoverImage(
+                identity: group.id,
+                imageUrl: group.photoUrl,
+                width: 64,
+                height: 76,
+                borderRadius: 12,
+                semanticLabel: '${group.name} study cover',
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            group.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                        if (unread > 0)
+                          Semantics(
+                            label: '$unread unread messages',
+                            child: Badge(label: Text('$unread')),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${_studyLabel(group)} • ${_lifecycleLabel(group)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    LinearProgressIndicator(
+                      value: progress.clamp(0, 1),
+                      minHeight: 5,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.chevron_right_rounded),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AudienceChoice extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String description;
+  final VoidCallback onTap;
+  final bool enabled;
+
+  const _AudienceChoice({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      enabled: enabled,
+      minTileHeight: 68,
+      contentPadding: EdgeInsets.zero,
+      leading: CircleAvatar(child: Icon(icon)),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+      subtitle: Text(description),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: enabled ? onTap : null,
+    );
+  }
+}
+
+class _MeDestination extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String description;
+  final VoidCallback onTap;
+
+  const _MeDestination({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 10),
+      child: ListTile(
+        minTileHeight: 72,
+        leading: Icon(icon),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: Text(description),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: onTap,
+      ),
+    );
+  }
+}
+
+class _StatusBanner extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _StatusBanner({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final semantic = Theme.of(context).extension<BraidSemanticColors>();
+    return MaterialBanner(
+      leading: Icon(icon, color: semantic?.offline),
+      content: Text(text),
+      actions: const [SizedBox.shrink()],
+    );
+  }
+}
+
+class _LoadError extends StatelessWidget {
+  final VoidCallback? onRetry;
+
+  const _LoadError({this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.cloud_off_outlined, size: 40),
+            const SizedBox(height: 12),
+            const Text(
+              'Braid could not load this yet.',
+              textAlign: TextAlign.center,
+            ),
+            if (onRetry != null) ...[
+              const SizedBox(height: 12),
+              FilledButton(onPressed: onRetry, child: const Text('Try again')),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyTodayCard extends StatelessWidget {
+  final VoidCallback onCreateGroup;
+
+  const _EmptyTodayCard({required this.onCreateGroup});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.auto_stories_outlined, size: 36),
+            const SizedBox(height: 12),
+            Text(
+              'Begin with a simple plan',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Create a study circle, choose a Bible book or topic, and invite people when you are ready.',
+            ),
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: onCreateGroup,
+              child: const Text('Create a study group'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyGroups extends StatelessWidget {
+  final VoidCallback onCreate;
+
+  const _EmptyGroups({required this.onCreate});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.groups_2_outlined, size: 52),
+            const SizedBox(height: 14),
+            Text(
+              'Study is better with intention',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Create a circle or open a trusted invite link to join one.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 18),
+            FilledButton(onPressed: onCreate, child: const Text('Create group')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyJournal extends StatelessWidget {
+  final bool hasSearch;
+  final VoidCallback onWrite;
+
+  const _EmptyJournal({required this.hasSearch, required this.onWrite});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(hasSearch ? Icons.search_off_rounded : Icons.edit_note_rounded,
+                size: 50),
+            const SizedBox(height: 12),
+            Text(
+              hasSearch ? 'No matching reflections' : 'Your journal is quiet',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              hasSearch
+                  ? 'Try another word or clear the search.'
+                  : 'Capture what stood out before the moment passes.',
+              textAlign: TextAlign.center,
+            ),
+            if (!hasSearch) ...[
+              const SizedBox(height: 18),
+              FilledButton(onPressed: onWrite, child: const Text('Write')),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}

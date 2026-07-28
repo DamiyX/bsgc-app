@@ -9,35 +9,35 @@ class BibleService {
   BibleService._internal();
 
   final Map<String, BibleModel> _bibles = {};
+  Future<void>? _initialization;
 
   bool get isLoaded => _bibles.isNotEmpty;
 
-  List<String> get availableTranslations => [
-    'KJV',
-    'WEB',
-    'ESV',
-    'BBE',
-    'NIV',
-    'NLT',
-    'MSG',
-    'AMP',
-  ];
+  List<String> get availableTranslations => const ['KJV', 'WEB'];
 
-  Future<void> init() async {
-    // Start loading in background, don't await all here if we don't want to block
-    _loadTranslation('KJV', 'assets/bibles/kjv.json');
-    _loadTranslation('WEB', 'assets/bibles/web.json');
-    _loadTranslation('ESV', 'assets/bibles/esv.json');
-    _loadTranslation('BBE', 'assets/bibles/bbe.json');
+  Future<void> init() {
+    return _initialization ??= _loadBundledTranslations();
   }
 
-  Future<void> _loadTranslation(String name, String path) async {
+  Future<void> _loadBundledTranslations() async {
+    final results = await Future.wait([
+      _loadTranslation('KJV', 'assets/bibles/kjv.json'),
+      _loadTranslation('WEB', 'assets/bibles/web.json'),
+    ]);
+    if (results.every((loaded) => !loaded)) {
+      throw StateError('Bundled Bible translations could not be loaded.');
+    }
+  }
+
+  Future<bool> _loadTranslation(String name, String path) async {
     try {
       final String response = await rootBundle.loadString(path);
       final dynamic data = await compute(jsonDecode, response);
       _bibles[name] = BibleModel.fromJson(name, data as List<dynamic>);
+      return true;
     } catch (e) {
-      print('Failed to load Bible $name: $e');
+      if (kDebugMode) debugPrint('Failed to load Bible $name: $e');
+      return false;
     }
   }
 

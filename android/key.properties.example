@@ -1,0 +1,6 @@
+# Copy this file to android/key.properties and fill it from a secure secret
+# store. Never commit the real file or keystore.
+storePassword=
+keyPassword=
+keyAlias=
+storeFile=

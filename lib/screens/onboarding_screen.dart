@@ -1,12 +1,11 @@
-import 'dart:async';
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl_phone_field/intl_phone_field.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/material.dart';
+
+import '../services/chat_service.dart';
+import '../services/deep_link_service.dart';
 import '../theme.dart';
 import 'main_hall_screen.dart';
-import 'inviter_selection_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -17,236 +16,223 @@ class OnboardingScreen extends StatefulWidget {
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final _formKey = GlobalKey<FormState>();
-  final List<String> _completePhoneNumbers = [''];
-  final List<Key> _fieldKeys = [
-    UniqueKey(),
-  ]; // To force rebuilds when removing items
-  bool _isLoading = false;
+  late final TextEditingController _displayNameController;
+  bool _isSaving = false;
 
-  void _addPhoneNumberField() {
-    setState(() {
-      _completePhoneNumbers.add('');
-      _fieldKeys.add(UniqueKey());
-    });
+  @override
+  void initState() {
+    super.initState();
+    final suggestedName = FirebaseAuth.instance.currentUser?.displayName?.trim();
+    _displayNameController = TextEditingController(text: suggestedName ?? '');
   }
 
-  void _removePhoneNumberField(int index) {
-    setState(() {
-      _completePhoneNumbers.removeAt(index);
-      _fieldKeys.removeAt(index);
-    });
+  @override
+  void dispose() {
+    _displayNameController.dispose();
+    super.dispose();
   }
 
-  Future<void> _savePhoneAndContinue() async {
+  Future<void> _completeProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final validPhones = _completePhoneNumbers
-        .where((p) => p.isNotEmpty)
-        .toList();
-    if (validPhones.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter at least one valid phone number'),
-        ),
-      );
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _showError('Your sign-in expired. Please sign in again.');
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() => _isSaving = true);
+    final displayName = _displayNameController.text.trim();
+    final firestore = FirebaseFirestore.instance;
+    final publicReference = firestore.collection('users_public').doc(user.uid);
+    final privateReference = firestore.collection('users_private').doc(user.uid);
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        // Save to phoneNumbers array
-        try {
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-            'phoneNumbers': FieldValue.arrayUnion(validPhones),
-            'phone': validPhones.first, // keep string for backward compatibility
-          }, SetOptions(merge: true)).timeout(const Duration(seconds: 2));
-        } on TimeoutException {
-          // Proceed offline
-        }
-
-        if (mounted) {
-          // Check for Magic Link Inviter
-          final prefs = await SharedPreferences.getInstance();
-          final pendingInviterId = prefs.getString('pending_inviter_id');
-
-          if (pendingInviterId != null && pendingInviterId.isNotEmpty) {
-            // Apply the inviter automatically and mark selection as complete
-            FirebaseFirestore.instance
-                .collection('users')
-                .doc(user.uid)
-                .set({
-                  'referredBy': pendingInviterId,
-                  'inviterSelectionComplete': true,
-                }, SetOptions(merge: true));
-
-            // Remove it so it doesn't trigger again
-            await prefs.remove('pending_inviter_id');
-            
-            // Navigate straight to Main Hall since they already have an inviter
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (_) => const MainHallScreen()),
-            );
-          } else {
-            // No inviter yet, take them to the Inviter Selection Screen
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (_) => const InviterSelectionScreen()),
-            );
-          }
-        }
+      final existingProfiles = await Future.wait([
+        publicReference.get(),
+        privateReference.get(),
+      ]);
+      final batch = firestore.batch();
+      batch.set(
+        publicReference,
+        {
+          'schemaVersion': 2,
+          'uid': user.uid,
+          'displayName': displayName,
+          if (user.photoURL?.isNotEmpty == true) 'photoUrl': user.photoURL,
+          if (!existingProfiles[0].exists)
+            'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+      batch.set(
+        privateReference,
+        {
+          'schemaVersion': 2,
+          'uid': user.uid,
+          if (user.email?.isNotEmpty == true) 'email': user.email,
+          'contactDiscoveryConsent': false,
+          'onboardingComplete': true,
+          if (!existingProfiles[1].exists)
+            'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+      await batch.commit();
+      if (user.displayName != displayName) {
+        await user.updateDisplayName(displayName);
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving phone number: $e')),
-        );
-      }
+
+      await _tryRedeemPendingInvite();
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const MainHallScreen()),
+        (route) => false,
+      );
+    } on FirebaseException catch (error) {
+      _showError(_friendlyFirebaseError(error));
+    } catch (_) {
+      _showError('We could not finish your profile. Please try again.');
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  Future<void> _tryRedeemPendingInvite() async {
+    final deepLinks = DeepLinkService();
+    final token = await deepLinks.getPendingInviteToken();
+    if (token == null) return;
+
+    try {
+      await ChatService().redeemGroupInvite(token);
+      await deepLinks.clearPendingInviteToken(token);
+    } catch (_) {
+      // Keep the token for an automatic retry after connectivity returns.
+    }
+  }
+
+  String _friendlyFirebaseError(FirebaseException error) {
+    if (error.code == 'unavailable' || error.code == 'network-request-failed') {
+      return 'You appear to be offline. Reconnect to finish setting up your profile.';
+    }
+    if (error.code == 'permission-denied') {
+      return 'Your profile could not be saved securely. Please sign in again.';
+    }
+    return 'We could not finish your profile. Please try again.';
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text(
-          'Complete Profile',
-          style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87), fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        elevation: 0,
+        title: const Text('Set up your profile'),
         centerTitle: true,
       ),
       body: SafeArea(
-        child: Padding(
-          padding: EdgeInsets.all(24.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: ListView(
-                    children: [
-                      SizedBox(height: 16),
-                      Icon(
-                        Icons.connect_without_contact,
-                        size: 80,
-                        color: AppColors.gradientEnd,
-                      ),
-                      SizedBox(height: 32),
-                      Text(
-                        'Let friends find you',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Semantics(
+                      label: 'Braid community profile',
+                      child: CircleAvatar(
+                        radius: 42,
+                        backgroundColor: AppColors.gradientEnd.withValues(
+                          alpha: 0.12,
                         ),
-                      ),
-                      SizedBox(height: 16),
-                      Text(
-                        'Enter your phone numbers so friends can easily invite you to study groups.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                      ),
-                      SizedBox(height: 48),
-
-                      ...List.generate(_completePhoneNumbers.length, (index) {
-                        return Padding(
-                          padding: EdgeInsets.only(bottom: 12.0),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: IntlPhoneField(
-                                  key: _fieldKeys[index],
-                                  decoration: InputDecoration(
-                                    labelText: 'Phone Number ${index + 1}',
-                                    floatingLabelStyle: TextStyle(color: AppColors.gradientStart),
-                                    border: OutlineInputBorder(
-                                      borderSide: BorderSide(
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                      ),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(
-                                        color: AppColors.gradientStart,
-                                        width: 2.0,
-                                      ),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    filled: true,
-                                    fillColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                                  ),
-                                  initialCountryCode: 'NG',
-                                  onChanged: (phone) {
-                                    _completePhoneNumbers[index] =
-                                        phone.completeNumber;
-                                  },
-                                ),
-                              ),
-                              if (_completePhoneNumbers.length > 1)
-                                IconButton(
-                                  icon: Icon(
-                                    Icons.remove_circle_outline,
-                                    color: Colors.red,
-                                  ),
-                                  onPressed: () =>
-                                      _removePhoneNumberField(index),
-                                ),
-                            ],
-                          ),
-                        );
-                      }),
-
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          onPressed: _addPhoneNumberField,
-                          icon: Icon(Icons.add, color: AppColors.gradientEnd),
-                          label: Text(
-                            'Add another number',
-                            style: TextStyle(color: AppColors.gradientEnd),
-                          ),
+                        child: Icon(
+                          Icons.auto_stories_rounded,
+                          size: 42,
+                          color: AppColors.gradientEnd,
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 16),
-                SizedBox(
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _savePhoneAndContinue,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.gradientEnd,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: _isLoading
-                        ? CircularProgressIndicator(color: Colors.white)
-                        : Text(
-                            'Continue',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                  ),
+                    const SizedBox(height: 28),
+                    Text(
+                      'How should your study group know you?',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Your name and profile photo are visible to people you '
+                      'study with. Braid does not need access to your phone '
+                      'contacts to connect you.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    TextFormField(
+                      controller: _displayNameController,
+                      textCapitalization: TextCapitalization.words,
+                      textInputAction: TextInputAction.done,
+                      autofillHints: const [AutofillHints.name],
+                      maxLength: 80,
+                      enabled: !_isSaving,
+                      decoration: const InputDecoration(
+                        labelText: 'Display name',
+                        hintText: 'e.g. Godswill',
+                        prefixIcon: Icon(Icons.person_outline_rounded),
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        final name = value?.trim() ?? '';
+                        if (name.length < 2) {
+                          return 'Enter at least two characters.';
+                        }
+                        return null;
+                      },
+                      onFieldSubmitted: (_) {
+                        if (!_isSaving) _completeProfile();
+                      },
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      height: 54,
+                      child: FilledButton(
+                        onPressed: _isSaving ? null : _completeProfile,
+                        child: _isSaving
+                            ? const SizedBox.square(
+                                dimension: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.4,
+                                ),
+                              )
+                            : const Text('Continue to Braid'),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'You can change your name and photo later in Profile.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
-                SizedBox(height: 24),
-              ],
+              ),
             ),
           ),
         ),

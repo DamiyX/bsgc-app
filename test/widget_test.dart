@@ -1,30 +1,81 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
+import 'package:bsgc_app/models/message_model.dart';
+import 'package:bsgc_app/screens/foyer_screen.dart';
+import 'package:bsgc_app/services/deep_link_service.dart';
+import 'package:bsgc_app/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:bsgc_app/main.dart';
-
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const BraidApp());
+  test('canonical invite links reject unsafe hosts and malformed tokens', () {
+    const token = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN1234';
+    expect(
+      DeepLinkService.inviteTokenFromUri(
+        Uri.parse('https://braidapp.com/join/$token'),
+      ),
+      token,
+    );
+    expect(
+      DeepLinkService.inviteTokenFromUri(
+        Uri.parse('https://evil.example/join/$token'),
+      ),
+      isNull,
+    );
+    expect(
+      DeepLinkService.inviteTokenFromUri(
+        Uri.parse('http://braidapp.com/join/$token'),
+      ),
+      isNull,
+    );
+    expect(
+      DeepLinkService.inviteTokenFromUri(
+        Uri.parse('https://braidapp.com/join/short'),
+      ),
+      isNull,
+    );
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  test('message parts retain safe media metadata', () {
+    final part = MessagePart.fromMap({
+      'type': 'voice',
+      'content': 'https://storage.example/voice.m4a',
+      'durationSeconds': 42,
+    });
+    expect(part.type, MessageType.voice);
+    expect(part.durationSeconds, 42);
+    expect(part.toMap(), {
+      'type': 'voice',
+      'content': 'https://storage.example/voice.m4a',
+      'durationSeconds': 42,
+    });
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+  testWidgets('sign-in screen remains usable on a narrow display', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(theme: appTheme, home: const FoyerScreen()),
+    );
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('Braid'), findsOneWidget);
+    expect(find.text('Continue with Google'), findsOneWidget);
+    expect(find.text('Privacy'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  test('light and dark themes expose the Braid semantic colors', () {
+    expect(
+      appTheme.extension<BraidSemanticColors>(),
+      isNotNull,
+    );
+    expect(
+      darkAppTheme.extension<BraidSemanticColors>(),
+      isNotNull,
+    );
   });
 }

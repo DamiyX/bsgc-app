@@ -1,25 +1,96 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    
-    function isAuthenticated() {
+    function signedIn() {
       return request.auth != null;
     }
 
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function groupExists(groupId) {
+      return firestore.exists(
+        /databases/(default)/documents/groups/$(groupId)
+      );
+    }
+
+    function groupData(groupId) {
+      return firestore.get(
+        /databases/(default)/documents/groups/$(groupId)
+      ).data;
+    }
+
+    function isGroupMember(groupId) {
+      return signedIn()
+        && groupExists(groupId)
+        && groupData(groupId).members is list
+        && request.auth.uid in groupData(groupId).members;
+    }
+
+    function isGroupOwner(groupId) {
+      return isGroupMember(groupId)
+        && groupData(groupId).ownerId == request.auth.uid;
+    }
+
+    function isImage() {
+      return request.resource.contentType.matches('image/(jpeg|png|webp)');
+    }
+
+    function isAudio() {
+      return request.resource.contentType.matches(
+        'audio/(aac|m4a|mp4|mpeg|ogg|wav|webm)'
+      );
+    }
+
+    function hasRequiredMessageMetadata(groupId, messageId) {
+      return request.resource.metadata.ownerId == request.auth.uid
+        && request.resource.metadata.groupId == groupId
+        && request.resource.metadata.messageId == messageId;
+    }
+
+    match /users/{uid}/profile/{assetId} {
+      allow read: if signedIn();
+      allow create: if isSelf(uid)
+        && isImage()
+        && request.resource.size > 0
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.metadata.ownerId == uid;
+      allow update: if false;
+      allow delete: if isSelf(uid);
+    }
+
+    match /groups/{groupId}/covers/{assetId} {
+      allow read: if isGroupMember(groupId);
+      allow create: if isGroupOwner(groupId)
+        && isImage()
+        && request.resource.size > 0
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.metadata.ownerId == request.auth.uid
+        && request.resource.metadata.groupId == groupId;
+      allow update: if false;
+      allow delete: if isGroupOwner(groupId);
+    }
+
+    match /groups/{groupId}/messages/{messageId}/{assetId} {
+      allow read: if isGroupMember(groupId);
+      allow create: if isGroupMember(groupId)
+        && hasRequiredMessageMetadata(groupId, messageId)
+        && request.resource.size > 0
+        && (
+          (isImage() && request.resource.size <= 10 * 1024 * 1024)
+          || (isAudio() && request.resource.size <= 25 * 1024 * 1024)
+        );
+      allow update: if false;
+      allow delete: if isGroupMember(groupId)
+        && (
+          resource.metadata.ownerId == request.auth.uid
+          || isGroupOwner(groupId)
+        );
+    }
+
     match /{allPaths=**} {
-      allow read: if isAuthenticated();
-    }
-
-    match /profiles/{fileName} {
-      allow write: if isAuthenticated() && request.resource.size < 5 * 1024 * 1024;
-    }
-
-    match /groups/{fileName} {
-      allow write: if isAuthenticated() && request.resource.size < 5 * 1024 * 1024;
-    }
-
-    match /chat_media/{fileName} {
-      allow write: if isAuthenticated() && request.resource.size < 50 * 1024 * 1024;
+      allow read, write: if false;
     }
   }
 }

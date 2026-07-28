@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -13,6 +12,8 @@ import 'my_insights_screen.dart';
 import 'create_insight_screen.dart';
 import '../services/contact_cache_service.dart';
 import '../theme.dart';
+import '../widgets/report_dialog.dart';
+import '../widgets/braid_media.dart';
 
 import 'dart:ui' as ui;
 
@@ -237,7 +238,6 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
   final InsightService _insightService = InsightService();
   InsightCommentModel? _replyingTo;
   bool _isLiked = false;
-  int _likeCount = 0;
   bool _isSaved = false;
   double _dismissOffset = 0.0;
   bool _commentsVisible = false;
@@ -256,7 +256,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
     }
     
     _isLiked = user != null && widget.insight.likedBy.contains(user.uid);
-    _likeCount = widget.insight.likedBy.length;
+    _loadReactionStatus();
     
     _checkSavedStatus();
 
@@ -290,6 +290,17 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
     }
   }
 
+  Future<void> _loadReactionStatus() async {
+    try {
+      final isReacted = await _insightService.hasInsightReaction(
+        widget.insight.id,
+      );
+      if (mounted) setState(() => _isLiked = isReacted);
+    } catch (_) {
+      // Legacy array state remains a read-only fallback during migration.
+    }
+  }
+
   @override
   void didUpdateWidget(_ViewInsightPage oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -297,9 +308,9 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
       final user = FirebaseAuth.instance.currentUser;
       setState(() {
         _isLiked = user != null && widget.insight.likedBy.contains(user.uid);
-        _likeCount = widget.insight.likedBy.length;
         _isSaved = false;
       });
+      _loadReactionStatus();
       _checkSavedStatus();
     }
   }
@@ -509,7 +520,6 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
 
                           setState(() {
                             _isLiked = !_isLiked;
-                            _likeCount += _isLiked ? 1 : -1;
                           });
                           
                           await _insightService.toggleInsightLike(widget.insight.id, user.uid, _isLiked);
@@ -517,11 +527,6 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                         padding: EdgeInsets.all(4),
                         constraints: const BoxConstraints(),
                       ),
-                      if (_likeCount > 0)
-                        Padding(
-                          padding: EdgeInsets.only(left: 4.0),
-                          child: Text('$_likeCount', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                        ),
                     ],
                   ),
                   SizedBox(width: 8),
@@ -604,7 +609,6 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
         .toList();
     final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
     final isLiked = comment.likedBy.contains(currentUserId);
-    final likeCount = comment.likedBy.length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -629,15 +633,11 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                     ),
                   ),
                 ),
-              CircleAvatar(
+              BraidAvatar(
+                identity: comment.authorUid,
+                displayName: comment.authorName,
+                imageUrl: comment.authorPhotoUrl,
                 radius: 16,
-                backgroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                backgroundImage: comment.authorPhotoUrl != null
-                    ? CachedNetworkImageProvider(comment.authorPhotoUrl!)
-                    : null,
-                child: comment.authorPhotoUrl == null
-                    ? Icon(Icons.person, size: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54))
-                    : null,
               ),
               SizedBox(width: 8),
               Expanded(
@@ -687,43 +687,39 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                               color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                             ),
                           ),
-                          GestureDetector(
-                            onTap: () {
-                              if (!isLiked) {
-                                NotificationService().playActionSound();
-                              }
-                              _insightService.toggleCommentLike(
-                                widget.insight.id,
-                                comment.id,
-                                currentUserId,
-                                !isLiked,
-                              );
-                            },
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  isLiked
+                          StreamBuilder<bool>(
+                            stream: _insightService.hasCommentReaction(
+                              widget.insight.id,
+                              comment.id,
+                            ),
+                            initialData: isLiked,
+                            builder: (context, reactionSnapshot) {
+                              final reacted = reactionSnapshot.data ?? false;
+                              return GestureDetector(
+                                onTap: () {
+                                  if (!reacted) {
+                                    NotificationService().playActionSound();
+                                  }
+                                  _insightService.toggleCommentLike(
+                                    widget.insight.id,
+                                    comment.id,
+                                    currentUserId,
+                                    !reacted,
+                                  );
+                                },
+                                child: Icon(
+                                  reacted
                                       ? Icons.thumb_up
                                       : Icons.thumb_up_alt_outlined,
-                                    size: 14,
-                                    color: isLiked
-                                        ? AppColors.primary
-                                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                                  ),
-                                if (likeCount > 0) ...[
-                                  SizedBox(width: 4),
-                                  Text(
-                                    '$likeCount',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
+                                  size: 14,
+                                  color: reacted
+                                      ? AppColors.primary
+                                      : Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                ),
+                              );
+                            },
                           ),
                           GestureDetector(
                             onTap: () {
@@ -983,15 +979,11 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                   children: [
                     Stack(
                       children: [
-                        CircleAvatar(
+                        BraidAvatar(
+                          identity: widget.insight.authorUid,
+                          displayName: widget.insight.authorName,
+                          imageUrl: widget.insight.authorPhotoUrl,
                           radius: 20,
-                          backgroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                          backgroundImage: widget.insight.authorPhotoUrl != null
-                              ? CachedNetworkImageProvider(widget.insight.authorPhotoUrl!)
-                              : null,
-                          child: widget.insight.authorPhotoUrl == null
-                              ? Icon(Icons.person, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45))
-                              : null,
                         ),
                         if (isMyInsight)
                           Positioned(
@@ -1060,6 +1052,25 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                       ),
                       onPressed: widget.onTogglePlay,
                     ),
+                    if (!isMyInsight)
+                      PopupMenuButton<String>(
+                        tooltip: 'Reflection actions',
+                        onSelected: (value) {
+                          if (value == 'report') {
+                            showReportDialog(
+                              context,
+                              targetType: 'insight',
+                              targetId: widget.insight.id,
+                            );
+                          }
+                        },
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(
+                            value: 'report',
+                            child: Text('Report reflection'),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
               ),

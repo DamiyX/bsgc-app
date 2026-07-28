@@ -1,189 +1,318 @@
-import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import '../models/insight_model.dart';
-import 'auth_service.dart';
 
 class InsightService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _firestore;
+  final FirebaseFunctions _functions;
+  final FirebaseAuth _auth;
 
-  // For this initial implementation, we'll fetch all insights globally,
-  // but only ones that haven't expired (created within the last 3 days).
-  // In the future, this can be filtered by contacts or group members.
-  Stream<List<InsightModel>> getActiveInsights() {
-    return _firestore
-        .collection('insights')
-        .where('expiresAt', isGreaterThan: Timestamp.now())
-        .orderBy('expiresAt', descending: true)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) => InsightModel.fromFirestore(doc)).toList();
-    });
+  InsightService({
+    FirebaseFirestore? firestore,
+    FirebaseFunctions? functions,
+    FirebaseAuth? auth,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _functions = functions ?? FirebaseFunctions.instance,
+       _auth = auth ?? FirebaseAuth.instance;
+
+  String _requireUserId() {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) throw StateError('Sign in to continue.');
+    return uid;
   }
 
-  Stream<List<InsightModel>> getActiveInsightsForUser(String userId) {
+  Stream<List<InsightModel>> getActiveInsights({int limit = 40}) {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return Stream.value(const []);
+    final boundedLimit = limit.clamp(1, 50).toInt();
+
+    return _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('insight_feed')
+        .where('expiresAt', isGreaterThan: Timestamp.now())
+        .orderBy('expiresAt', descending: true)
+        .limit(boundedLimit)
+        .snapshots()
+        .asyncMap((snapshot) async {
+          final models = await Future.wait(
+            snapshot.docs.map((pointer) async {
+              final insightId =
+                  pointer.data()['insightId']?.toString() ?? pointer.id;
+              try {
+                final insight = await _firestore
+                    .collection('insights')
+                    .doc(insightId)
+                    .get();
+                if (!insight.exists) return null;
+                final model = InsightModel.fromFirestore(insight);
+                if (model.status != 'active' ||
+                    !model.expiresAt.isAfter(DateTime.now())) {
+                  return null;
+                }
+                return model;
+              } catch (_) {
+                return null;
+              }
+            }),
+          );
+          return models.whereType<InsightModel>().toList(growable: false);
+        });
+  }
+
+  Stream<List<InsightModel>> getActiveInsightsForUser(
+    String userId, {
+    int limit = 50,
+  }) {
+    final currentUid = _auth.currentUser?.uid;
+    if (currentUid == null || currentUid != userId) {
+      return Stream.value(const []);
+    }
     return _firestore
         .collection('insights')
-        .where('authorUid', isEqualTo: userId)
+        .where('authorUid', isEqualTo: currentUid)
+        .where('status', isEqualTo: 'active')
+        .orderBy('expiresAt', descending: true)
+        .limit(limit.clamp(1, 50).toInt())
         .snapshots()
         .map((snapshot) {
-      final now = DateTime.now();
-      var list = snapshot.docs
-          .map((doc) => InsightModel.fromFirestore(doc))
-          .where((insight) => insight.expiresAt.isAfter(now))
-          .toList();
-      list.sort((a, b) => b.expiresAt.compareTo(a.expiresAt));
-      return list;
-    });
+          final now = DateTime.now();
+          return snapshot.docs
+              .map(InsightModel.fromFirestore)
+              .where(
+                (insight) =>
+                    insight.status == 'active' &&
+                    insight.expiresAt.isAfter(now),
+              )
+              .toList(growable: false);
+        });
   }
 
   Future<void> createInsight(InsightModel insight) async {
-    try {
-      await _firestore.collection('insights').doc(insight.id).set(insight.toMap()).timeout(const Duration(seconds: 2));
-      await AuthService().recordInteraction();
-    } on TimeoutException {
-      // Offline sync fallback
+    final uid = _requireUserId();
+    if (insight.authorUid != uid) {
+      throw StateError('You can publish only your own reflection.');
     }
+    await _functions.httpsCallable('publishInsight').call({
+      'title': insight.title.trim(),
+      'body': insight.body.trim(),
+      'themeId': insight.themeId,
+    });
   }
 
   Future<void> deleteInsight(String insightId) async {
-    try {
-      await _firestore.collection('insights').doc(insightId).delete().timeout(const Duration(seconds: 2));
-    } on TimeoutException {
-      // Offline sync fallback
-    }
+    await _firestore.collection('insights').doc(insightId).update({
+      'status': 'deleted',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   Future<void> markAsSeen(String insightId, String userId) async {
-    try {
-      await _firestore.collection('insights').doc(insightId).update({
-      'seenBy': FieldValue.arrayUnion([userId])
-    }).timeout(const Duration(seconds: 2));
-    } on TimeoutException {
-      // Offline sync fallback
-    }
+    final uid = _requireUserId();
+    if (uid != userId) return;
+    await _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('insight_state')
+        .doc(insightId)
+        .set({
+          'insightId': insightId,
+          'seenAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
   }
 
-  Stream<List<InsightCommentModel>> getComments(String insightId) {
+  Stream<List<InsightCommentModel>> getComments(
+    String insightId, {
+    int limit = 100,
+  }) {
     return _firestore
         .collection('insights')
         .doc(insightId)
         .collection('comments')
-        .orderBy('createdAt', descending: false)
+        .orderBy('createdAt')
+        .limit(limit.clamp(1, 100).toInt())
         .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) => InsightCommentModel.fromFirestore(doc)).toList();
-    });
+        .map(
+          (snapshot) => snapshot.docs
+              .map(InsightCommentModel.fromFirestore)
+              .toList(growable: false),
+        );
   }
 
-  Future<void> addComment(String insightId, InsightCommentModel comment) async {
-    try {
-      final batch = _firestore.batch();
-      final commentRef = _firestore.collection('insights').doc(insightId).collection('comments').doc(comment.id);
-      final insightRef = _firestore.collection('insights').doc(insightId);
-      
-      batch.set(commentRef, comment.toMap());
-      batch.update(insightRef, {
-        'updatedAt': FieldValue.serverTimestamp(),
-        'seenBy': [comment.authorUid],
-      });
-      
-      await batch.commit().timeout(const Duration(seconds: 2));
-    } on TimeoutException {
-      // Offline sync fallback
+  Future<void> addComment(
+    String insightId,
+    InsightCommentModel comment,
+  ) async {
+    final uid = _requireUserId();
+    if (comment.authorUid != uid) {
+      throw StateError('You can publish only your own comment.');
     }
-  }
-
-  Future<void> toggleCommentLike(String insightId, String commentId, String userId, bool isLiking) async {
-    final docRef = _firestore
+    await _firestore
         .collection('insights')
         .doc(insightId)
         .collection('comments')
-        .doc(commentId);
-    
-    if (isLiking) {
-      final batch = _firestore.batch();
-      batch.update(docRef, {
-        'likedBy': FieldValue.arrayUnion([userId])
-      });
-      batch.update(_firestore.collection('insights').doc(insightId), {
-        'updatedAt': FieldValue.serverTimestamp(),
-        'seenBy': [userId], // Bump and reset unseen so others notice activity
-      });
-      await batch.commit();
-    } else {
-      await docRef.update({
-        'likedBy': FieldValue.arrayRemove([userId])
-      });
-    }
+        .doc(comment.id)
+        .set({
+          'schemaVersion': 2,
+          'insightId': insightId,
+          'authorUid': uid,
+          'authorName': comment.authorName.trim(),
+          if (comment.authorPhotoUrl?.isNotEmpty == true)
+            'authorPhotoUrl': comment.authorPhotoUrl,
+          'body': comment.body.trim(),
+          if (comment.replyToId?.isNotEmpty == true)
+            'replyToId': comment.replyToId,
+          if (comment.replyToName?.isNotEmpty == true)
+            'replyToName': comment.replyToName,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
   }
 
-  Future<void> toggleInsightLike(String insightId, String userId, bool isLiking) async {
-    final docRef = _firestore.collection('insights').doc(insightId);
-    if (isLiking) {
-      await docRef.update({
-        'likedBy': FieldValue.arrayUnion([userId]),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'seenBy': [userId], // Bump and reset unseen so others notice activity
-      });
-    } else {
-      await docRef.update({
-        'likedBy': FieldValue.arrayRemove([userId])
-      });
-    }
+  Future<void> toggleCommentLike(
+    String insightId,
+    String commentId,
+    String userId,
+    bool isLiking,
+  ) {
+    return _toggleReaction(
+      _firestore
+          .collection('insights')
+          .doc(insightId)
+          .collection('comments')
+          .doc(commentId)
+          .collection('reactions')
+          .doc(userId),
+      userId,
+      isLiking,
+    );
   }
 
-  // Saved Insights
+  Future<void> toggleInsightLike(
+    String insightId,
+    String userId,
+    bool isLiking,
+  ) {
+    return _toggleReaction(
+      _firestore
+          .collection('insights')
+          .doc(insightId)
+          .collection('reactions')
+          .doc(userId),
+      userId,
+      isLiking,
+    );
+  }
+
+  Future<bool> hasInsightReaction(String insightId) async {
+    final uid = _requireUserId();
+    final snapshot = await _firestore
+        .collection('insights')
+        .doc(insightId)
+        .collection('reactions')
+        .doc(uid)
+        .get();
+    return snapshot.exists;
+  }
+
+  Stream<bool> hasCommentReaction(
+    String insightId,
+    String commentId,
+  ) {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return Stream.value(false);
+    return _firestore
+        .collection('insights')
+        .doc(insightId)
+        .collection('comments')
+        .doc(commentId)
+        .collection('reactions')
+        .doc(uid)
+        .snapshots()
+        .map((snapshot) => snapshot.exists);
+  }
+
+  Future<void> _toggleReaction(
+    DocumentReference<Map<String, dynamic>> reference,
+    String userId,
+    bool isLiking,
+  ) async {
+    if (_requireUserId() != userId) {
+      throw StateError('Reaction identity does not match the signed-in user.');
+    }
+    if (!isLiking) {
+      await reference.delete();
+      return;
+    }
+    await reference.set({
+      'uid': userId,
+      'reaction': 'helpful',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   Future<void> saveInsight(String userId, InsightModel insight) async {
-    try {
-      await _firestore
+    if (_requireUserId() != userId) return;
+    await _firestore
         .collection('users')
         .doc(userId)
         .collection('saved_insights')
         .doc(insight.id)
-        .set(insight.toMap())
-        .timeout(const Duration(seconds: 2));
-    } on TimeoutException {
-      // Offline sync fallback
-    }
+        .set({
+          'insightId': insight.id,
+          'savedAt': FieldValue.serverTimestamp(),
+        });
   }
 
   Future<void> unsaveInsight(String userId, String insightId) async {
-    try {
-      await _firestore
+    if (_requireUserId() != userId) return;
+    await _firestore
         .collection('users')
         .doc(userId)
         .collection('saved_insights')
         .doc(insightId)
-        .delete()
-        .timeout(const Duration(seconds: 2));
-    } on TimeoutException {
-      // Offline sync fallback
-    }
+        .delete();
   }
 
   Stream<List<InsightModel>> getSavedInsights(String userId) {
+    if (_auth.currentUser?.uid != userId) return Stream.value(const []);
     return _firestore
         .collection('users')
         .doc(userId)
         .collection('saved_insights')
+        .orderBy('savedAt', descending: true)
+        .limit(100)
         .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) => InsightModel.fromFirestore(doc)).toList();
-    });
+        .asyncMap((snapshot) async {
+          final insights = await Future.wait(
+            snapshot.docs.map((saved) async {
+              try {
+                final document = await _firestore
+                    .collection('insights')
+                    .doc(saved.id)
+                    .get();
+                return document.exists
+                    ? InsightModel.fromFirestore(document)
+                    : null;
+              } catch (_) {
+                return null;
+              }
+            }),
+          );
+          return insights.whereType<InsightModel>().toList(growable: false);
+        });
   }
 
   Future<bool> isInsightSaved(String userId, String insightId) async {
-    try {
-      final snapshot = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('saved_insights')
-          .doc(insightId)
-          .snapshots()
-          .first;
-      return snapshot.exists;
-    } catch (e) {
-      return false;
-    }
+    if (_auth.currentUser?.uid != userId) return false;
+    final snapshot = await _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('saved_insights')
+        .doc(insightId)
+        .get();
+    return snapshot.exists;
   }
 }

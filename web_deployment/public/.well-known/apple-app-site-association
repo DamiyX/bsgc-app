@@ -1,0 +1,17 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "REPLACE_WITH_APPLE_TEAM_ID.com.bsgc.bsgcApp"
+        ],
+        "components": [
+          {
+            "/": "/join/*",
+            "comment": "Braid study-group invitations"
+          }
+        ]
+      }
+    ]
+  }
+}

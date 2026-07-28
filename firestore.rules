@@ -1,60 +1,975 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper functions
-    function isAuthenticated() {
+    function signedIn() {
       return request.auth != null;
     }
-    
-    function isMember(groupData) {
-      return request.auth.uid in groupData.members;
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
     }
-    
-    match /groups/{groupId} {
-      // Any authenticated user can create a group
-      allow create: if isAuthenticated() 
-                   && request.resource.data.members.size() <= 12
-                   && request.resource.data.members[0] == request.auth.uid;
-                   
-      // Users can read the group if they are a member, or if they are joining
-      allow read: if isAuthenticated();
-      
-      // Prevent a group from having more than 12 members on update
-      allow update: if isAuthenticated() 
-                   && request.resource.data.members.size() <= 12;
-                   
-      allow delete: if false; // Only manual deletion for now
-      
-      match /messages/{messageId} {
-        // Only members of the parent group can read or create messages
-        allow read: if isAuthenticated() && isMember(get(/databases/$(database)/documents/groups/$(groupId)).data);
-        allow create: if isAuthenticated() 
-                     && isMember(get(/databases/$(database)/documents/groups/$(groupId)).data)
-                     && request.resource.data.senderId == request.auth.uid;
-        allow update, delete: if false;
+
+    function isModerator() {
+      return signedIn() && request.auth.token.moderator == true;
+    }
+
+    function groupExists(groupId) {
+      return exists(/databases/$(database)/documents/groups/$(groupId));
+    }
+
+    function groupData(groupId) {
+      return get(/databases/$(database)/documents/groups/$(groupId)).data;
+    }
+
+    function isGroupMember(groupId) {
+      return signedIn()
+        && groupExists(groupId)
+        && groupData(groupId).members is list
+        && request.auth.uid in groupData(groupId).members;
+    }
+
+    function isGroupOwner(groupId) {
+      return isGroupMember(groupId)
+        && groupData(groupId).ownerId == request.auth.uid;
+    }
+
+    function isAcceptedConnection(authorUid, viewerUid) {
+      return exists(
+          /databases/$(database)/documents/users/$(authorUid)/connections/$(viewerUid)
+        )
+        && get(
+          /databases/$(database)/documents/users/$(authorUid)/connections/$(viewerUid)
+        ).data.status == 'accepted';
+    }
+
+    function isBlocked(blockerUid, blockedUid) {
+      return exists(
+        /databases/$(database)/documents/users/$(blockerUid)/blocks/$(blockedUid)
+      );
+    }
+
+    function isUnblockedPair(firstUid, secondUid) {
+      return !isBlocked(firstUid, secondUid)
+        && !isBlocked(secondUid, firstUid);
+    }
+
+    function validOptionalString(data, key, maxLength) {
+      return !data.keys().hasAny([key])
+        || (data[key] is string && data[key].size() <= maxLength);
+    }
+
+    function validPublicUser(uid, data) {
+      return data.keys().hasAll([
+          'schemaVersion',
+          'uid',
+          'displayName',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'uid',
+          'displayName',
+          'photoUrl',
+          'bio',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.schemaVersion == 2
+        && data.uid == uid
+        && data.displayName is string
+        && data.displayName.size() >= 1
+        && data.displayName.size() <= 80
+        && validOptionalString(data, 'photoUrl', 2048)
+        && validOptionalString(data, 'bio', 300)
+        && data.updatedAt is timestamp;
+    }
+
+    function validPrivateUser(uid, data) {
+      return data.keys().hasAll(['schemaVersion', 'uid', 'updatedAt'])
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'uid',
+          'email',
+          'phoneNumbers',
+          'phoneVerified',
+          'contactDiscoveryConsent',
+          'connectionCount',
+          'referredBy',
+          'onboardingComplete',
+          'deletionState',
+          'notificationPreferences',
+          'storagePreferences',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.schemaVersion == 2
+        && data.uid == uid
+        && validOptionalString(data, 'email', 320)
+        && (!data.keys().hasAny(['phoneNumbers'])
+          || (data.phoneNumbers is list && data.phoneNumbers.size() <= 5))
+        && (!data.keys().hasAny(['phoneVerified'])
+          || data.phoneVerified is bool)
+        && (!data.keys().hasAny(['contactDiscoveryConsent'])
+          || data.contactDiscoveryConsent is bool)
+        && (!data.keys().hasAny(['connectionCount'])
+          || (data.connectionCount is int
+            && data.connectionCount >= 0
+            && data.connectionCount <= 500))
+        && (!data.keys().hasAny(['onboardingComplete'])
+          || data.onboardingComplete is bool)
+        && validOptionalString(data, 'referredBy', 128)
+        && validOptionalString(data, 'deletionState', 32)
+        && data.updatedAt is timestamp;
+    }
+
+    function validLegacyUser(data) {
+      return data.keys().hasOnly([
+        'uid',
+        'displayName',
+        'photoURL',
+        'bio',
+        'email',
+        'phone',
+        'phoneNumbers',
+        'referredBy',
+        'interactionMonth',
+        'interactionCount',
+        'onboardingComplete',
+        'lastSeen',
+        'createdAt',
+        'updatedAt'
+      ])
+      && validOptionalString(data, 'uid', 128)
+      && validOptionalString(data, 'displayName', 80)
+      && validOptionalString(data, 'photoURL', 2048)
+      && validOptionalString(data, 'bio', 300)
+      && validOptionalString(data, 'email', 320)
+      && validOptionalString(data, 'phone', 32)
+      && validOptionalString(data, 'referredBy', 128)
+      && (!data.keys().hasAny(['phoneNumbers'])
+        || (data.phoneNumbers is list && data.phoneNumbers.size() <= 5))
+      && (!data.keys().hasAny(['interactionCount'])
+        || (data.interactionCount is int && data.interactionCount >= 0))
+      && (!data.keys().hasAny(['onboardingComplete'])
+        || data.onboardingComplete is bool);
+    }
+
+    function validGroupCreate(data) {
+      return data.keys().hasAll([
+          'schemaVersion',
+          'ownerId',
+          'name',
+          'members',
+          'description',
+          'createdAt',
+          'groupType',
+          'lifecycle',
+          'extensionCount'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'ownerId',
+          'name',
+          'members',
+          'readingProgress',
+          'userCompletedChapters',
+          'pinnedScripture',
+          'description',
+          'photoUrl',
+          'createdAt',
+          'groupType',
+          'topic',
+          'studyBook',
+          'totalChapters',
+          'startDate',
+          'endDate',
+          'lifecycle',
+          'lastMessageTime',
+          'lastMessageText',
+          'lastMessageSenderName',
+          'lastMessageSenderId',
+          'unreadCounts',
+          'extensionCount'
+        ])
+        && data.schemaVersion == 2
+        && data.ownerId == request.auth.uid
+        && data.name is string
+        && data.name.size() >= 1
+        && data.name.size() <= 80
+        && data.description is string
+        && data.description.size() <= 1000
+        && data.members is list
+        && data.members.size() == 1
+        && data.members[0] == request.auth.uid
+        && data.groupType in ['Bible', 'Topic']
+        && data.lifecycle in ['draft', 'scheduled', 'active']
+        && data.extensionCount == 0
+        && data.createdAt == request.time
+        && validOptionalString(data, 'photoUrl', 2048)
+        && validOptionalString(data, 'pinnedScripture', 200)
+        && validOptionalString(data, 'topic', 200)
+        && validOptionalString(data, 'studyBook', 80);
+    }
+
+    function validGroupDocument(data) {
+      return data.schemaVersion == 2
+        && data.ownerId is string
+        && data.name is string
+        && data.name.size() >= 1
+        && data.name.size() <= 80
+        && data.description is string
+        && data.description.size() <= 1000
+        && data.members is list
+        && data.members.size() >= 1
+        && data.members.size() <= 12
+        && data.ownerId in data.members
+        && data.lifecycle in [
+          'draft',
+          'scheduled',
+          'active',
+          'completed',
+          'archived'
+        ]
+        && data.extensionCount is int
+        && data.extensionCount >= 0
+        && data.extensionCount <= 3
+        && validOptionalString(data, 'photoUrl', 2048)
+        && validOptionalString(data, 'pinnedScripture', 200);
+    }
+
+    function ownerChangedOnlyGroupMetadata() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name',
+          'description',
+          'photoUrl',
+          'pinnedScripture'
+        ])
+        && validGroupDocument(request.resource.data);
+    }
+
+    function memberChangedOnlyOwnState() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'readingProgress',
+          'userCompletedChapters',
+          'unreadCounts'
+        ])
+        && request.resource.data.readingProgress is map
+        && resource.data.readingProgress is map
+        && request.resource.data.readingProgress
+          .diff(resource.data.readingProgress)
+          .affectedKeys()
+          .hasOnly([request.auth.uid])
+        && request.resource.data.userCompletedChapters is map
+        && resource.data.userCompletedChapters is map
+        && request.resource.data.userCompletedChapters
+          .diff(resource.data.userCompletedChapters)
+          .affectedKeys()
+          .hasOnly([request.auth.uid])
+        && request.resource.data.unreadCounts is map
+        && resource.data.unreadCounts is map
+        && request.resource.data.unreadCounts
+          .diff(resource.data.unreadCounts)
+          .affectedKeys()
+          .hasOnly([request.auth.uid])
+        && validGroupDocument(request.resource.data);
+    }
+
+    function validMessagePart(part) {
+      return part is map
+        && part.keys().hasAll(['type', 'content'])
+        && part.keys().hasOnly([
+          'type',
+          'content',
+          'durationSeconds',
+          'fileName',
+          'sizeBytes'
+        ])
+        && part.type in ['text', 'voice', 'image']
+        && part.content is string
+        && part.content.size() >= 1
+        && part.content.size() <= 8000
+        && (part.type == 'text' || part.content.matches('https://.+'))
+        && (part.type != 'voice'
+          || (part.keys().hasAny(['durationSeconds'])
+            && part.durationSeconds is int
+            && part.durationSeconds >= 1
+            && part.durationSeconds <= 300))
+        && (part.type == 'voice'
+          || !part.keys().hasAny(['durationSeconds']))
+        && (!part.keys().hasAny(['durationSeconds'])
+          || (part.durationSeconds is int
+            && part.durationSeconds >= 1
+            && part.durationSeconds <= 300))
+        && validOptionalString(part, 'fileName', 180)
+        && (!part.keys().hasAny(['sizeBytes'])
+          || (part.sizeBytes is int
+            && part.sizeBytes >= 1
+            && part.sizeBytes <= 25 * 1024 * 1024));
+    }
+
+    function validMessageCreate(data) {
+      return data.keys().hasAll([
+          'schemaVersion',
+          'senderId',
+          'senderName',
+          'parts',
+          'timestamp'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'clientMessageId',
+          'space',
+          'senderId',
+          'senderName',
+          'senderPhotoUrl',
+          'replyToMessageId',
+          'parts',
+          'timestamp',
+          'isEdited',
+          'isDeleted'
+        ])
+        && data.schemaVersion == 2
+        && (!data.keys().hasAny(['space'])
+          || data.space in ['reflection', 'discussion', 'prayer'])
+        && data.senderId == request.auth.uid
+        && data.senderName is string
+        && data.senderName.size() >= 1
+        && data.senderName.size() <= 80
+        && validOptionalString(data, 'senderPhotoUrl', 2048)
+        && validOptionalString(data, 'replyToMessageId', 128)
+        && validOptionalString(data, 'clientMessageId', 128)
+        && data.parts is list
+        && data.parts.size() >= 1
+        && data.parts.size() <= 4
+        && validMessagePart(data.parts[0])
+        && (data.parts.size() < 2 || validMessagePart(data.parts[1]))
+        && (data.parts.size() < 3 || validMessagePart(data.parts[2]))
+        && (data.parts.size() < 4 || validMessagePart(data.parts[3]))
+        && data.timestamp == request.time
+        && (!data.keys().hasAny(['isEdited']) || data.isEdited == false)
+        && (!data.keys().hasAny(['isDeleted']) || data.isDeleted == false);
+    }
+
+    function canEditMessage() {
+      return resource.data.senderId == request.auth.uid
+        && request.time < resource.data.timestamp + duration.value(15, 'm')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'parts',
+          'isEdited',
+          'editedAt'
+        ])
+        && request.resource.data.parts is list
+        && request.resource.data.parts.size() >= 1
+        && request.resource.data.parts.size() <= 4
+        && validMessagePart(request.resource.data.parts[0])
+        && (request.resource.data.parts.size() < 2
+          || validMessagePart(request.resource.data.parts[1]))
+        && (request.resource.data.parts.size() < 3
+          || validMessagePart(request.resource.data.parts[2]))
+        && (request.resource.data.parts.size() < 4
+          || validMessagePart(request.resource.data.parts[3]))
+        && request.resource.data.isEdited == true
+        && request.resource.data.editedAt == request.time;
+    }
+
+    function canTombstoneMessage() {
+      return resource.data.senderId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'parts',
+          'isDeleted',
+          'deletedAt'
+        ])
+        && request.resource.data.parts is list
+        && request.resource.data.parts.size() == 0
+        && request.resource.data.isDeleted == true
+        && request.resource.data.deletedAt == request.time;
+    }
+
+    function validInsight(data) {
+      return data.keys().hasAll([
+          'schemaVersion',
+          'authorUid',
+          'authorName',
+          'title',
+          'body',
+          'themeId',
+          'audience',
+          'status',
+          'createdAt',
+          'updatedAt',
+          'expiresAt'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion',
+          'authorUid',
+          'authorName',
+          'authorPhotoUrl',
+          'title',
+          'body',
+          'themeId',
+          'audience',
+          'status',
+          'createdAt',
+          'updatedAt',
+          'expiresAt',
+          'seenBy',
+          'likedBy'
+        ])
+        && data.schemaVersion == 2
+        && data.authorUid is string
+        && data.authorName is string
+        && data.authorName.size() >= 1
+        && data.authorName.size() <= 80
+        && validOptionalString(data, 'authorPhotoUrl', 2048)
+        && data.title is string
+        && data.title.size() <= 160
+        && data.body is string
+        && data.body.size() >= 1
+        && data.body.size() <= 12000
+        && data.themeId is string
+        && data.themeId.size() <= 64
+        && data.audience == 'contacts'
+        && data.status in ['active', 'deleted']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && data.expiresAt is timestamp
+        && (!data.keys().hasAny(['seenBy']) || data.seenBy is list)
+        && (!data.keys().hasAny(['likedBy']) || data.likedBy is list);
+    }
+
+    function canReadInsight(data, insightId) {
+      return signedIn()
+        && (
+          data.authorUid == request.auth.uid
+          || (
+            data.status == 'active'
+            && data.expiresAt > request.time
+            && isUnblockedPair(data.authorUid, request.auth.uid)
+            && (
+              isAcceptedConnection(data.authorUid, request.auth.uid)
+              || exists(
+                /databases/$(database)/documents/users/$(request.auth.uid)/insight_feed/$(insightId)
+              )
+            )
+          )
+        );
+    }
+
+    function canReadParentInsight(insightId) {
+      return exists(/databases/$(database)/documents/insights/$(insightId))
+        && canReadInsight(
+          get(/databases/$(database)/documents/insights/$(insightId)).data,
+          insightId
+        );
+    }
+
+    match /users_public/{uid} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if isSelf(uid)
+        && validPublicUser(uid, request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if isSelf(uid)
+        && validPublicUser(uid, request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName',
+          'photoUrl',
+          'bio',
+          'updatedAt'
+        ])
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    match /users_private/{uid} {
+      allow get: if isSelf(uid);
+      allow list: if false;
+      allow create: if isSelf(uid)
+        && validPrivateUser(uid, request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && (!request.resource.data.keys().hasAny(['phoneVerified'])
+          || request.resource.data.phoneVerified == false);
+      allow update: if isSelf(uid)
+        && validPrivateUser(uid, request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'email',
+          'phoneNumbers',
+          'contactDiscoveryConsent',
+          'onboardingComplete',
+          'notificationPreferences',
+          'storagePreferences',
+          'updatedAt'
+        ])
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    match /users/{uid} {
+      // Transitional owner-only access for v1 documents. No other account can
+      // read or enumerate this collection.
+      allow get: if isSelf(uid);
+      allow list: if false;
+      allow create, update: if isSelf(uid)
+        && validLegacyUser(request.resource.data);
+      allow delete: if false;
+
+      match /devices/{deviceId} {
+        allow get, list: if isSelf(uid);
+        allow create: if isSelf(uid)
+          && request.resource.data.keys().hasAll([
+            'token',
+            'platform',
+            'createdAt',
+            'updatedAt'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'token',
+            'platform',
+            'appVersion',
+            'notificationsEnabled',
+            'messageNotifications',
+            'insightNotifications',
+            'previewContent',
+            'createdAt',
+            'updatedAt'
+          ])
+          && request.resource.data.token is string
+          && request.resource.data.token.size() >= 20
+          && request.resource.data.token.size() <= 4096
+          && request.resource.data.platform in ['android', 'ios', 'web']
+          && validOptionalString(request.resource.data, 'appVersion', 32)
+          && (!request.resource.data.keys().hasAny(['notificationsEnabled'])
+            || request.resource.data.notificationsEnabled is bool)
+          && (!request.resource.data.keys().hasAny(['messageNotifications'])
+            || request.resource.data.messageNotifications is bool)
+          && (!request.resource.data.keys().hasAny(['insightNotifications'])
+            || request.resource.data.insightNotifications is bool)
+          && (!request.resource.data.keys().hasAny(['previewContent'])
+            || request.resource.data.previewContent is bool)
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time;
+        allow update: if isSelf(uid)
+          && request.resource.data.keys().hasAll([
+            'token',
+            'platform',
+            'createdAt',
+            'updatedAt'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'token',
+            'platform',
+            'appVersion',
+            'notificationsEnabled',
+            'messageNotifications',
+            'insightNotifications',
+            'previewContent',
+            'createdAt',
+            'updatedAt'
+          ])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'token',
+            'platform',
+            'appVersion',
+            'notificationsEnabled',
+            'messageNotifications',
+            'insightNotifications',
+            'previewContent',
+            'updatedAt'
+          ])
+          && request.resource.data.token is string
+          && request.resource.data.token.size() >= 20
+          && request.resource.data.token.size() <= 4096
+          && request.resource.data.platform in ['android', 'ios', 'web']
+          && validOptionalString(request.resource.data, 'appVersion', 32)
+          && (!request.resource.data.keys().hasAny(['notificationsEnabled'])
+            || request.resource.data.notificationsEnabled is bool)
+          && (!request.resource.data.keys().hasAny(['messageNotifications'])
+            || request.resource.data.messageNotifications is bool)
+          && (!request.resource.data.keys().hasAny(['insightNotifications'])
+            || request.resource.data.insightNotifications is bool)
+          && (!request.resource.data.keys().hasAny(['previewContent'])
+            || request.resource.data.previewContent is bool)
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if isSelf(uid);
       }
-    }
-    
-    match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && request.auth.uid == userId;
-      
+
       match /notes/{noteId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+        allow get, list: if isSelf(uid);
+        allow create: if isSelf(uid)
+          && request.resource.data.keys().hasAll([
+            'schemaVersion',
+            'authorUid',
+            'title',
+            'body',
+            'themeId',
+            'createdAt',
+            'updatedAt'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'schemaVersion',
+            'authorUid',
+            'title',
+            'body',
+            'themeId',
+            'createdAt',
+            'updatedAt'
+          ])
+          && request.resource.data.schemaVersion == 2
+          && request.resource.data.authorUid == uid
+          && request.resource.data.title is string
+          && request.resource.data.title.size() <= 160
+          && request.resource.data.body is string
+          && request.resource.data.body.size() >= 1
+          && request.resource.data.body.size() <= 50000
+          && request.resource.data.themeId is string
+          && request.resource.data.themeId.size() <= 64
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.createdAt <= request.time
+          && request.resource.data.updatedAt == request.time;
+        allow update: if isSelf(uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'title',
+            'body',
+            'themeId',
+            'updatedAt'
+          ])
+          && request.resource.data.authorUid == uid
+          && request.resource.data.title is string
+          && request.resource.data.title.size() <= 160
+          && request.resource.data.body is string
+          && request.resource.data.body.size() >= 1
+          && request.resource.data.body.size() <= 50000
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if isSelf(uid);
+      }
+
+      match /saved_insights/{insightId} {
+        allow get, list: if isSelf(uid);
+        allow create: if isSelf(uid)
+          && request.resource.data.keys().hasAll([
+            'insightId',
+            'savedAt'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'insightId',
+            'savedAt'
+          ])
+          && request.resource.data.insightId == insightId
+          && request.resource.data.savedAt == request.time;
+        allow update: if false;
+        allow delete: if isSelf(uid);
+      }
+
+      match /connections/{otherUid} {
+        allow get, list: if isSelf(uid);
+        allow write: if false;
+      }
+
+      match /insight_feed/{insightId} {
+        allow get, list: if isSelf(uid);
+        allow write: if false;
+      }
+
+      match /insight_state/{insightId} {
+        allow get, list: if isSelf(uid);
+        allow create, update: if isSelf(uid)
+          && request.resource.data.keys().hasOnly([
+            'insightId',
+            'seenAt',
+            'updatedAt'
+          ])
+          && request.resource.data.insightId == insightId
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if isSelf(uid);
+      }
+
+      match /blocks/{blockedUid} {
+        allow get, list: if isSelf(uid);
+        allow create: if isSelf(uid)
+          && blockedUid != uid
+          && request.resource.data.keys().hasAll([
+            'blockedUid',
+            'createdAt'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'blockedUid',
+            'createdAt',
+            'reason'
+          ])
+          && request.resource.data.blockedUid == blockedUid
+          && request.resource.data.createdAt == request.time
+          && validOptionalString(request.resource.data, 'reason', 120);
+        allow update: if false;
+        allow delete: if isSelf(uid);
+      }
+
+      match /group_state/{groupId} {
+        allow get, list: if isSelf(uid);
+        allow create, update: if isSelf(uid)
+          && request.resource.data.keys().hasAll([
+            'groupId',
+            'updatedAt'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'groupId',
+            'clearedBefore',
+            'lastReadAt',
+            'mutedUntil',
+            'updatedAt'
+          ])
+          && request.resource.data.groupId == groupId
+          && (!request.resource.data.keys().hasAny(['clearedBefore'])
+            || (request.resource.data.clearedBefore is timestamp
+              && request.resource.data.clearedBefore <= request.time))
+          && (!request.resource.data.keys().hasAny(['lastReadAt'])
+            || (request.resource.data.lastReadAt is timestamp
+              && request.resource.data.lastReadAt <= request.time))
+          && (!request.resource.data.keys().hasAny(['mutedUntil'])
+            || (request.resource.data.mutedUntil is timestamp
+              && request.resource.data.mutedUntil
+                <= request.time + duration.value(366, 'd')))
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if isSelf(uid);
+
+        match /starred_messages/{messageId} {
+          allow get, list: if isSelf(uid);
+          allow create: if isSelf(uid)
+            && request.resource.data.keys().hasAll([
+              'messageId',
+              'starredAt'
+            ])
+            && request.resource.data.keys().hasOnly([
+              'messageId',
+              'starredAt'
+            ])
+            && request.resource.data.messageId == messageId
+            && request.resource.data.starredAt == request.time;
+          allow update: if false;
+          allow delete: if isSelf(uid);
+        }
+
+        match /hidden_messages/{messageId} {
+          allow get, list: if isSelf(uid);
+          allow create: if isSelf(uid)
+            && request.resource.data.keys().hasAll([
+              'messageId',
+              'hiddenAt'
+            ])
+            && request.resource.data.keys().hasOnly([
+              'messageId',
+              'hiddenAt'
+            ])
+            && request.resource.data.messageId == messageId
+            && request.resource.data.hiddenAt == request.time;
+          allow update: if false;
+          allow delete: if isSelf(uid);
+        }
       }
     }
-    
-    match /insights/{insightId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated();
-      allow delete: if isAuthenticated() && resource.data.authorUid == request.auth.uid;
-      
-      match /comments/{commentId} {
-        allow read: if isAuthenticated();
-        allow create, update: if isAuthenticated();
-        allow delete: if isAuthenticated() && resource.data.authorUid == request.auth.uid;
+
+    match /groups/{groupId} {
+      allow get, list: if signedIn()
+        && resource.data.members is list
+        && request.auth.uid in resource.data.members;
+      // Group creation is server-only so the group and owner-member record are
+      // created atomically and rate/capacity policy cannot be bypassed.
+      allow create: if false;
+      allow update: if isGroupMember(groupId) && memberChangedOnlyOwnState();
+      allow delete: if false;
+
+      match /members/{uid} {
+        allow get, list: if isGroupMember(groupId);
+        allow write: if false;
       }
+
+      match /messages/{messageId} {
+        allow get, list: if isGroupMember(groupId);
+        allow create: if isGroupMember(groupId)
+          && groupData(groupId).lifecycle == 'active'
+          && validMessageCreate(request.resource.data);
+        allow update: if isGroupMember(groupId)
+          && (canEditMessage() || canTombstoneMessage());
+        allow delete: if false;
+
+        match /reactions/{uid} {
+          allow get, list: if isGroupMember(groupId);
+          allow create: if isGroupMember(groupId)
+            && isSelf(uid)
+            && request.resource.data.keys().hasAll([
+              'uid',
+              'emoji',
+              'createdAt'
+            ])
+            && request.resource.data.keys().hasOnly([
+              'uid',
+              'emoji',
+              'createdAt'
+            ])
+            && request.resource.data.uid == uid
+            && request.resource.data.emoji is string
+            && request.resource.data.emoji.size() >= 1
+            && request.resource.data.emoji.size() <= 16
+            && request.resource.data.createdAt == request.time;
+          allow update: if false;
+          allow delete: if isGroupMember(groupId) && isSelf(uid);
+        }
+      }
+    }
+
+    match /insights/{insightId} {
+      allow get: if canReadInsight(resource.data, insightId);
+      allow list: if signedIn()
+        && resource.data.authorUid == request.auth.uid;
+      // Publication is callable-only so author identity, expiry, App Check,
+      // and abuse limits cannot be bypassed by a modified client.
+      allow create: if false;
+      allow update: if signedIn()
+        && resource.data.authorUid == request.auth.uid
+        && validInsight(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'title',
+          'body',
+          'themeId',
+          'status',
+          'updatedAt'
+        ])
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if signedIn()
+        && resource.data.authorUid == request.auth.uid;
+
+      match /reactions/{uid} {
+        allow get, list: if canReadParentInsight(insightId);
+        allow create: if canReadParentInsight(insightId)
+          && isSelf(uid)
+          && request.resource.data.keys().hasAll([
+            'uid',
+            'reaction',
+            'createdAt'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'uid',
+            'reaction',
+            'createdAt'
+          ])
+          && request.resource.data.uid == uid
+          && request.resource.data.reaction in [
+            'amen',
+            'helpful',
+            'encouraging'
+          ]
+          && request.resource.data.createdAt == request.time;
+        allow update: if false;
+        allow delete: if canReadParentInsight(insightId) && isSelf(uid);
+      }
+
+      match /comments/{commentId} {
+        allow get, list: if canReadParentInsight(insightId);
+        allow create: if canReadParentInsight(insightId)
+          && request.resource.data.keys().hasAll([
+            'schemaVersion',
+            'insightId',
+            'authorUid',
+            'authorName',
+            'body',
+            'createdAt'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'schemaVersion',
+            'insightId',
+            'authorUid',
+            'authorName',
+            'authorPhotoUrl',
+            'body',
+            'replyToId',
+            'replyToName',
+            'createdAt',
+            'updatedAt'
+          ])
+          && request.resource.data.schemaVersion == 2
+          && request.resource.data.insightId == insightId
+          && request.resource.data.authorUid == request.auth.uid
+          && request.resource.data.authorName is string
+          && request.resource.data.authorName.size() >= 1
+          && request.resource.data.authorName.size() <= 80
+          && validOptionalString(
+            request.resource.data,
+            'authorPhotoUrl',
+            2048
+          )
+          && request.resource.data.body is string
+          && request.resource.data.body.size() >= 1
+          && request.resource.data.body.size() <= 4000
+          && validOptionalString(request.resource.data, 'replyToId', 128)
+          && validOptionalString(request.resource.data, 'replyToName', 80)
+          && request.resource.data.createdAt == request.time;
+        allow update: if canReadParentInsight(insightId)
+          && resource.data.authorUid == request.auth.uid
+          && request.time
+            < resource.data.createdAt + duration.value(15, 'm')
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'body',
+            'updatedAt'
+          ])
+          && request.resource.data.body is string
+          && request.resource.data.body.size() >= 1
+          && request.resource.data.body.size() <= 4000
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if canReadParentInsight(insightId)
+          && resource.data.authorUid == request.auth.uid;
+
+        match /reactions/{uid} {
+          allow get, list: if canReadParentInsight(insightId);
+          allow create: if canReadParentInsight(insightId)
+            && isSelf(uid)
+            && request.resource.data.keys().hasAll([
+              'uid',
+              'reaction',
+              'createdAt'
+            ])
+            && request.resource.data.keys().hasOnly([
+              'uid',
+              'reaction',
+              'createdAt'
+            ])
+            && request.resource.data.uid == uid
+            && request.resource.data.reaction in [
+              'amen',
+              'helpful',
+              'encouraging'
+            ]
+            && request.resource.data.createdAt == request.time;
+          allow update: if false;
+          allow delete: if canReadParentInsight(insightId) && isSelf(uid);
+        }
+      }
+    }
+
+    match /reports/{reportId} {
+      allow get: if signedIn()
+        && (resource.data.reporterUid == request.auth.uid || isModerator());
+      allow list: if isModerator();
+      // Reports are callable-only so identity and abuse limits are enforced.
+      allow create: if false;
+      allow update, delete: if false;
+    }
+
+    match /invites/{inviteId} {
+      allow read, write: if false;
+    }
+
+    match /cooldowns/{cooldownId} {
+      allow read, write: if false;
+    }
+
+    match /support_chats/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

@@ -1,97 +1,89 @@
 import 'dart:io';
-import 'package:record/record.dart';
+import 'dart:typed_data';
+
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
-import 'dart:convert';
-import 'dart:typed_data';
+import 'package:record/record.dart';
 import 'package:uuid/uuid.dart';
+
+class PreparedRecording {
+  final Uint8List bytes;
+  final int durationSeconds;
+  final String localPath;
+
+  const PreparedRecording({
+    required this.bytes,
+    required this.durationSeconds,
+    required this.localPath,
+  });
+}
 
 class AudioService {
   final AudioRecorder _audioRecorder = AudioRecorder();
   final AudioPlayer _audioPlayer = AudioPlayer();
-  
+
   String? _recordingPath;
   DateTime? _recordingStartTime;
 
   Future<bool> startRecording() async {
     try {
-      if (await _audioRecorder.hasPermission()) {
-        final dir = await getApplicationDocumentsDirectory();
-        final fileName = '${const Uuid().v4()}.m4a';
-        _recordingPath = '${dir.path}/$fileName';
-        
-        await _audioRecorder.start(
-          const RecordConfig(encoder: AudioEncoder.aacLc),
-          path: _recordingPath!,
-        );
-        _recordingStartTime = DateTime.now();
-        return true;
-      }
-    } catch (e) {
-      print('Error starting recording: $e');
+      if (!await _audioRecorder.hasPermission()) return false;
+
+      final directory = await getTemporaryDirectory();
+      _recordingPath = '${directory.path}/${const Uuid().v4()}.m4a';
+      await _audioRecorder.start(
+        const RecordConfig(encoder: AudioEncoder.aacLc),
+        path: _recordingPath!,
+      );
+      _recordingStartTime = DateTime.now();
+      return true;
+    } catch (_) {
+      return false;
     }
-    return false;
   }
 
-  Future<String?> stopRecording() async {
-    return await _audioRecorder.stop();
+  Future<String?> stopRecording() => _audioRecorder.stop();
+
+  Future<PreparedRecording> prepareRecording(String path) async {
+    final file = File(path);
+    if (!await file.exists()) {
+      throw StateError('The recorded audio is no longer available.');
+    }
+
+    final bytes = await file.readAsBytes();
+    final elapsed = _recordingStartTime == null
+        ? 1
+        : DateTime.now().difference(_recordingStartTime!).inSeconds;
+    final duration = elapsed.clamp(1, 300).toInt();
+    return PreparedRecording(
+      bytes: bytes,
+      durationSeconds: duration,
+      localPath: path,
+    );
   }
 
-  Future<Map<String, dynamic>?> uploadRecording(String path) async {
-    try {
-      File file = File(path);
-      
-      if (!await file.exists()) {
-        throw Exception("Local audio file missing before upload.");
-      }
-
-      // Convert audio bytes to Base64 string
-      final bytes = await file.readAsBytes();
-      final base64String = base64Encode(bytes);
-      
-      int duration = _recordingStartTime != null 
-          ? DateTime.now().difference(_recordingStartTime!).inSeconds 
-          : 0;
-      
-      if (duration < 1) duration = 1; // Guarantee at least 1 second
-
-      // Clean up local file
-      if (await file.exists()) {
-        await file.delete();
-      }
-      
-      return {
-        'url': base64String,
-        'duration': duration,
-      };
-    } catch (e) {
-      print('Error uploading recording: $e');
-      throw Exception(e.toString());
-    }
+  Future<void> deletePreparedRecording(PreparedRecording recording) async {
+    final file = File(recording.localPath);
+    if (await file.exists()) await file.delete();
+    _recordingPath = null;
+    _recordingStartTime = null;
   }
 
   Future<void> cancelRecording() async {
-    final path = await _audioRecorder.stop();
+    final path = await _audioRecorder.stop() ?? _recordingPath;
     if (path != null) {
-      File file = File(path);
-      if (await file.exists()) {
-        await file.delete();
-      }
+      final file = File(path);
+      if (await file.exists()) await file.delete();
     }
+    _recordingPath = null;
+    _recordingStartTime = null;
   }
 
-  Future<void> playAudio(String base64String) async {
-    try {
-      final Uint8List bytes = base64Decode(base64String);
-      await _audioPlayer.play(BytesSource(bytes));
-    } catch (e) {
-      print('Error playing audio: $e');
-    }
+  Future<void> playAudioBytes(Uint8List bytes) {
+    return _audioPlayer.play(BytesSource(bytes));
   }
 
-  Future<void> stopAudio() async {
-    await _audioPlayer.stop();
-  }
+  Future<void> stopAudio() => _audioPlayer.stop();
 
   void dispose() {
     _audioRecorder.dispose();

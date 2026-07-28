@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "task_id": "bsgc-full-remediation-2026-07-28",
+  "workflow_id": "build-feature",
+  "mode": "implement",
+  "status": "in_progress",
+  "current_state": "P5_Design",
+  "completed_states": [
+    "P1_Objective",
+    "P2_Grounding",
+    "P3_Scope",
+    "P4_Risks"
+  ],
+  "owner": {
+    "agent": "primary",
+    "thread": "current",
+    "worktree": "C:\\Users\\godsw\\Documents\\BRAID\\bsgc-app-v2"
+  },
+  "workspace": "C:\\Users\\godsw\\Documents\\BRAID\\bsgc-app-v2",
+  "lease": null,
+  "evidence": [
+    "Audit source commit 777e266",
+    "Audit plan commit d8b5710",
+    "Implementation branch codex/bsgc-full-remediation"
+  ],
+  "artifacts": [
+    "docs/audit/01-product-and-system-understanding.md",
+    "docs/audit/02-security-backend-and-privacy.md",
+    "docs/audit/03-functional-reliability-and-offline.md",
+    "docs/audit/04-ui-ux-brand-and-accessibility.md",
+    "docs/audit/05-size-performance-scale-and-release.md",
+    "docs/audit/06-implementation-plan.md",
+    "docs/implementation-progress.md"
+  ],
+  "approvals": [
+    "User authorized implementation of every repository-side audit fix and an eventual GitHub push."
+  ],
+  "blockers": [
+    "Firebase deployed-state capture and production backup require project credentials.",
+    "Release signing fingerprint and production signing material are not present in the repository.",
+    "Flutter, Dart, Java, and Firebase CLI are not available on PATH.",
+    "Repository-local Firebase Emulator test dependencies require explicit installation approval."
+  ],
+  "next_action": "Implement the versioned security/data contract and its test harness without deploying it.",
+  "created_at": "2026-07-28T09:00:00+01:00",
+  "updated_at": "2026-07-28T09:00:00+01:00",
+  "archived": false
+}

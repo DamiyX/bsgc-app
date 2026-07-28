@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:async';
 import '../models/group_model.dart';
 import '../services/chat_service.dart';
 import '../theme.dart';
@@ -49,13 +48,6 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
           );
           Navigator.pop(context, true);
         }
-      } on TimeoutException {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Group update queued offline.')),
-          );
-          Navigator.pop(context, true);
-        }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -83,6 +75,7 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                 padding: EdgeInsets.all(24.0),
                 child: Form(
                   key: _formKey,
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -96,6 +89,8 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                       SizedBox(height: 24),
                       TextFormField(
                         controller: _nameController,
+                        maxLength: 80,
+                        textInputAction: TextInputAction.next,
                         decoration: InputDecoration(
                           labelText: 'Group Name',
                           prefixIcon: Icon(Icons.group),
@@ -103,10 +98,14 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        validator: (value) =>
-                            value == null || value.trim().isEmpty
-                                ? 'Please enter a name'
-                                : null,
+                        validator: (value) {
+                          final name = value?.trim() ?? '';
+                          if (name.isEmpty) return 'Please enter a name.';
+                          if (name.length > 80) {
+                            return 'Use no more than 80 characters.';
+                          }
+                          return null;
+                        },
                       ),
                       SizedBox(height: 16),
                       TextFormField(
@@ -120,6 +119,7 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                           alignLabelWithHint: true,
                         ),
                         maxLines: 4,
+                        maxLength: 1000,
                       ),
                       SizedBox(height: 32),
                       SizedBox(
@@ -132,7 +132,7 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          onPressed: _saveGroup,
+                          onPressed: _isLoading ? null : _saveGroup,
                           child: Text(
                             'Save Changes',
                             style: TextStyle(

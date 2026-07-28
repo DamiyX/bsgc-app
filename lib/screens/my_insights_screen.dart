@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import '../theme.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,6 +6,7 @@ import '../models/insight_model.dart';
 import '../services/insight_service.dart';
 import 'create_insight_screen.dart';
 import 'view_insight_screen.dart';
+import '../widgets/braid_media.dart';
 
 class MyInsightsScreen extends StatelessWidget {
   MyInsightsScreen({super.key});
@@ -143,11 +143,11 @@ class MyInsightsScreen extends StatelessWidget {
                               shape: BoxShape.circle,
                               color: Colors.white,
                             ),
-                            child: CircleAvatar(
+                            child: BraidAvatar(
+                              identity: user?.uid ?? _currentUserId,
+                              displayName: user?.displayName ?? 'You',
+                              imageUrl: user?.photoURL,
                               radius: 22,
-                              backgroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                              backgroundImage: user?.photoURL != null ? CachedNetworkImageProvider(user!.photoURL!) : null,
-                              child: user?.photoURL == null ? Icon(Icons.person, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45)) : null,
                             ),
                           ),
                         ),
@@ -159,21 +159,15 @@ class MyInsightsScreen extends StatelessWidget {
                         ),
                         subtitle: Padding(
                           padding: EdgeInsets.only(top: 4),
-                          child: Row(
-                            children: [
-                              Text(
-                                DateFormat('MMM d, HH:mm').format(insight.createdAt),
-                                style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 13),
-                              ),
-                              SizedBox(width: 12),
-                              Icon(Icons.visibility_outlined, size: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
-                              SizedBox(width: 4),
-                              Text('${insight.seenBy.length}', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 13)),
-                              SizedBox(width: 12),
-                              Icon(Icons.favorite_border, size: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
-                              SizedBox(width: 4),
-                              Text('${insight.likedBy.length}', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 13)),
-                            ],
+                          child: Text(
+                            '${DateFormat('MMM d, HH:mm').format(insight.createdAt)} · Shared with study contacts',
+                            style: TextStyle(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withValues(alpha: 0.54),
+                              fontSize: 13,
+                            ),
                           ),
                         ),
                         trailing: PopupMenuButton<String>(

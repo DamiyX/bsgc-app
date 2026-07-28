@@ -1,94 +1,114 @@
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'notification_service.dart';
+import 'draft_service.dart';
+import 'message_outbox_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
-  // Get current user stream
   Stream<User?> get userStream => _auth.authStateChanges();
 
-  // Sign in with Google
   Future<UserCredential?> signInWithGoogle() async {
     try {
-      // Trigger the authentication flow
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) {
-        // The user canceled the sign-in
-        return null;
-      }
+      final googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) return null;
 
-      // Obtain the auth details from the request
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-
-      // Create a new credential
-      final AuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
+      final googleAuthentication = await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuthentication.accessToken,
+        idToken: googleAuthentication.idToken,
       );
-
-      // Once signed in, return the UserCredential
       final userCredential = await _auth.signInWithCredential(credential);
       final user = userCredential.user;
-      
-      if (user != null) {
-        // Save/Update user profile in Firestore
-        try {
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-            'uid': user.uid,
-            'displayName': user.displayName ?? 'Believer',
-            'photoURL': user.photoURL ?? '',
-            'lastSeen': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true)).timeout(const Duration(seconds: 3));
-        } catch (e) {
-          debugPrint("Offline or failed to update profile during sign in: $e");
-        }
-      }
-      
+      if (user != null) await _ensureVersionedProfile(user);
       return userCredential;
-    } catch (e) {
-      debugPrint("Error signing in with Google: $e");
-      return null;
+    } catch (error) {
+      if (kDebugMode) debugPrint('Google sign-in failed: $error');
+      rethrow;
     }
   }
 
-  // Increment monthly interaction count
-  Future<void> recordInteraction() async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-    
-    final currentMonth = "${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}";
-    
-    try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-      if (doc.exists) {
-        final data = doc.data()!;
-        final savedMonth = data['interactionMonth'] as String?;
-        if (savedMonth == currentMonth) {
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-            'interactionCount': FieldValue.increment(1),
-          });
-        } else {
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-            'interactionMonth': currentMonth,
-            'interactionCount': 1,
-          });
-        }
-      }
-    } catch (e) {
-      debugPrint("Error recording interaction: $e");
+  Future<void> _ensureVersionedProfile(User user) async {
+    final firestore = FirebaseFirestore.instance;
+    final publicReference = firestore.collection('users_public').doc(user.uid);
+    final privateReference = firestore
+        .collection('users_private')
+        .doc(user.uid);
+    final existing = await Future.wait([
+      publicReference.get(),
+      privateReference.get(),
+    ]);
+    final batch = firestore.batch();
+
+    if (!existing[0].exists) {
+      final displayName = user.displayName?.trim();
+      batch.set(publicReference, {
+        'schemaVersion': 2,
+        'uid': user.uid,
+        'displayName': displayName?.isNotEmpty == true
+            ? displayName
+            : 'Believer',
+        if (user.photoURL?.isNotEmpty == true) 'photoUrl': user.photoURL,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     }
+    if (!existing[1].exists) {
+      batch.set(privateReference, {
+        'schemaVersion': 2,
+        'uid': user.uid,
+        if (user.email?.isNotEmpty == true) 'email': user.email,
+        'contactDiscoveryConsent': false,
+        'connectionCount': 0,
+        'onboardingComplete': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
   }
 
-  // Sign out
+  /// Kept as a compatibility hook; sensitive engagement counters are no
+  /// longer stored inside the user profile.
+  Future<void> recordInteraction() async {}
+
   Future<void> signOut() async {
+    final signingOutUid = _auth.currentUser?.uid;
+    try {
+      await NotificationService().unregisterCurrentDevice();
+    } catch (error) {
+      if (kDebugMode) debugPrint('Device-token cleanup failed: $error');
+    }
+
     try {
       await _googleSignIn.signOut();
+    } catch (error) {
+      if (kDebugMode) debugPrint('Google sign-out failed: $error');
+    } finally {
       await _auth.signOut();
-    } catch (e) {
-      debugPrint("Error signing out: $e");
+      if (signingOutUid != null) {
+        await Future.wait([
+          DraftService().clearAllForUser(signingOutUid),
+          MessageOutboxService().clearAllForUser(signingOutUid),
+        ]);
+      }
+      final preferences = await SharedPreferences.getInstance();
+      await Future.wait([
+        preferences.remove('active_group_id'),
+        preferences.remove('active_route_timestamp'),
+        DefaultCacheManager().emptyCache(),
+      ]);
+      PaintingBinding.instance.imageCache
+        ..clear()
+        ..clearLiveImages();
     }
   }
 }

@@ -1,15 +1,21 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import '../services/auth_service.dart';
-import '../services/backup_service.dart';
-import '../theme.dart';
-import 'edit_profile_screen.dart';
-import 'tts_settings_screen.dart';
-import 'support_chat_screen.dart';
-import 'about_platform_screen.dart';
-import 'faq_screen.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
-import '../providers/theme_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../providers/theme_provider.dart';
+import '../services/account_service.dart';
+import '../services/auth_service.dart';
+import '../services/notification_service.dart';
+import '../theme.dart';
+import 'about_platform_screen.dart';
+import 'edit_profile_screen.dart';
+import 'faq_screen.dart';
+import 'tts_settings_screen.dart';
+import 'safety_center_screen.dart';
+import 'legal_screen.dart';
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -18,8 +24,13 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  String _appVersion = '2.1 MVP';
+  String _appVersion = '';
   bool _muteAppSounds = false;
+  bool _notificationsEnabled = false;
+  bool _messageNotifications = true;
+  bool _insightNotifications = true;
+  bool _previewNotificationContent = false;
+  bool _isDeletingAccount = false;
 
   @override
   void initState() {
@@ -28,318 +39,342 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
+    final results = await Future.wait([
+      SharedPreferences.getInstance(),
+      PackageInfo.fromPlatform(),
+      NotificationService().loadPreferences(),
+    ]);
+    if (!mounted) return;
+    final preferences = results[0] as SharedPreferences;
+    final package = results[1] as PackageInfo;
+    final notificationPreferences = results[2] as Map<String, bool>;
     setState(() {
-      _muteAppSounds = prefs.getBool('mute_app_sounds') ?? false;
+      _muteAppSounds = preferences.getBool('mute_app_sounds') ?? false;
+      _appVersion = '${package.version} (${package.buildNumber})';
+      _notificationsEnabled = notificationPreferences['enabled'] ?? true;
+      _messageNotifications = notificationPreferences['messages'] ?? true;
+      _insightNotifications = notificationPreferences['insights'] ?? true;
+      _previewNotificationContent =
+          notificationPreferences['preview'] ?? false;
     });
   }
 
+  Future<void> _saveNotificationPreferences() async {
+    try {
+      await NotificationService().updatePreferences(
+        enabled: _notificationsEnabled,
+        messages: _messageNotifications,
+        insights: _insightNotifications,
+        previewContent: _previewNotificationContent,
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Notification settings could not be saved.'),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _toggleMuteAppSounds(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('mute_app_sounds', value);
-    setState(() {
-      _muteAppSounds = value;
-    });
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool('mute_app_sounds', value);
+    if (mounted) setState(() => _muteAppSounds = value);
+  }
+
+  Future<void> _deleteAccount() async {
+    final controller = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Permanently delete account?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'This permanently removes your profile, private notes, saved '
+              'items, reflections, and account media. It cannot be undone.\n\n'
+              'You must transfer ownership of shared studies first.',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Type DELETE to confirm',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(
+              dialogContext,
+              controller.text.trim() == 'DELETE',
+            ),
+            child: const Text('Delete permanently'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isDeletingAccount = true);
+    try {
+      await FirebaseAuth.instance.currentUser?.getIdToken(true);
+      await AccountService().deleteCurrentAccount();
+      await AuthService().signOut();
+      if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    } finally {
+      if (mounted) setState(() => _isDeletingAccount = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Settings'),
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        surfaceTintColor: Colors.transparent,
-      ),
+      appBar: AppBar(title: const Text('Settings')),
       body: ListView(
-        padding: EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.only(bottom: 32),
         children: [
-          _buildSectionHeader('Account'),
+          _section('Account'),
           ListTile(
-            leading: Icon(Icons.edit),
-            title: Text('Edit Profile'),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const EditProfileScreen()),
-              );
-            },
+            leading: const Icon(Icons.person_outline_rounded),
+            title: const Text('Edit profile'),
+            subtitle: const Text('Name, photo, and introduction'),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+            ),
           ),
-
-          Divider(),
-          _buildSectionHeader('Preferences'),
+          _section('Appearance and reading'),
           Consumer<ThemeProvider>(
-            builder: (context, themeProvider, child) {
-              return Column(
-                children: [
-                  ListTile(
-                    leading: Icon(Icons.dark_mode_outlined),
-                    title: Text('Theme Appearance'),
-                    trailing: DropdownButton<ThemeMode>(
-                      value: themeProvider.themeMode,
-                      underline: SizedBox(),
-                      onChanged: (ThemeMode? newMode) {
-                        if (newMode != null) {
-                          themeProvider.setThemeMode(newMode);
-                        }
-                      },
-                      items: const [
-                        DropdownMenuItem(
-                          value: ThemeMode.system,
-                          child: Text('System'),
-                        ),
-                        DropdownMenuItem(
-                          value: ThemeMode.light,
-                          child: Text('Light'),
-                        ),
-                        DropdownMenuItem(
-                          value: ThemeMode.dark,
-                          child: Text('Dark'),
-                        ),
-                      ],
-                    ),
+            builder: (context, themeProvider, child) => ListTile(
+              leading: const Icon(Icons.brightness_6_outlined),
+              title: const Text('Appearance'),
+              trailing: DropdownButton<ThemeMode>(
+                value: themeProvider.themeMode,
+                underline: const SizedBox.shrink(),
+                onChanged: (mode) {
+                  if (mode != null) themeProvider.setThemeMode(mode);
+                },
+                items: const [
+                  DropdownMenuItem(
+                    value: ThemeMode.system,
+                    child: Text('System'),
                   ),
-                  ListTile(
-                    leading: Icon(Icons.format_color_fill),
-                    title: Text('Chat Bubble Theme'),
-                    subtitle: Text('Choose how messages look'),
-                    trailing: DropdownButton<ChatBubbleTheme>(
-                      value: themeProvider.chatBubbleTheme,
-                      onChanged: (ChatBubbleTheme? newValue) {
-                        if (newValue != null) {
-                          themeProvider.setChatBubbleTheme(newValue);
-                        }
-                      },
-                      items: const [
-                        DropdownMenuItem(
-                          value: ChatBubbleTheme.gradient,
-                          child: Text('Gradient Purple'),
-                        ),
-                        DropdownMenuItem(
-                          value: ChatBubbleTheme.solidPurple,
-                          child: Text('Solid Purple'),
-                        ),
-                        DropdownMenuItem(
-                          value: ChatBubbleTheme.darkGray,
-                          child: Text('Dark Gray'),
-                        ),
-                        DropdownMenuItem(
-                          value: ChatBubbleTheme.lightGray,
-                          child: Text('Light Gray'),
-                        ),
-                        DropdownMenuItem(
-                          value: ChatBubbleTheme.dark,
-                          child: Text('Dark'),
-                        ),
-                      ],
-                    ),
+                  DropdownMenuItem(
+                    value: ThemeMode.light,
+                    child: Text('Light'),
+                  ),
+                  DropdownMenuItem(
+                    value: ThemeMode.dark,
+                    child: Text('Dark'),
                   ),
                 ],
-              );
-            }
+              ),
+            ),
           ),
           SwitchListTile(
-            secondary: Icon(Icons.volume_off_outlined),
-            title: Text('Mute App Sounds'),
-            subtitle: Text('Turn off interaction sounds (e.g., likes, saves)'),
+            secondary: const Icon(Icons.music_off_outlined),
+            title: const Text('Mute interaction sounds'),
+            subtitle: const Text('Voice-note playback is not affected'),
             value: _muteAppSounds,
             onChanged: _toggleMuteAppSounds,
-            activeColor: AppColors.primary,
           ),
-          ListTile(
-            leading: Icon(Icons.record_voice_over),
-            title: Text('Reading Voice'),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const TtsSettingsScreen()),
-              );
+          _section('Notifications'),
+          SwitchListTile(
+            secondary: const Icon(Icons.notifications_outlined),
+            title: const Text('Notifications on this device'),
+            subtitle: const Text(
+              'The system permission can also be changed in device settings',
+            ),
+            value: _notificationsEnabled,
+            onChanged: (value) {
+              setState(() => _notificationsEnabled = value);
+              _saveNotificationPreferences();
             },
           ),
-          ListTile(
-            leading: Icon(Icons.volume_off_outlined),
-            title: Text('Mute Contacts'),
-            onTap: () {},
+          SwitchListTile(
+            secondary: const Icon(Icons.forum_outlined),
+            title: const Text('Study group messages'),
+            value: _messageNotifications,
+            onChanged: _notificationsEnabled
+                ? (value) {
+                    setState(() => _messageNotifications = value);
+                    _saveNotificationPreferences();
+                  }
+                : null,
           ),
-
-          Divider(),
-          _buildSectionHeader('Support'),
-          ListTile(
-            leading: Icon(Icons.help_outline),
-            title: Text('Help & Support'),
-            subtitle: Text('Contact us or view FAQs'),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SupportChatScreen()),
-              );
-            },
+          SwitchListTile(
+            secondary: const Icon(Icons.lightbulb_outline_rounded),
+            title: const Text('Contacts’ Insights'),
+            value: _insightNotifications,
+            onChanged: _notificationsEnabled
+                ? (value) {
+                    setState(() => _insightNotifications = value);
+                    _saveNotificationPreferences();
+                  }
+                : null,
           ),
-
-          Divider(),
-          _buildSectionHeader('Spiritual Tools'),
+          SwitchListTile(
+            secondary: const Icon(Icons.lock_outline_rounded),
+            title: const Text('Show content on lock screen'),
+            subtitle: const Text(
+              'Off hides message and reflection text in notifications',
+            ),
+            value: _previewNotificationContent,
+            onChanged: _notificationsEnabled
+                ? (value) {
+                    setState(() => _previewNotificationContent = value);
+                    _saveNotificationPreferences();
+                  }
+                : null,
+          ),
           ListTile(
-            leading: Icon(Icons.alarm),
-            title: Text('Set Prayer Time / Alarm'),
+            leading: const Icon(Icons.record_voice_over_outlined),
+            title: const Text('Bible reading voice'),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const TtsSettingsScreen()),
+            ),
+          ),
+          _section('Privacy, storage, and safety'),
+          ListTile(
+            leading: const Icon(Icons.contacts_outlined),
+            title: const Text('Contact privacy'),
+            subtitle: const Text(
+              'Braid does not upload or match your address book',
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.cleaning_services_outlined),
+            title: const Text('Clear temporary image memory'),
+            subtitle: const Text('Does not delete your saved reflections'),
             onTap: () {
+              PaintingBinding.instance.imageCache
+                ..clear()
+                ..clearLiveImages();
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Prayer alarm coming soon')),
+                const SnackBar(content: Text('Temporary image memory cleared.')),
               );
             },
           ),
-
-          Divider(),
-          _buildSectionHeader('Data & Backup'),
           ListTile(
-            leading: Icon(Icons.cloud_upload_outlined),
-            title: Text('Back up to Google Drive'),
-            subtitle: Text('Save notes, insights, and profile to Drive'),
-            onTap: () async {
-              final proceed = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Beta Testing Notice'),
-                  content: const Text(
-                    'We are currently in beta! When you connect your Google Drive, Google may show a warning saying this app isn\'t verified yet.\n\nJust click "Advanced" and then "Continue" to safely enable backups.',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Cancel'),
-                    ),
-                    FilledButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Proceed'),
-                    ),
-                  ],
+            leading: const Icon(Icons.shield_outlined),
+            title: const Text('Safety controls'),
+            subtitle: const Text('Review blocked accounts'),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SafetyCenterScreen()),
+            ),
+          ),
+          _section('About'),
+          ListTile(
+            leading: const Icon(Icons.help_outline_rounded),
+            title: const Text('Frequently asked questions'),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const FaqScreen()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.info_outline_rounded),
+            title: const Text('About Braid'),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AboutPlatformScreen()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: const Text('Privacy notice'),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const LegalScreen(
+                  document: LegalDocument.privacy,
                 ),
-              );
-
-              if (proceed != true) return;
-
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Starting backup to Google Drive...'),
-                  ),
-                );
-              }
-              try {
-                await BackupService().backupToGoogleDrive();
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Backup successful!')),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text('Backup failed: $e')));
-                }
-              }
-            },
+              ),
+            ),
           ),
           ListTile(
-            leading: Icon(Icons.cloud_download_outlined),
-            title: Text('Restore from Google Drive'),
-            subtitle: Text('Restore previously backed up data'),
-            onTap: () async {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Starting restore from Google Drive...'),
+            leading: const Icon(Icons.gavel_outlined),
+            title: const Text('Community terms'),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const LegalScreen(
+                  document: LegalDocument.terms,
                 ),
-              );
-              try {
-                await BackupService().restoreFromGoogleDrive();
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Restore successful!')),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text('Restore failed: $e')));
-                }
-              }
-            },
+              ),
+            ),
           ),
-
-          Divider(),
-          _buildSectionHeader('About'),
+          _section('Account actions'),
           ListTile(
-            leading: Icon(Icons.question_answer_outlined),
-            title: Text('FAQs'),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const FaqScreen()),
-              );
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.info_outline),
-            title: Text('About Platform'),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const AboutPlatformScreen()),
-              );
-            },
-          ),
-
-          Divider(),
-          _buildSectionHeader('Danger Zone'),
-          ListTile(
-            leading: Icon(Icons.logout, color: Colors.red),
-            title: Text('Log Out', style: TextStyle(color: Colors.red)),
+            leading: Icon(Icons.logout_rounded, color: colorScheme.error),
+            title: Text('Log out', style: TextStyle(color: colorScheme.error)),
             onTap: () async {
               Navigator.pop(context);
               await AuthService().signOut();
             },
           ),
           ListTile(
-            leading: Icon(Icons.delete_forever, color: Colors.red),
-            title: Text(
-              'Delete Account',
-              style: TextStyle(color: Colors.red),
+            enabled: !_isDeletingAccount,
+            leading: Icon(
+              Icons.delete_forever_outlined,
+              color: colorScheme.error,
             ),
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Account deletion requires re-auth.'),
-                ),
-              );
-            },
+            title: Text(
+              _isDeletingAccount ? 'Deleting account…' : 'Delete account',
+              style: TextStyle(color: colorScheme.error),
+            ),
+            subtitle: const Text('Permanent and irreversible'),
+            onTap: _isDeletingAccount ? null : _deleteAccount,
           ),
-          if (_appVersion.isNotEmpty) ...[
-            SizedBox(height: 16),
-            Center(
+          if (_appVersion.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 24),
               child: Text(
-                'Version $_appVersion',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
-                  fontSize: 12,
+                'Braid $_appVersion',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
-            SizedBox(height: 32),
-          ],
         ],
       ),
     );
   }
 
-  Widget _buildSectionHeader(String title) {
+  ColorScheme get colorScheme => Theme.of(context).colorScheme;
+
+  Widget _section(String title) {
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
       child: Text(
         title,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurface,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.5,
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+          color: AppColors.gradientEnd,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );

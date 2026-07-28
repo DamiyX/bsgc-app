@@ -8,37 +8,23 @@ import 'package:bsgc_app/screens/foyer_screen.dart';
 import 'package:bsgc_app/widgets/user_data_wrapper.dart';
 import 'package:bsgc_app/theme.dart';
 import 'package:bsgc_app/firebase_options.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:bsgc_app/services/notification_service.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:provider/provider.dart';
 import 'package:bsgc_app/providers/theme_provider.dart';
-import 'package:workmanager/workmanager.dart';
-import 'package:bsgc_app/services/backup_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-@pragma('vm:entry-point')
-void callbackDispatcher() {
-  Workmanager().executeTask((task, inputData) async {
-    try {
-      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-      final backupService = BackupService();
-      await backupService.backupToGoogleDrive(isBackground: true);
-    } catch (err) {
-      debugPrint("Background backup error: $err");
-      return Future.value(false);
-    }
-    return Future.value(true);
-  });
-}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
   final prefs = await SharedPreferences.getInstance();
+  Object? startupError;
 
   try {
     await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
     
     if (!kIsWeb) {
       // Pass all uncaught "fatal" errors from the framework to Crashlytics
@@ -51,45 +37,34 @@ void main() async {
         return true;
       };
     }
-  } catch (e) {
-    debugPrint('Failed to initialize Crashlytics: $e');
-  }
 
-  await Future.wait([
-    BibleService().init().catchError((e) => debugPrint('Failed to initialize BibleService: $e')),
-    DeepLinkService().init().catchError((e) => debugPrint('Failed to initialize DeepLinkService: $e')),
-  ]);
-
-  if (!kIsWeb) {
-    try {
-      Workmanager().initialize(
-        callbackDispatcher,
-        isInDebugMode: false,
-      );
-      Workmanager().registerPeriodicTask(
-        "1",
-        "dailyBackupTask",
-        frequency: const Duration(days: 1),
-        constraints: Constraints(
-          networkType: NetworkType.connected,
-          requiresBatteryNotLow: true,
-        ),
-      );
-    } catch (e) {
-      debugPrint('Failed to initialize Workmanager: $e');
-    }
+    await Future.wait([
+      BibleService().init().catchError(
+        (Object error) =>
+            debugPrint('Bible data initialization failed: $error'),
+      ),
+      DeepLinkService().init().catchError(
+        (Object error) =>
+            debugPrint('Deep-link initialization failed: $error'),
+      ),
+    ]);
+  } catch (error, stackTrace) {
+    startupError = error;
+    debugPrint('Braid startup failed: $error\n$stackTrace');
   }
 
   runApp(
     ChangeNotifierProvider(
       create: (_) => ThemeProvider(prefs),
-      child: const BraidApp(),
+      child: BraidApp(startupError: startupError),
     ),
   );
 }
 
 class BraidApp extends StatelessWidget {
-  const BraidApp({super.key});
+  final Object? startupError;
+
+  const BraidApp({super.key, this.startupError});
 
   @override
   Widget build(BuildContext context) {
@@ -101,9 +76,59 @@ class BraidApp extends StatelessWidget {
           theme: appTheme,
           darkTheme: darkAppTheme,
           themeMode: themeProvider.themeMode,
-          home: const AuthWrapper(),
+          home: startupError == null
+              ? const AuthWrapper()
+              : const _StartupErrorScreen(),
         );
       },
+    );
+  }
+}
+
+class _StartupErrorScreen extends StatelessWidget {
+  const _StartupErrorScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.error_outline_rounded,
+                    size: 54,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Braid could not start',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Close and reopen the app. If this continues, install the '
+                    'latest version or contact Braid support. Your local study '
+                    'data has not been changed.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

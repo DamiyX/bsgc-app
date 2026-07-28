@@ -1,35 +1,92 @@
 import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:uuid/uuid.dart';
+
 import '../models/group_model.dart';
 import '../models/message_model.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'auth_service.dart';
+
+class GroupInvite {
+  final String token;
+  final String joinUrl;
+  final DateTime expiresAt;
+
+  const GroupInvite({
+    required this.token,
+    required this.joinUrl,
+    required this.expiresAt,
+  });
+}
+
+class InviteRedemption {
+  final String groupId;
+  final bool joined;
+  final bool alreadyMember;
+
+  const InviteRedemption({
+    required this.groupId,
+    required this.joined,
+    required this.alreadyMember,
+  });
+}
 
 class ChatService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore;
+  final FirebaseAuth _auth;
+  final FirebaseFunctions _functions;
+  final Uuid _uuid;
 
-  // Stream of groups the current user is a member of
+  ChatService({
+    FirebaseFirestore? firestore,
+    FirebaseAuth? auth,
+    FirebaseFunctions? functions,
+    Uuid? uuid,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _auth = auth ?? FirebaseAuth.instance,
+       _functions = functions ?? FirebaseFunctions.instance,
+       _uuid = uuid ?? const Uuid();
+
+  User _requireUser() {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw StateError('Sign in to continue.');
+    }
+    return user;
+  }
+
+  String createClientMessageId() => _uuid.v4();
+
+  Exception _callableError(Object error) {
+    if (error is FirebaseFunctionsException) {
+      return Exception(error.message ?? 'The requested action could not be completed.');
+    }
+    return Exception('The requested action could not be completed.');
+  }
+
   Stream<List<GroupModel>> getUserGroups() {
     final userId = _auth.currentUser?.uid;
-    if (userId == null) return Stream.value([]);
+    if (userId == null) return Stream.value(const []);
 
     return _firestore
         .collection('groups')
         .where('members', arrayContains: userId)
         .snapshots()
         .map((snapshot) {
-      final groups = snapshot.docs.map((doc) => GroupModel.fromFirestore(doc)).toList();
-      groups.sort((a, b) {
-        final aTime = a.lastMessageTime ?? a.createdAt;
-        final bTime = b.lastMessageTime ?? b.createdAt;
-        return bTime.compareTo(aTime);
-      });
-      return groups;
-    });
+          final groups = snapshot.docs
+              .map(GroupModel.fromFirestore)
+              .where((group) => group.lifecycle != 'archived')
+              .toList();
+          groups.sort((a, b) {
+            final aTime = a.lastMessageTime ?? a.createdAt;
+            final bTime = b.lastMessageTime ?? b.createdAt;
+            return bTime.compareTo(aTime);
+          });
+          return groups;
+        });
   }
 
-  // Create a new group
   Future<GroupModel> createGroup({
     required String name,
     required String description,
@@ -40,459 +97,529 @@ class ChatService {
     DateTime? startDate,
     DateTime? endDate,
   }) async {
-    final user = _auth.currentUser;
-    if (user == null) throw Exception('User not authenticated');
-
-    final docRef = _firestore.collection('groups').doc();
-    
-    final data = {
-      'name': name,
-      'members': [user.uid],
-      'readingProgress': { user.uid: 0.0 },
-      'userCompletedChapters': { user.uid: [] },
-      'pinnedScripture': '',
-      'description': description,
-      'createdAt': Timestamp.now(),
-      'groupType': groupType,
-      'topic': topic,
-      'studyBook': studyBook,
-      'totalChapters': totalChapters,
-      'startDate': startDate != null ? Timestamp.fromDate(startDate) : null,
-      'endDate': endDate != null ? Timestamp.fromDate(endDate) : null,
-      'extensionCount': 0,
-    };
-
+    _requireUser();
     try {
-      await docRef.set(data).timeout(const Duration(seconds: 2));
-    } on TimeoutException {
-      // Offline or slow connection. Local cache will sync later.
-    }
-
-    return GroupModel(
-      id: docRef.id,
-      name: name,
-      members: [user.uid],
-      readingProgress: { user.uid: 0.0 },
-      userCompletedChapters: { user.uid: [] },
-      pinnedScripture: '',
-      description: description,
-      createdAt: DateTime.now(),
-      groupType: groupType,
-      topic: topic,
-      studyBook: studyBook,
-      totalChapters: totalChapters,
-      startDate: startDate,
-      endDate: endDate,
-      unreadCounts: {},
-      extensionCount: 0,
-    );
-  }
-
-  // Join a group by ID
-  Future<void> joinGroup(String groupId) async {
-    final user = _auth.currentUser;
-    if (user == null) throw Exception('User not authenticated');
-
-    final docRef = _firestore.collection('groups').doc(groupId);
-    final docSnap = await docRef.get();
-
-    if (!docSnap.exists) throw Exception('Group not found');
-
-    List<String> currentMembers = List<String>.from(docSnap.data()?['members'] ?? []);
-    if (currentMembers.length >= 12) {
-      throw Exception('Group is full (max 12 members)');
-    }
-
-    if (!currentMembers.contains(user.uid)) {
-      await docRef.update({
-        'members': FieldValue.arrayUnion([user.uid]),
-        'readingProgress.${user.uid}': 0.0,
+      final result = await _functions.httpsCallable('createStudyGroup').call({
+        'name': name,
+        'description': description,
+        'groupType': groupType,
+        'topic': topic,
+        'studyBook': studyBook,
+        'totalChapters': totalChapters,
+        'startDateMillis': startDate?.millisecondsSinceEpoch,
+        'endDateMillis': endDate?.millisecondsSinceEpoch,
       });
+      final data = Map<String, dynamic>.from(result.data as Map);
+      final groupId = data['groupId']?.toString();
+      if (groupId == null || groupId.isEmpty) {
+        throw const FormatException('Group creation returned no group ID.');
+      }
+
+      final snapshot = await _firestore.collection('groups').doc(groupId).get();
+      if (!snapshot.exists) {
+        throw StateError('The group was created but could not be loaded.');
+      }
+      return GroupModel.fromFirestore(snapshot);
+    } catch (error) {
+      throw _callableError(error);
     }
   }
 
-  // Extend group duration (Max 3 times)
+  Future<GroupInvite> createGroupInvite(
+    String groupId, {
+    int expiresInHours = 72,
+    int maxUses = 1,
+  }) async {
+    _requireUser();
+    try {
+      final result = await _functions.httpsCallable('createGroupInvite').call({
+        'groupId': groupId,
+        'expiresInHours': expiresInHours,
+        'maxUses': maxUses,
+      });
+      final data = Map<String, dynamic>.from(result.data as Map);
+      return GroupInvite(
+        token: data['token'] as String,
+        joinUrl: data['joinUrl'] as String,
+        expiresAt: DateTime.fromMillisecondsSinceEpoch(
+          (data['expiresAtMillis'] as num).toInt(),
+        ),
+      );
+    } catch (error) {
+      throw _callableError(error);
+    }
+  }
+
+  Future<InviteRedemption> redeemGroupInvite(String token) async {
+    _requireUser();
+    try {
+      final result = await _functions.httpsCallable('redeemGroupInvite').call({
+        'token': token,
+      });
+      final data = Map<String, dynamic>.from(result.data as Map);
+      return InviteRedemption(
+        groupId: data['groupId'] as String,
+        joined: data['joined'] == true,
+        alreadyMember: data['alreadyMember'] == true,
+      );
+    } catch (error) {
+      throw _callableError(error);
+    }
+  }
+
+  Future<void> revokeGroupInvite(String token) async {
+    _requireUser();
+    try {
+      await _functions.httpsCallable('revokeGroupInvite').call({'token': token});
+    } catch (error) {
+      throw _callableError(error);
+    }
+  }
+
   Future<bool> extendGroupDuration(String groupId, Duration extraTime) async {
-    final docRef = _firestore.collection('groups').doc(groupId);
-    final docSnap = await docRef.get();
-
-    if (!docSnap.exists) throw Exception('Group not found');
-    
-    final data = docSnap.data() as Map<String, dynamic>;
-    int currentExtensions = data['extensionCount'] ?? 0;
-    
-    if (currentExtensions >= 3) {
-      return false; // Cannot extend more than 3 times
+    _requireUser();
+    final days = extraTime.inDays;
+    try {
+      await _functions.httpsCallable('extendGroupDuration').call({
+        'groupId': groupId,
+        'days': days,
+      });
+      return true;
+    } catch (error) {
+      throw _callableError(error);
     }
-    
-    Timestamp? currentEndDateTs = data['endDate'];
-    DateTime currentEndDate = currentEndDateTs != null ? currentEndDateTs.toDate() : DateTime.now();
-    DateTime newEndDate = currentEndDate.add(extraTime);
-
-    await docRef.update({
-      'endDate': Timestamp.fromDate(newEndDate),
-      'extensionCount': FieldValue.increment(1),
-    });
-    
-    return true;
   }
 
-  // Leave a group
   Future<void> leaveGroup(String groupId) async {
-    final user = _auth.currentUser;
-    if (user == null) throw Exception('User not authenticated');
-
-    final docRef = _firestore.collection('groups').doc(groupId);
-    final docSnap = await docRef.get();
-    
-    if (docSnap.exists) {
-      List<String> currentMembers = List<String>.from(docSnap.data()?['members'] ?? []);
-      
-      // Apply 30-day cooldown between leaving user and all other current members
-      await _applyCooldowns(user.uid, currentMembers);
+    _requireUser();
+    try {
+      await _functions.httpsCallable('leaveGroup').call({'groupId': groupId});
+    } catch (error) {
+      throw _callableError(error);
     }
+  }
 
-    await docRef.update({
-      'members': FieldValue.arrayRemove([user.uid]),
-      'readingProgress.${user.uid}': FieldValue.delete(),
-      'userCompletedChapters.${user.uid}': FieldValue.delete(),
+  Future<void> archiveGroup(String groupId) async {
+    _requireUser();
+    try {
+      await _functions.httpsCallable('archiveStudyGroup').call({
+        'groupId': groupId,
+      });
+    } catch (error) {
+      throw _callableError(error);
+    }
+  }
+
+  Future<void> transferGroupOwnership(
+    String groupId,
+    String newOwnerUid,
+  ) async {
+    _requireUser();
+    try {
+      await _functions.httpsCallable('transferGroupOwnership').call({
+        'groupId': groupId,
+        'newOwnerUid': newOwnerUid,
+      });
+    } catch (error) {
+      throw _callableError(error);
+    }
+  }
+
+  Future<void> removeGroupMember(String groupId, String memberUid) async {
+    _requireUser();
+    try {
+      await _functions.httpsCallable('removeGroupMember').call({
+        'groupId': groupId,
+        'memberUid': memberUid,
+      });
+    } catch (error) {
+      throw _callableError(error);
+    }
+  }
+
+  Future<void> editGroup(
+    String groupId,
+    String name,
+    String scripture, {
+    String? description,
+    String? photoUrl,
+  }) async {
+    _requireUser();
+    try {
+      await _functions.httpsCallable('updateStudyGroup').call({
+        'groupId': groupId,
+        'name': name.trim(),
+        'pinnedScripture': scripture.trim(),
+        'description': description?.trim() ?? '',
+        if (photoUrl != null) 'photoUrl': photoUrl,
+      });
+    } catch (error) {
+      throw _callableError(error);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getGroupMembersProfiles(
+    List<String> memberIds,
+  ) async {
+    if (memberIds.isEmpty) return const [];
+
+    final documents = await Future.wait(
+      memberIds.map(
+        (uid) => _firestore.collection('users_public').doc(uid).get(),
+      ),
+    );
+    return List.generate(memberIds.length, (index) {
+      final data = documents[index].data();
+      return {
+        'uid': memberIds[index],
+        'displayName': data?['displayName']?.toString() ?? 'Believer',
+        'photoURL': data?['photoUrl']?.toString() ?? '',
+      };
     });
-
-    // Automatically delete chat history for the leaving user
-    await clearChatForMe(groupId);
   }
 
-  // Apply 30-day cooldown to prevent re-grouping
-  Future<void> _applyCooldowns(String leavingUserId, List<String> groupMembers) async {
-    if (groupMembers.isEmpty) return;
-    
-    final batch = _firestore.batch();
-    final expiresAt = Timestamp.fromDate(DateTime.now().add(const Duration(days: 30)));
-    
-    for (String memberId in groupMembers) {
-      if (memberId == leavingUserId) continue;
-      
-      // Create a deterministic ID so either A->B or B->A maps to the same doc
-      final ids = [leavingUserId, memberId]..sort();
-      final cooldownId = '${ids[0]}_${ids[1]}';
-      
-      final ref = _firestore.collection('cooldowns').doc(cooldownId);
-      batch.set(ref, {
-        'users': ids,
-        'expiresAt': expiresAt,
-      }, SetOptions(merge: true));
-    }
-    
-    await batch.commit();
-  }
-
-  // Check if a cooldown exists between current user and target user
-  Future<DateTime?> checkCooldown(String targetUserId) async {
-    final user = _auth.currentUser;
-    if (user == null) return null;
-
-    final ids = [user.uid, targetUserId]..sort();
-    final cooldownId = '${ids[0]}_${ids[1]}';
-
-    try {
-      final doc = await _firestore.collection('cooldowns').doc(cooldownId).get();
-      if (doc.exists) {
-        final expiresAt = doc.data()?['expiresAt'] as Timestamp?;
-        if (expiresAt != null) {
-          final expirationDate = expiresAt.toDate();
-          if (expirationDate.isAfter(DateTime.now())) {
-            return expirationDate;
-          }
-        }
-      }
-    } catch (e) {
-      // Ignored
-    }
-    return null;
-  }
-
-  // Add multiple members to a group
-  Future<void> addMembersToGroup(String groupId, List<String> memberIds) async {
-    final docRef = _firestore.collection('groups').doc(groupId);
-    final docSnap = await docRef.get();
-
-    if (!docSnap.exists) throw Exception('Group not found');
-
-    List<String> currentMembers = List<String>.from(docSnap.data()?['members'] ?? []);
-    if (currentMembers.length + memberIds.length > 12) {
-      throw Exception('Group cannot exceed 12 members');
-    }
-
-    Map<String, dynamic> updates = {
-      'members': FieldValue.arrayUnion(memberIds),
-    };
-    
-    for (String uid in memberIds) {
-      if (!currentMembers.contains(uid)) {
-        updates['readingProgress.$uid'] = 0.0;
-        updates['userCompletedChapters.$uid'] = [];
-      }
-    }
-
-    await docRef.update(updates);
-  }
-
-  // Edit a group
-  Future<void> editGroup(String groupId, String name, String scripture, {String? description, String? photoUrl}) async {
-    Map<String, dynamic> updates = {
-      'name': name,
-      'pinnedScripture': scripture,
-    };
-    if (description != null) updates['description'] = description;
-    if (photoUrl != null) updates['photoUrl'] = photoUrl;
-
-    // Fire and forget to allow offline persistence to work instantly
-    _firestore.collection('groups').doc(groupId).update(updates);
-  }
-
-  // Fetch profiles for a list of user IDs
-  Future<List<Map<String, dynamic>>> getGroupMembersProfiles(List<String> memberIds) async {
-    if (memberIds.isEmpty) return [];
-    
-    try {
-      List<Map<String, dynamic>> profiles = [];
-      
-      // Firestore whereIn supports up to 10 elements.
-      for (int i = 0; i < memberIds.length; i += 10) {
-        final chunk = memberIds.sublist(i, i + 10 > memberIds.length ? memberIds.length : i + 10);
-        final snap = await _firestore.collection('users').where(FieldPath.documentId, whereIn: chunk).get();
-        
-        profiles.addAll(snap.docs.map((doc) {
-          final data = doc.data();
-          data['uid'] = doc.id;
-          return data;
-        }));
-      }
-      
-      // Fallback for missing profiles
-      for (String uid in memberIds) {
-        if (!profiles.any((p) => p['uid'] == uid)) {
-          profiles.add({
-            'uid': uid,
-            'displayName': 'Unknown Believer',
-            'photoURL': '',
-          });
-        }
-      }
-      return profiles;
-    } catch (e) {
-      return [];
-    }
-  }
-
-  // Update reading progress for current user in a group
   Future<void> updateReadingProgress(String groupId, double progress) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
+    final user = _requireUser();
     await _firestore.collection('groups').doc(groupId).update({
-      'readingProgress.${user.uid}': progress,
+      'readingProgress.${user.uid}': progress.clamp(0, 1),
     });
   }
 
-  // Stream messages for a specific group
-  Stream<List<MessageModel>> getGroupMessages(String groupId, {int limit = 20}) {
+  Stream<List<MessageModel>> getGroupMessages(
+    String groupId, {
+    int limit = 30,
+  }) {
     return _firestore
         .collection('groups')
         .doc(groupId)
         .collection('messages')
         .orderBy('timestamp', descending: true)
-        .limit(limit)
+        .limit(limit.clamp(1, 100).toInt())
         .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) => MessageModel.fromFirestore(doc)).toList();
-    });
+        .map((snapshot) => snapshot.docs
+            .map(MessageModel.fromFirestore)
+            .toList());
   }
 
-  // Send a hybrid message
-  Future<void> sendHybridMessage(String groupId, List<MessagePart> parts, {String? replyToMessageId}) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
+  GroupMessagePager createMessagePager(
+    String groupId, {
+    int pageSize = 30,
+  }) {
+    return GroupMessagePager(
+      firestore: _firestore,
+      groupId: groupId,
+      pageSize: pageSize,
+    );
+  }
 
-    await _firestore
+  Future<String> sendHybridMessage(
+    String groupId,
+    List<MessagePart> parts, {
+    String? replyToMessageId,
+    String? clientMessageId,
+    String space = 'discussion',
+  }) async {
+    final user = _requireUser();
+    if (parts.isEmpty || parts.length > 4) {
+      throw ArgumentError('A message must contain between one and four parts.');
+    }
+    _validateMessageParts(parts);
+
+    final stableId = clientMessageId ?? _uuid.v4();
+    if (!const {'reflection', 'discussion', 'prayer'}.contains(space)) {
+      throw ArgumentError.value(space, 'space', 'Unknown study space.');
+    }
+    final messageRef = _firestore
         .collection('groups')
         .doc(groupId)
         .collection('messages')
-        .add({
+        .doc(stableId);
+    await messageRef.set({
+      'schemaVersion': 2,
+      'clientMessageId': stableId,
+      'space': space,
       'senderId': user.uid,
-      'senderName': user.displayName ?? 'Believer',
-      'senderPhotoUrl': user.photoURL,
-      'replyToMessageId': replyToMessageId,
-      'parts': parts.map((p) => p.toMap()).toList(),
+      'senderName': (user.displayName ?? 'Believer').trim(),
+      if (user.photoURL?.isNotEmpty == true) 'senderPhotoUrl': user.photoURL,
+      if (replyToMessageId?.isNotEmpty == true)
+        'replyToMessageId': replyToMessageId,
+      'parts': parts.map((part) => part.toMap()).toList(),
       'timestamp': FieldValue.serverTimestamp(),
-      'starredBy': [],
+      'isEdited': false,
+      'isDeleted': false,
     });
-
-      // Update group's last message time and increment unread count for other members
-      final groupDoc = await _firestore.collection('groups').doc(groupId).get();
-      if (groupDoc.exists) {
-        final groupData = groupDoc.data()!;
-        final groupName = groupData['name'] ?? 'Study Group';
-        final members = List<String>.from(groupData['members'] ?? []);
-        // Extract a preview text for the notification body
-        String notificationBody = 'Sent a message';
-        if (parts.isNotEmpty) {
-          final firstPart = parts.first;
-          if (firstPart.type == MessageType.text && firstPart.content.isNotEmpty) {
-            String cleanText = firstPart.content.replaceAll('\n', ' ');
-            notificationBody = cleanText.length > 50 
-              ? '${cleanText.substring(0, 50)}...' 
-              : cleanText;
-          } else if (firstPart.type == MessageType.voice) {
-            notificationBody = '🎤 Voice note';
-          }
-        }
-
-        Map<String, dynamic> updates = {
-          'lastMessageTime': FieldValue.serverTimestamp(),
-          'lastMessageText': notificationBody,
-          'lastMessageSenderName': user.displayName ?? 'Believer',
-          'lastMessageSenderId': user.uid,
-        };
-        for (String memberId in members) {
-          if (memberId != user.uid) {
-            updates['unreadCounts.$memberId'] = FieldValue.increment(1);
-          }
-        }
-        await _firestore.collection('groups').doc(groupId).update(updates);
-
-        // Record interaction for the current user
-        await AuthService().recordInteraction();
-
-      }
+    return stableId;
   }
 
-  // Reset unread count for current user
   Future<void> resetUnreadCount(String groupId) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
+    final user = _requireUser();
     await _firestore.collection('groups').doc(groupId).update({
       'unreadCounts.${user.uid}': 0,
     });
   }
 
-  // Toggle star on a message
-  Future<void> toggleStarMessage(String groupId, String messageId, bool isStarred) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
+  Future<void> toggleStarMessage(
+    String groupId,
+    String messageId,
+    bool isStarred,
+  ) async {
+    final user = _requireUser();
+    final reference = _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('group_state')
+        .doc(groupId)
+        .collection('starred_messages')
+        .doc(messageId);
+    if (isStarred) {
+      await reference.delete();
+    } else {
+      await reference.set({
+        'messageId': messageId,
+        'starredAt': FieldValue.serverTimestamp(),
+      });
+    }
+  }
 
-    final docRef = _firestore
+  Future<void> deleteMessage(String groupId, String messageId) async {
+    final reference = _firestore
         .collection('groups')
         .doc(groupId)
         .collection('messages')
         .doc(messageId);
-
-    if (isStarred) {
-      await docRef.update({
-        'starredBy': FieldValue.arrayRemove([user.uid])
-      });
-    } else {
-      await docRef.update({
-        'starredBy': FieldValue.arrayUnion([user.uid])
-      });
-    }
-  }
-
-  // Delete a message (mark as deleted)
-  Future<void> deleteMessage(String groupId, String messageId) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    await _firestore
-        .collection('groups')
-        .doc(groupId)
-        .collection('messages')
-        .doc(messageId)
-        .update({
+    await reference.update({
       'isDeleted': true,
-      'parts': [], // optionally clear the actual content for security
+      'parts': <Map<String, dynamic>>[],
+      'deletedAt': FieldValue.serverTimestamp(),
     });
   }
 
-  // Delete a message just for me
   Future<void> deleteMessageForMe(String groupId, String messageId) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
+    final user = _requireUser();
     await _firestore
-        .collection('groups')
+        .collection('users')
+        .doc(user.uid)
+        .collection('group_state')
         .doc(groupId)
-        .collection('messages')
+        .collection('hidden_messages')
         .doc(messageId)
-        .update({
-      'deletedFor': FieldValue.arrayUnion([user.uid])
-    });
-  }
-
-  // Clear all messages for me in a group
-  Future<void> clearChatForMe(String groupId) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    // Fetch all messages
-    final querySnapshot = await _firestore
-        .collection('groups')
-        .doc(groupId)
-        .collection('messages')
-        .get();
-
-    WriteBatch batch = _firestore.batch();
-    int count = 0;
-
-    for (var doc in querySnapshot.docs) {
-      final data = doc.data();
-      final deletedFor = List<String>.from(data['deletedFor'] ?? []);
-      if (!deletedFor.contains(user.uid)) {
-        batch.update(doc.reference, {
-          'deletedFor': FieldValue.arrayUnion([user.uid])
+        .set({
+          'messageId': messageId,
+          'hiddenAt': FieldValue.serverTimestamp(),
         });
-        count++;
-        // Firestore batches support up to 500 operations
-        if (count == 490) {
-          await batch.commit();
-          batch = _firestore.batch();
-          count = 0;
-        }
-      }
-    }
-
-    if (count > 0) {
-      await batch.commit();
-    }
   }
 
-  // Edit a message
-  Future<void> editMessage(String groupId, String messageId, List<MessagePart> newParts) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
+  Future<void> clearChatForMe(String groupId) async {
+    final user = _requireUser();
+    await _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('group_state')
+        .doc(groupId)
+        .set({
+          'groupId': groupId,
+          'clearedBefore': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+  }
 
+  Future<void> setGroupMuted(String groupId, bool muted) async {
+    final user = _requireUser();
+    await _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('group_state')
+        .doc(groupId)
+        .set({
+          'groupId': groupId,
+          if (muted)
+            'mutedUntil': Timestamp.fromDate(
+              DateTime.now().add(const Duration(days: 365)),
+            )
+          else
+            'mutedUntil': FieldValue.delete(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+  }
+
+  Future<bool> isGroupMuted(String groupId) async {
+    final user = _requireUser();
+    final snapshot = await _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('group_state')
+        .doc(groupId)
+        .get();
+    final mutedUntil = snapshot.data()?['mutedUntil'];
+    return mutedUntil is Timestamp &&
+        mutedUntil.toDate().isAfter(DateTime.now());
+  }
+
+  Future<void> editMessage(
+    String groupId,
+    String messageId,
+    List<MessagePart> newParts,
+  ) async {
+    if (newParts.isEmpty || newParts.length > 4) {
+      throw ArgumentError('A message must contain between one and four parts.');
+    }
+    _validateMessageParts(newParts);
     await _firestore
         .collection('groups')
         .doc(groupId)
         .collection('messages')
         .doc(messageId)
         .update({
-      'parts': newParts.map((p) => p.toMap()).toList(),
-      'isEdited': true,
-    });
+          'parts': newParts.map((part) => part.toMap()).toList(),
+          'isEdited': true,
+          'editedAt': FieldValue.serverTimestamp(),
+        });
   }
 
-  // Update study progress and chapters
-  Future<void> updateGroupStudyProgress(String groupId, String bookName, int totalChapters, List<int> completedChapters, double progress) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
+  Future<void> updateGroupStudyProgress(
+    String groupId,
+    String bookName,
+    int totalChapters,
+    List<int> completedChapters,
+    double progress,
+  ) async {
+    final user = _requireUser();
     await _firestore.collection('groups').doc(groupId).update({
-      'studyBook': bookName,
-      'totalChapters': totalChapters,
-      'readingProgress.${user.uid}': progress,
+          'readingProgress.${user.uid}': progress.clamp(0, 1),
       'userCompletedChapters.${user.uid}': completedChapters,
     });
+  }
+
+  void _validateMessageParts(List<MessagePart> parts) {
+    for (final part in parts) {
+      final content = part.content.trim();
+      if (content.isEmpty || content.length > 8000) {
+        throw ArgumentError('Message content must contain 1–8,000 characters.');
+      }
+      switch (part.type) {
+        case MessageType.text:
+          if (part.durationSeconds != null) {
+            throw ArgumentError('Text messages cannot have audio duration.');
+          }
+        case MessageType.voice:
+          final duration = part.durationSeconds;
+          if (duration == null || duration < 1 || duration > 300) {
+            throw ArgumentError('Voice reflections must be 1–300 seconds.');
+          }
+          _requireSecureMediaUri(content);
+        case MessageType.image:
+          if (part.durationSeconds != null) {
+            throw ArgumentError('Images cannot have audio duration.');
+          }
+          _requireSecureMediaUri(content);
+        case _:
+          throw ArgumentError('This attachment type is not supported.');
+      }
+    }
+  }
+
+  void _requireSecureMediaUri(String value) {
+    final uri = Uri.tryParse(value);
+    if (uri == null || uri.scheme != 'https' || !uri.hasAuthority) {
+      throw ArgumentError('Message media must use a secure HTTPS URL.');
+    }
+  }
+}
+
+class GroupMessagePager {
+  final FirebaseFirestore firestore;
+  final String groupId;
+  final int pageSize;
+  final StreamController<List<MessageModel>> _controller =
+      StreamController.broadcast();
+  final Map<String, QueryDocumentSnapshot<Map<String, dynamic>>> _documents =
+      {};
+
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _liveSubscription;
+  QueryDocumentSnapshot<Map<String, dynamic>>? _oldestCursor;
+  bool _started = false;
+  bool _loadingOlder = false;
+  bool hasMore = true;
+
+  GroupMessagePager({
+    required this.firestore,
+    required this.groupId,
+    this.pageSize = 30,
+  });
+
+  Stream<List<MessageModel>> get stream {
+    _start();
+    return _controller.stream;
+  }
+
+  Query<Map<String, dynamic>> get _baseQuery => firestore
+      .collection('groups')
+      .doc(groupId)
+      .collection('messages')
+      .orderBy('timestamp', descending: true);
+
+  void _start() {
+    if (_started) return;
+    _started = true;
+    _liveSubscription = _baseQuery
+        .limit(pageSize)
+        .snapshots(includeMetadataChanges: true)
+        .listen(
+          (snapshot) {
+            for (final change in snapshot.docChanges) {
+              if (change.type != DocumentChangeType.removed) {
+                _documents[change.doc.id] = change.doc;
+              }
+            }
+            if (snapshot.docs.isNotEmpty) {
+              _oldestCursor ??= snapshot.docs.last;
+            }
+            if (snapshot.docs.length < pageSize) hasMore = false;
+            _emit();
+          },
+          onError: _controller.addError,
+        );
+  }
+
+  Future<void> loadOlder() async {
+    if (_loadingOlder || !hasMore) return;
+    _loadingOlder = true;
+    try {
+      var query = _baseQuery.limit(pageSize);
+      final cursor = _oldestCursor;
+      if (cursor != null) query = query.startAfterDocument(cursor);
+      final snapshot = await query.get();
+      for (final document in snapshot.docs) {
+        _documents[document.id] = document;
+      }
+      if (snapshot.docs.isNotEmpty) _oldestCursor = snapshot.docs.last;
+      if (snapshot.docs.length < pageSize) hasMore = false;
+      _emit();
+    } finally {
+      _loadingOlder = false;
+    }
+  }
+
+  void _emit() {
+    final documents = _documents.values.toList()
+      ..sort((first, second) {
+        final firstTimestamp = first.data()['timestamp'];
+        final secondTimestamp = second.data()['timestamp'];
+        final firstMillis = firstTimestamp is Timestamp
+            ? firstTimestamp.millisecondsSinceEpoch
+            : DateTime.now().millisecondsSinceEpoch;
+        final secondMillis = secondTimestamp is Timestamp
+            ? secondTimestamp.millisecondsSinceEpoch
+            : DateTime.now().millisecondsSinceEpoch;
+        return secondMillis.compareTo(firstMillis);
+      });
+    _controller.add(
+      documents.map(MessageModel.fromFirestore).toList(growable: false),
+    );
+  }
+
+  Future<void> dispose() async {
+    await _liveSubscription?.cancel();
+    await _controller.close();
   }
 }

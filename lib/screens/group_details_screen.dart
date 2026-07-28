@@ -1,20 +1,20 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:async';
-import 'dart:math';
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:bsgc_app/services/storage_service.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
+
 import '../models/group_model.dart';
 import '../services/chat_service.dart';
-import '../theme.dart';
-import '../services/contact_cache_service.dart';
+import '../services/safety_service.dart';
+import '../services/storage_service.dart';
+import '../widgets/add_member_sheet.dart';
+import '../widgets/braid_media.dart';
+import '../widgets/report_dialog.dart';
 import 'edit_group_screen.dart';
-import '../services/contact_cache_service.dart';
 
 class GroupDetailsScreen extends StatefulWidget {
   final GroupModel group;
@@ -27,1060 +27,651 @@ class GroupDetailsScreen extends StatefulWidget {
 
 class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
   final ChatService _chatService = ChatService();
-  final String _currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
-
-  List<Map<String, dynamic>> _members = [];
-  bool _isLoading = true;
-  bool _isProgressExpanded = true;
-
-  String? _selectedBook;
-  int _totalChapters = 0;
-  Map<String, dynamic>? _selectedMessage;
-  String? _tappedMemberId;
-  List<int> _myCompletedChapters = [];
-
-  bool get _isAdmin =>
-      _group.members.isNotEmpty &&
-      _group.members.first == _currentUserId;
-
-  final Map<String, int> _bibleChapters = {
-    'Genesis': 50,
-    'Exodus': 40,
-    'Leviticus': 27,
-    'Numbers': 36,
-    'Deuteronomy': 34,
-    'Joshua': 24,
-    'Judges': 21,
-    'Ruth': 4,
-    '1 Samuel': 31,
-    '2 Samuel': 24,
-    '1 Kings': 22,
-    '2 Kings': 25,
-    '1 Chronicles': 29,
-    '2 Chronicles': 36,
-    'Ezra': 10,
-    'Nehemiah': 13,
-    'Esther': 10,
-    'Job': 42,
-    'Psalms': 150,
-    'Proverbs': 31,
-    'Ecclesiastes': 12,
-    'Song of Solomon': 8,
-    'Isaiah': 66,
-    'Jeremiah': 52,
-    'Lamentations': 5,
-    'Ezekiel': 48,
-    'Daniel': 12,
-    'Hosea': 14,
-    'Joel': 3,
-    'Amos': 9,
-    'Obadiah': 1,
-    'Jonah': 4,
-    'Micah': 7,
-    'Nahum': 3,
-    'Habakkuk': 3,
-    'Zephaniah': 3,
-    'Haggai': 2,
-    'Zechariah': 14,
-    'Malachi': 4,
-    'Matthew': 28,
-    'Mark': 16,
-    'Luke': 24,
-    'John': 21,
-    'Acts': 28,
-    'Romans': 16,
-    '1 Corinthians': 16,
-    '2 Corinthians': 13,
-    'Galatians': 6,
-    'Ephesians': 6,
-    'Philippians': 4,
-    'Colossians': 4,
-    '1 Thessalonians': 5,
-    '2 Thessalonians': 3,
-    '1 Timothy': 6,
-    '2 Timothy': 4,
-    'Titus': 3,
-    'Philemon': 1,
-    'Hebrews': 13,
-    'James': 5,
-    '1 Peter': 5,
-    '2 Peter': 3,
-    '1 John': 5,
-    '2 John': 1,
-    '3 John': 1,
-    'Jude': 1,
-    'Revelation': 22,
-  };
-
   late GroupModel _group;
-  StreamSubscription<DocumentSnapshot>? _groupSub;
+  StreamSubscription<DocumentSnapshot>? _groupSubscription;
+  List<Map<String, dynamic>> _members = const [];
+  bool _membersLoading = true;
+  bool _memberLoadFailed = false;
+  bool _isMuted = false;
+  bool _coverBusy = false;
+  bool _actionBusy = false;
+
+  String get _currentUserId => FirebaseAuth.instance.currentUser?.uid ?? '';
+  bool get _isOwner => _group.ownerId == _currentUserId;
+  bool get _canInvite =>
+      _isOwner &&
+      _group.members.length < 12 &&
+      !const {'completed', 'archived'}.contains(_group.lifecycle);
 
   @override
   void initState() {
     super.initState();
     _group = widget.group;
-    
-    _groupSub = FirebaseFirestore.instance.collection('groups').doc(_group.id).snapshots().listen((snap) {
-      if (snap.exists && mounted) {
-        final newGroup = GroupModel.fromFirestore(snap);
-        bool membersChanged = newGroup.members.length != _group.members.length;
-        setState(() {
-          _group = newGroup;
-        });
-        if (membersChanged) {
-          _loadMembers();
-        }
-      }
-    });
-
-    _loadMembers();
-    _selectedBook = _group.studyBook;
-    _selectedBook = _group.studyBook;
-    
-    if (_group.groupType == 'Topic' && _group.startDate != null && _group.endDate != null) {
-      _totalChapters = _group.endDate!.difference(_group.startDate!).inDays + 1;
-    } else {
-      _totalChapters = _group.totalChapters;
-    }
-    
-    _myCompletedChapters = List<int>.from(
-      _group.userCompletedChapters[_currentUserId] ?? [],
-    );
-  }
-
-  @override
-  void dispose() {
-    _groupSub?.cancel();
-    super.dispose();
+    _groupSubscription = FirebaseFirestore.instance
+        .collection('groups')
+        .doc(_group.id)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            if (!snapshot.exists || !mounted) return;
+            final previousMembers = _group.members.join('|');
+            final updated = GroupModel.fromFirestore(snapshot);
+            setState(() => _group = updated);
+            if (updated.members.join('|') != previousMembers) {
+              unawaited(_loadMembers());
+            }
+          },
+          onError: (_) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Live study details are temporarily offline.'),
+                ),
+              );
+            }
+          },
+        );
+    unawaited(_loadMembers());
+    unawaited(_loadMuteState());
   }
 
   Future<void> _loadMembers() async {
-    final members = await _chatService.getGroupMembersProfiles(
-      _group.members,
-    );
     if (mounted) {
       setState(() {
-        _members = members;
-        _isLoading = false;
+        _membersLoading = true;
+        _memberLoadFailed = false;
       });
     }
+    try {
+      final members = await _chatService.getGroupMembersProfiles(
+        _group.members,
+      );
+      if (mounted) setState(() => _members = members);
+    } catch (_) {
+      if (mounted) setState(() => _memberLoadFailed = true);
+    } finally {
+      if (mounted) setState(() => _membersLoading = false);
+    }
   }
 
-  void _inviteMember() {
-    final inviteLink = "https://braidapp.com/join/${_group.id}";
-    final message =
-        "Hey! Join my Bible study group '${_group.name}' on Braid!\n\nTap here to join: $inviteLink";
-    Share.share(message);
+  Future<void> _loadMuteState() async {
+    try {
+      final muted = await _chatService.isGroupMuted(_group.id);
+      if (mounted) setState(() => _isMuted = muted);
+    } catch (_) {
+      // The user can retry by toggling the setting.
+    }
   }
 
-  void _toggleChapter(int chapter) async {
-    setState(() {
-      if (_myCompletedChapters.contains(chapter)) {
-        _myCompletedChapters.remove(chapter);
-      } else {
-        _myCompletedChapters.add(chapter);
-      }
+  Future<void> _setMuted(bool value) async {
+    final previous = _isMuted;
+    setState(() => _isMuted = value);
+    try {
+      await _chatService.setGroupMuted(_group.id, value);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isMuted = previous);
+      _showMessage('The notification setting could not be saved.');
+    }
+  }
 
-      double newProgress = _totalChapters > 0
-          ? (_myCompletedChapters.length / _totalChapters)
-          : 0.0;
-      _group.readingProgress[_currentUserId] = newProgress;
-      _group.userCompletedChapters[_currentUserId] = _myCompletedChapters;
-    });
-
-    double finalProgress = _totalChapters > 0
-        ? (_myCompletedChapters.length / _totalChapters)
-        : 0.0;
-    await _chatService.updateGroupStudyProgress(
-      _group.id,
-      _selectedBook ?? '',
-      _totalChapters,
-      _myCompletedChapters,
-      finalProgress,
+  Future<void> _inviteMember() async {
+    if (!_canInvite) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => AddMemberSheet(groupId: _group.id),
     );
   }
 
-  void _onBookSelected(String? bookName) async {
-    if (bookName == null) return;
-    setState(() {
-      _selectedBook = bookName;
-      _totalChapters = _bibleChapters[bookName]!;
-      _myCompletedChapters.clear();
-
-      _group.readingProgress[_currentUserId] = 0.0;
-      _group.userCompletedChapters[_currentUserId] = [];
-    });
-    await _chatService.updateGroupStudyProgress(
-      _group.id,
-      _selectedBook!,
-      _totalChapters,
-      [],
-      0.0,
-    );
-  }
-
-  void _editGroupDetails() async {
-    if (!_isAdmin) return;
-
-    final updated = await Navigator.push(
+  Future<void> _editDetails() async {
+    if (!_isOwner) return;
+    await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            EditGroupScreen(group: _group, chatService: _chatService),
-      ),
-    );
-
-    if (updated == true) {
-      setState(() {});
-    }
-  }
-
-  void _changeGroupImage() async {
-    if (!_isAdmin) return;
-
-    final picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-
-    if (image != null && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Uploading image...')));
-
-      try {
-        var bytes = await image.readAsBytes();
-
-        final compressed = await FlutterImageCompress.compressWithList(
-          bytes,
-          minWidth: 500,
-          minHeight: 500,
-          quality: 70,
-        );
-        bytes = compressed;
-
-        final newUrl = await StorageService.uploadFile(bytes, folder: 'groups');
-        if (newUrl.isEmpty) {
-          throw Exception('Firebase Storage upload failed');
-        }
-
-        await _chatService.editGroup(
-          _group.id,
-          _group.name,
-          _group.pinnedScripture,
-          description: _group.description,
-          photoUrl: newUrl,
-        );
-        setState(() {
-          _group.photoUrl = newUrl;
-        });
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Image updated successfully!')),
-          );
-        }
-      } on TimeoutException {
-        if (mounted) {
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Upload timed out. Please check your internet connection.',
-              ),
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Failed to update image: $e')));
-        }
-      }
-    }
-  }
-
-  Future<void> _extendGroup() async {
-    bool? confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Extend Group?'),
-        content: Text(
-          'Are you sure you want to extend this group by 30 days? You can only extend a group up to 3 times.',
+        builder: (_) => EditGroupScreen(
+          group: _group,
+          chatService: _chatService,
         ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text('Cancel', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54))),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.gradientEnd,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-              ),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text('Extend'),
-            ),
-          ],
       ),
     );
+  }
 
-    if (confirm == true) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Extending...')));
-      try {
-        bool success = await _chatService.extendGroupDuration(
-          _group.id,
-          const Duration(days: 30),
-        );
-        if (success && mounted) {
-          setState(() {
-            // Updating local count for immediate UI feedback
-          });
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Group extended successfully!')),
-          );
-        } else if (mounted) {
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Maximum extensions reached.')),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Error: $e')));
-        }
+  Future<void> _changeCover() async {
+    if (!_isOwner || _coverBusy) return;
+    final image = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1600,
+      maxHeight: 1600,
+      imageQuality: 88,
+    );
+    if (image == null || !mounted) return;
+
+    setState(() => _coverBusy = true);
+    try {
+      final compressed = await FlutterImageCompress.compressWithList(
+        await image.readAsBytes(),
+        minWidth: 700,
+        minHeight: 700,
+        quality: 78,
+        format: CompressFormat.jpeg,
+      );
+      if (compressed.isEmpty || compressed.length > 5 * 1024 * 1024) {
+        throw StateError('The selected image is too large.');
       }
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw StateError('Sign in to update the cover.');
+      final url = await StorageService.uploadGroupCover(
+        bytes: compressed,
+        groupId: _group.id,
+        ownerId: user.uid,
+      );
+      await _chatService.editGroup(
+        _group.id,
+        _group.name,
+        _group.pinnedScripture,
+        description: _group.description,
+        photoUrl: url,
+      );
+      if (mounted) _showMessage('Study cover updated.');
+    } catch (_) {
+      if (mounted) {
+        _showMessage(
+          'The cover could not be updated. Check your connection and retry.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _coverBusy = false);
     }
   }
 
-  void _leaveGroup() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Leave Group?'),
-        content: Text('Are you sure you want to leave this group?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+  Future<bool> _confirm({
+    required String title,
+    required String message,
+    required String action,
+    bool destructive = false,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: destructive
+                    ? FilledButton.styleFrom(
+                        backgroundColor:
+                            Theme.of(dialogContext).colorScheme.error,
+                      )
+                    : null,
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(action),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<void> _extendStudy() async {
+    if (!_isOwner || _actionBusy) return;
+    final confirmed = await _confirm(
+      title: 'Add 30 days?',
+      message:
+          'The end date will move forward by 30 days. A completed study will '
+          'become active again. ${3 - _group.extensionCount} extension(s) '
+          'remain.',
+      action: 'Extend study',
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _actionBusy = true);
+    try {
+      await _chatService.extendGroupDuration(
+        _group.id,
+        const Duration(days: 30),
+      );
+      if (mounted) _showMessage('Study extended by 30 days.');
+    } catch (_) {
+      if (mounted) _showMessage('The study could not be extended.');
+    } finally {
+      if (mounted) setState(() => _actionBusy = false);
+    }
+  }
+
+  Future<void> _archiveStudy() async {
+    if (!_isOwner || _actionBusy) return;
+    final confirmed = await _confirm(
+      title: 'Archive this study?',
+      message:
+          'It will become read-only and leave the active Groups list for '
+          'every member.',
+      action: 'Archive',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _actionBusy = true);
+    try {
+      await _chatService.archiveGroup(_group.id);
+      if (mounted) Navigator.popUntil(context, (route) => route.isFirst);
+    } catch (_) {
+      if (mounted) _showMessage('The study could not be archived.');
+    } finally {
+      if (mounted) setState(() => _actionBusy = false);
+    }
+  }
+
+  Future<void> _leaveStudy() async {
+    if (_isOwner || _actionBusy) return;
+    final confirmed = await _confirm(
+      title: 'Leave this study?',
+      message: 'You will lose access to its private discussion and media.',
+      action: 'Leave',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _actionBusy = true);
+    try {
+      await _chatService.leaveGroup(_group.id);
+      if (mounted) Navigator.popUntil(context, (route) => route.isFirst);
+    } catch (_) {
+      if (mounted) _showMessage('You could not leave this study.');
+    } finally {
+      if (mounted) setState(() => _actionBusy = false);
+    }
+  }
+
+  Future<void> _memberAction(
+    String action,
+    String uid,
+    String name,
+  ) async {
+    try {
+      switch (action) {
+        case 'transfer':
+          final confirmed = await _confirm(
+            title: 'Transfer ownership?',
+            message:
+                '$name will control invitations, members, and archiving. '
+                'You will remain a member.',
+            action: 'Transfer',
+          );
+          if (confirmed) {
+            await _chatService.transferGroupOwnership(_group.id, uid);
+          }
+        case 'remove':
+          final confirmed = await _confirm(
+            title: 'Remove $name?',
+            message: 'They will lose access to this private study.',
+            action: 'Remove',
+            destructive: true,
+          );
+          if (confirmed) {
+            await _chatService.removeGroupMember(_group.id, uid);
+          }
+        case 'block':
+          final confirmed = await _confirm(
+            title: 'Block $name?',
+            message:
+                'Their contacts-only Insights will be hidden. Shared study '
+                'content may remain visible.',
+            action: 'Block',
+            destructive: true,
+          );
+          if (confirmed) await SafetyService().blockUser(uid);
+        case 'report':
+          await showReportDialog(
+            context,
+            targetType: 'user',
+            targetId: uid,
+            groupId: _group.id,
+          );
+      }
+    } catch (_) {
+      if (mounted) _showMessage('That member action could not be completed.');
+    }
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  String get _focusLabel {
+    if (_group.groupType == 'Topic') {
+      return _group.topic?.trim().isNotEmpty == true
+          ? _group.topic!
+          : 'Topic study';
+    }
+    return _group.studyBook?.trim().isNotEmpty == true
+        ? _group.studyBook!
+        : 'Bible study';
+  }
+
+  String get _dateLabel {
+    final start = _group.startDate;
+    final end = _group.endDate;
+    if (start == null && end == null) return 'No study dates';
+    final formatter = DateFormat('MMM d, yyyy');
+    if (start == null) return 'Ends ${formatter.format(end!)}';
+    if (end == null) return 'Started ${formatter.format(start)}';
+    return '${formatter.format(start)} – ${formatter.format(end)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Study details')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Stack(
+                    children: [
+                      BraidCoverImage(
+                        identity: _group.id,
+                        imageUrl: _group.photoUrl,
+                        width: 104,
+                        height: 104,
+                        semanticLabel: '${_group.name} study cover',
+                      ),
+                      if (_isOwner)
+                        Positioned(
+                          right: 4,
+                          bottom: 4,
+                          child: IconButton.filledTonal(
+                            tooltip: 'Change study cover',
+                            onPressed: _coverBusy ? null : _changeCover,
+                            icon: _coverBusy
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.photo_camera_outlined),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _group.name,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _focusLabel,
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        _LifecycleChip(lifecycle: _group.lifecycle),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(
-              'Leave',
-              style: TextStyle(color: Colors.redAccent),
+          const SizedBox(height: 12),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.calendar_month_outlined),
+                  title: const Text('Study dates'),
+                  subtitle: Text(_dateLabel),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.people_outline_rounded),
+                  title: const Text('Capacity'),
+                  subtitle: Text('${_group.members.length} of 12 people'),
+                ),
+                if (_group.description.trim().isNotEmpty)
+                  ListTile(
+                    leading: const Icon(Icons.subject_rounded),
+                    title: const Text('About this study'),
+                    subtitle: Text(_group.description),
+                  ),
+                if (_group.pinnedScripture.trim().isNotEmpty)
+                  ListTile(
+                    leading: const Icon(Icons.bookmark_outline_rounded),
+                    title: const Text('Pinned Scripture'),
+                    subtitle: Text(_group.pinnedScripture),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: SwitchListTile(
+              secondary: const Icon(Icons.notifications_outlined),
+              title: const Text('Message notifications'),
+              subtitle: const Text('This setting applies only to this study'),
+              value: _isMuted == false,
+              onChanged: (enabled) => _setMuted(!enabled),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'People',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (_canInvite)
+                FilledButton.tonalIcon(
+                  onPressed: _inviteMember,
+                  icon: const Icon(Icons.person_add_alt_1_rounded),
+                  label: const Text('Invite'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_membersLoading)
+            const Padding(
+              padding: EdgeInsets.all(32),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_memberLoadFailed)
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.cloud_off_outlined),
+                title: const Text('People could not be refreshed'),
+                subtitle: const Text(
+                  'Previously cached study access is not changed.',
+                ),
+                trailing: IconButton(
+                  tooltip: 'Retry',
+                  onPressed: _loadMembers,
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ),
+            )
+          else
+            Card(
+              child: Column(
+                children: [
+                  for (final member in _members)
+                    _memberTile(member),
+                ],
+              ),
+            ),
+          const SizedBox(height: 24),
+          Text(
+            _isOwner ? 'Owner controls' : 'Study membership',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: Column(
+              children: [
+                if (_isOwner && _group.lifecycle != 'archived')
+                  ListTile(
+                    leading: const Icon(Icons.edit_outlined),
+                    title: const Text('Edit name and description'),
+                    onTap: _editDetails,
+                  ),
+                if (_isOwner &&
+                    _group.lifecycle != 'archived' &&
+                    _group.extensionCount < 3)
+                  ListTile(
+                    enabled: !_actionBusy,
+                    leading: const Icon(Icons.event_repeat_rounded),
+                    title: const Text('Extend by 30 days'),
+                    subtitle: Text(
+                      '${3 - _group.extensionCount} extension(s) remaining',
+                    ),
+                    onTap: _extendStudy,
+                  ),
+                if (_isOwner && _group.lifecycle == 'archived')
+                  const ListTile(
+                    leading: Icon(Icons.lock_outline_rounded),
+                    title: Text('Archived and read-only'),
+                    subtitle: Text(
+                      'This study remains available as a completed record.',
+                    ),
+                  ),
+                if (!_isOwner || _group.lifecycle != 'archived')
+                  ListTile(
+                    enabled: !_actionBusy,
+                    leading: Icon(
+                      _isOwner
+                          ? Icons.archive_outlined
+                          : Icons.exit_to_app_rounded,
+                      color: colorScheme.error,
+                    ),
+                    title: Text(
+                      _isOwner ? 'Archive study' : 'Leave study',
+                      style: TextStyle(color: colorScheme.error),
+                    ),
+                    subtitle: _isOwner
+                        ? const Text(
+                            'Members keep read-only access to the record',
+                          )
+                        : null,
+                    onTap: _isOwner ? _archiveStudy : _leaveStudy,
+                  ),
+              ],
             ),
           ),
         ],
       ),
     );
-
-    if (confirm == true) {
-      await _chatService.leaveGroup(_group.id);
-      if (mounted) {
-        Navigator.popUntil(
-          context,
-          (route) => route.isFirst,
-        ); // Return to Main Hall
-      }
-    }
   }
 
-  Color _getAvatarColor(String userId) {
-    if (userId == FirebaseAuth.instance.currentUser?.uid) return AppColors.gradientEnd;
-    final List<Color> colors = [
-      Colors.blue,
-      Colors.orange,
-      Colors.red,
-      Colors.purple,
-      Colors.teal,
-      Colors.pink,
-      Colors.indigo,
-      Colors.amber,
-      Colors.cyan,
-      Colors.deepOrange,
-      Colors.lime,
-      Colors.brown,
-    ];
-    int index = _group.members.indexOf(userId);
-    if (index < 0) {
-      int asciiSum = 0;
-      for (int i = 0; i < userId.length; i++) {
-        asciiSum += userId.codeUnitAt(i);
-      }
-      index = asciiSum;
-    }
-    return colors[index % colors.length];
-  }
+  Widget _memberTile(Map<String, dynamic> member) {
+    final uid = member['uid']?.toString() ?? '';
+    final name = member['displayName']?.toString().trim().isNotEmpty == true
+        ? member['displayName'].toString()
+        : 'Braid member';
+    final photoUrl = member['photoURL']?.toString();
+    final isSelf = uid == _currentUserId;
+    final isGroupOwner = uid == _group.ownerId;
 
-  Widget _buildGroupImage() {
-    if (_group.photoUrl != null && _group.photoUrl!.isNotEmpty) {
-      return CachedNetworkImage(imageUrl: 
-        _group.photoUrl!,
-        fit: BoxFit.cover,
-        errorWidget: (context, url, error) {
-          return _fallbackGroupGraphic();
-        },
-      );
-    }
-
-    return _fallbackGroupGraphic();
-  }
-
-  Widget _fallbackGroupGraphic() {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.blueGrey.shade800, Colors.blueGrey.shade500],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+    return ListTile(
+      leading: BraidAvatar(
+        identity: uid,
+        displayName: name,
+        imageUrl: photoUrl,
+        radius: 22,
       ),
-      child: Center(
-        child: Text(
-          _group.name.isNotEmpty
-              ? _group.name[0].toUpperCase()
-              : 'G',
-          style: TextStyle(
-            fontSize: 80,
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (_isAdmin && _group.extensionCount < 3) ...[
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.gradientEnd,
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  onPressed: _extendGroup,
-                  icon: Icon(Icons.update),
-                  label: Text(
-                    'Extend Group Duration (${3 - _group.extensionCount} remaining)',
-                  ),
-                ),
-                SizedBox(height: 12),
-              ],
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.redAccent,
-                  side: BorderSide(color: Colors.redAccent),
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                onPressed: _leaveGroup,
-                icon: Icon(Icons.exit_to_app),
-                label: Text(
-                  'Leave Group',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-      body: _isLoading
-          ? Center(
-              child: CircularProgressIndicator(color: AppColors.gradientEnd),
+      title: Text(name),
+      subtitle: isGroupOwner || isSelf
+          ? Text(
+              [
+                if (isGroupOwner) 'Owner',
+                if (isSelf) 'You',
+              ].join(' · '),
             )
-          : CustomScrollView(
-              slivers: [
-                SliverAppBar(
-                  expandedHeight: 220,
-                  pinned: true,
-                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-                  surfaceTintColor: Colors.transparent,
-                  iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),                  flexibleSpace: LayoutBuilder(
-                    builder:
-                        (BuildContext context, BoxConstraints constraints) {
-                          final top = constraints.biggest.height;
-                          final isCollapsed =
-                              top <=
-                              kToolbarHeight +
-                                  MediaQuery.of(context).padding.top +
-                                  20;
-
-                          return FlexibleSpaceBar(
-                            titlePadding: EdgeInsets.only(
-                              left: 48,
-                              bottom: 16,
-                              right: 16,
-                            ),
-                            title: isCollapsed
-                                ? Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      ClipOval(
-                                        child: SizedBox(
-                                          width: 24,
-                                          height: 24,
-                                          child: _buildGroupImage(),
-                                        ),
-                                      ),
-                                      SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          _group.name,
-                                          style: TextStyle(
-                                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                : null,
-                            background: Container(
-                        color: Theme.of(context).scaffoldBackgroundColor,
-                        padding: EdgeInsets.only(
-                                top: 100,
-                                left: 24,
-                                right: 24,
-                                bottom: 16,
-                              ),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Stack(
-                                    children: [
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(20),
-                                        child: SizedBox(
-                                          width: 100,
-                                          height: 100,
-                                          child: _buildGroupImage(),
-                                        ),
-                                      ),
-                                      if (_isAdmin)
-                                        Positioned(
-                                          bottom: -4,
-                                          right: -4,
-                                          child: IconButton(
-                                            icon: Container(
-                                              padding: EdgeInsets.all(6),
-                                              decoration: BoxDecoration(
-                                                color: AppColors.gradientEnd,
-                                                shape: BoxShape.circle,
-                                              ),
-                                              child: Icon(
-                                                Icons.edit,
-                                                size: 14,
-                                                color: Colors.white,
-                                              ),
-                                            ),
-                                            onPressed: _changeGroupImage,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  SizedBox(width: 20),
-                                  Expanded(
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          _group.name,
-                                          style: TextStyle(
-                                            fontSize: 22,
-                                            fontWeight: FontWeight.bold,
-                                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
-                                          ),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        if (widget
-                                            .group
-                                            .description
-                                            .isNotEmpty) ...[
-                                          SizedBox(height: 6),
-                                          Text(
-                                            _group.description,
-                                            maxLines: 3,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
-                                              fontSize: 14,
-                                              height: 1.4,
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
+          : null,
+      trailing: isSelf
+          ? null
+          : PopupMenuButton<String>(
+              tooltip: 'Actions for $name',
+              onSelected: (action) => _memberAction(action, uid, name),
+              itemBuilder: (_) => [
+                if (_isOwner) ...[
+                  const PopupMenuItem(
+                    value: 'transfer',
+                    child: Text('Transfer ownership'),
                   ),
-                  actions: [
-                    if (_isAdmin)
-                      Padding(
-                        padding: EdgeInsets.only(right: 8.0),
-                        child: IconButton(
-                          icon: Container(
-                            padding: EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.edit,
-                              size: 20,
-                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
-                            ),
-                          ),
-                          onPressed: _editGroupDetails,
-                          tooltip: 'Edit Details',
-                        ),
-                      ),
-                  ],
+                  const PopupMenuItem(
+                    value: 'remove',
+                    child: Text('Remove from study'),
+                  ),
+                ],
+                const PopupMenuItem(
+                  value: 'block',
+                  child: Text('Block account'),
                 ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.all(24.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (_group.pinnedScripture.isNotEmpty) ...[
-                          Container(
-                            padding: EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: Colors.orange.withValues(alpha: 0.3),
-                              ),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Icon(
-                                  Icons.push_pin,
-                                  size: 16,
-                                  color: Colors.deepOrange,
-                                ),
-                                SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    _group.pinnedScripture,
-                                    style: TextStyle(
-                                      fontFamily: 'Merriweather',
-                                      fontStyle: FontStyle.italic,
-                                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          SizedBox(height: 32),
-                        ],
-
-                        // Progress Section
-                        GestureDetector(
-                          onTap: () => setState(
-                            () => _isProgressExpanded = !_isProgressExpanded,
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'My Progress',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
-                                ),
-                              ),
-                              Icon(
-                                _isProgressExpanded
-                                    ? Icons.keyboard_arrow_up
-                                    : Icons.keyboard_arrow_down,
-                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
-                              ),
-                            ],
-                          ),
-                        ),
-                        SizedBox(height: 16),
-
-                        if (_isProgressExpanded) ...[
-                          // Book Selection or Topic Display
-                          if (_group.groupType == 'Topic')
-                            GestureDetector(
-                              onTap: () {
-                                showModalBottomSheet(
-                                  context: context,
-                                  builder: (context) => Container(
-                                    padding: EdgeInsets.all(24),
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.info_outline, size: 48, color: AppColors.gradientStart),
-                                        SizedBox(height: 16),
-                                        Text(
-                                          'Topic changes restricted',
-                                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                                        ),
-                                        SizedBox(height: 16),
-                                        Text(
-                                          'You can only make these changes when you extend the group chat.',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(fontSize: 16),
-                                        ),
-                                        SizedBox(height: 24),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                              child: AbsorbPointer(
-                                child: Container(
-                                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.03),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Theme.of(context).dividerColor),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.lightbulb_outline, color: AppColors.primary),
-                                      SizedBox(width: 8),
-                                      Text(
-                                        _group.topic ?? 'Topic',
-                                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            )
-                          else
-                            GestureDetector(
-                              onTap: () {
-                                showModalBottomSheet(
-                                  context: context,
-                                  builder: (context) => Container(
-                                    padding: EdgeInsets.all(24),
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.info_outline, size: 48, color: AppColors.gradientStart),
-                                        SizedBox(height: 16),
-                                        Text(
-                                          'Book changes restricted',
-                                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                                        ),
-                                        SizedBox(height: 16),
-                                        Text(
-                                          'You can only make these changes when you extend the group chat.',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(fontSize: 16),
-                                        ),
-                                        SizedBox(height: 24),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                              child: AbsorbPointer(
-                                child: Container(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.03),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Theme.of(context).dividerColor),
-                                  ),
-                                  child: DropdownButtonHideUnderline(
-                                    child: DropdownButton<String>(
-                                      isExpanded: true,
-                                      hint: Text('Select a Book to Study'),
-                                      value: _selectedBook,
-                                      items: _bibleChapters.entries.map((entry) {
-                                        return DropdownMenuItem<String>(
-                                          value: entry.key,
-                                          child: Text(entry.key),
-                                        );
-                                      }).toList(),
-                                      onChanged: _onBookSelected,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          SizedBox(height: 16),
-
-                          if (_group.groupType == 'Topic' || _selectedBook != null) ...[
-                            Text(
-                              _group.groupType == 'Topic' ? 'Days' : 'Chapters',
-                              style: TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                            SizedBox(height: 8),
-                            Container(
-                              height: 120, // fixed height for chapter grid
-                              decoration: BoxDecoration(
-                                    border: Border.all(color: Theme.of(context).dividerColor),
-                                    borderRadius: BorderRadius.circular(12),
-                                    color: Theme.of(context).cardColor,
-                                  ),
-                              child: GridView.builder(
-                                padding: EdgeInsets.all(8),
-                                physics: const BouncingScrollPhysics(),
-                                gridDelegate:
-                                    const SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: 7,
-                                      crossAxisSpacing: 8,
-                                      mainAxisSpacing: 8,
-                                      childAspectRatio: 1,
-                                    ),
-                                itemCount: _totalChapters,
-                                itemBuilder: (context, index) {
-                                  final chapter = index + 1;
-                                  final isCompleted = _myCompletedChapters
-                                      .contains(chapter);
-                                  return GestureDetector(
-                                    onTap: _group.groupType == 'Topic' ? null : () => _toggleChapter(chapter),
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: isCompleted
-                                            ? _getAvatarColor(_currentUserId)
-                                            : Theme.of(context).colorScheme.onSurface.withValues(
-                                                alpha: 0.05,
-                                              ),
-                                        shape: BoxShape.circle,
-                                      ),
-                                      alignment: Alignment.center,
-                                      child: Text(
-                                        '$chapter',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                          color: isCompleted
-                                              ? Colors.white
-                                              : Theme.of(context).colorScheme.onSurface,
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                            SizedBox(height: 24),
-                          ],
-                        ],
-
-                        // Group Members Section
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Group Members',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
-                              ),
-                            ),
-                            TextButton.icon(
-                              onPressed: _inviteMember,
-                              icon: Icon(
-                                Icons.person_add,
-                                size: 18,
-                                color: AppColors.gradientEnd,
-                              ),
-                              label: Text(
-                                'Add',
-                                style: TextStyle(color: AppColors.gradientEnd),
-                              ),
-                            ),
-                          ],
-                        ),
-                        SizedBox(height: 8),
-
-                        ListView.separated(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: _members.length,
-                          separatorBuilder: (_, _) =>
-                              SizedBox(height: 24),
-                          itemBuilder: (context, index) {
-                            final member = _members[index];
-                            final uid =
-                                member['uid']?.toString() ??
-                                _group.members[index];
-                            final googleName =
-                                ContactCacheService().getContactName(member['uid'], member['displayName']?.toString() ?? 'Unknown');
-                            final name = ContactCacheService().getContactName(uid, googleName);
-                            final photo = member['photoURL']?.toString();
-                            final progress =
-                                _group.readingProgress[uid] ?? 0.0;
-                            final isMe = uid == _currentUserId;
-                            final isAdmin = uid == _group.members.first;
-
-                            final avatarColor = _getAvatarColor(uid);
-                            final initial = name.isNotEmpty
-                                ? name[0].toUpperCase()
-                                : '?';
-
-                            return GestureDetector(
-                              onTap: () {
-                                setState(() {
-                                  _tappedMemberId = (_tappedMemberId == uid)
-                                      ? null
-                                      : uid;
-                                });
-                              },
-                              child: Row(
-                                children: [
-                                  Stack(
-                                    alignment: Alignment.center,
-                                    children: [
-                                      SizedBox(
-                                        width: 44,
-                                        height: 44,
-                                        child: CircularProgressIndicator(
-                                          value: progress,
-                                          strokeWidth: 3,
-                                          backgroundColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.15),
-                                        valueColor:
-                                              AlwaysStoppedAnimation<Color>(
-                                                avatarColor,
-                                              ),
-                                        ),
-                                      ),
-                                      CircleAvatar(
-                                        radius: 18,
-                                        backgroundColor: avatarColor,
-                                        backgroundImage:
-                                            (_tappedMemberId != uid &&
-                                                photo != null &&
-                                                photo.isNotEmpty)
-                                            ? CachedNetworkImageProvider(photo)
-                                            : null,
-                                        child: _tappedMemberId == uid
-                                            ? Text(
-                                                '${(progress * 100).toInt()}%',
-                                                style: TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              )
-                                            : ((photo == null || photo.isEmpty)
-                                                  ? Text(
-                                                      initial,
-                                                      style: TextStyle(
-                                                        color: Colors.white,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                      ),
-                                                    )
-                                                  : null),
-                                      ),
-                                    ],
-                                  ),
-                                  SizedBox(width: 16),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Text(
-                                              isMe ? '$name (You)' : name,
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: isMe
-                                                    ? FontWeight.w600
-                                                    : FontWeight.w500,
-                                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
-                                              ),
-                                            ),
-                                            if (isAdmin) ...[
-                                              SizedBox(width: 6),
-                                              Container(
-                                                padding:
-                                                    EdgeInsets.symmetric(
-                                                      horizontal: 6,
-                                                      vertical: 2,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: AppColors.gradientEnd
-                                                      .withValues(alpha: 0.1),
-                                                  borderRadius:
-                                                      BorderRadius.circular(4),
-                                                ),
-                                                child: Text(
-                                                  'Admin',
-                                                  style: TextStyle(
-                                                    fontSize: 10,
-                                                    color: AppColors.gradientEnd,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
+                const PopupMenuItem(
+                  value: 'report',
+                  child: Text('Report account'),
                 ),
               ],
             ),
     );
   }
+
+  @override
+  void dispose() {
+    _groupSubscription?.cancel();
+    super.dispose();
+  }
 }
 
+class _LifecycleChip extends StatelessWidget {
+  final String lifecycle;
+
+  const _LifecycleChip({required this.lifecycle});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = switch (lifecycle) {
+      'draft' => 'Draft',
+      'scheduled' => 'Scheduled',
+      'completed' => 'Completed',
+      'archived' => 'Archived',
+      _ => 'Active',
+    };
+    final icon = switch (lifecycle) {
+      'scheduled' => Icons.schedule_rounded,
+      'completed' => Icons.check_circle_outline_rounded,
+      'archived' => Icons.archive_outlined,
+      _ => Icons.play_circle_outline_rounded,
+    };
+    return Chip(
+      avatar: Icon(icon, size: 18),
+      label: Text(label),
+      visualDensity: VisualDensity.compact,
+    );
+  }
+}

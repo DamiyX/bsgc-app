@@ -1,0 +1,49 @@
+# Braid design system
+
+## Character
+
+Warm, contemplative, trustworthy, and human. The interface should feel like a well-used study journal shared around a table—not a high-stimulation social feed.
+
+## Semantic color
+
+The source of truth is `BraidSemanticColors` in `lib/theme.dart`.
+
+- Parchment surfaces support Scripture and reflection.
+- Plum identifies Braid and group audience.
+- Blue identifies study contacts.
+- Muted plum identifies private content.
+- Sage is success/progress.
+- Amber is pending/warning.
+- Slate is offline/stale.
+
+Color is never the only carrier of status; pair it with text and icons. Light and dark modes must preserve meaning.
+
+## Typography
+
+Comfortaa is bundled for brand/headings. System text is preferred for long body copy and platform readability. Do not reference an unbundled font. Body text must scale to 200% without fixed-height clipping.
+
+## Components
+
+- Minimum interactive target: 48×48 dp.
+- `BraidAvatar`: cached network image plus deterministic initials fallback.
+- `BraidCoverImage`: cached cover plus deterministic local graphic.
+- Audience row/chip: icon + explicit audience text.
+- Async state: loading, content, empty, cached/offline, recoverable error.
+- Pending outbox row: saved/sending/failed text plus Retry and Discard.
+- Destructive confirmation: specific consequence and non-destructive first action.
+
+## Navigation and icons
+
+Use one Material icon family with outlined unselected and filled selected navigation icons. Icons require tooltips or nearby labels. Primary navigation order is Today, Groups, Journal, Me.
+
+## Motion
+
+Motion is optional and functional. Avoid looping/decorative motion in core flows. Respect the platform’s reduced-motion setting; navigation and status understanding must never depend on animation.
+
+## Accessibility verification
+
+TalkBack/VoiceOver must complete sign-in, invite redemption, onboarding, group entry, reflection send/retry, progress update, settings, report/block, and deletion. Verify keyboard focus, RTL-safe flexible layouts, 200% text, contrast, live error/status announcements, and meaningful media labels.
+
+## Brand asset status
+
+The current optimized mark is retained for MVP continuity. A final braid/book/reflection mark requires design approval, then synchronized launcher, adaptive icon, splash, website, and store artwork generation. Do not ship multiple draft logos as app assets.

@@ -3,7 +3,6 @@ import 'package:intl/intl.dart';
 import '../services/chat_service.dart';
 import 'study_room_screen.dart';
 import '../theme.dart';
-import 'package:flutter/services.dart';
 
 class CreateGroupScreen extends StatefulWidget {
   final ChatService chatService;
@@ -17,7 +16,7 @@ class CreateGroupScreen extends StatefulWidget {
 class _CreateGroupScreenState extends State<CreateGroupScreen> {
   final _formKey = GlobalKey<FormState>();
   String _groupName = '';
-  String _groupType = 'Bible'; // 'Bible' or 'Devotional'
+  String _groupType = 'Bible';
 
   String? _selectedBook;
   String? _selectedTopic;
@@ -177,27 +176,22 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   };
 
   void _selectDateRange() async {
+    final today = DateUtils.dateOnly(DateTime.now());
     final picked = await showDateRangePicker(
       context: context,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(Duration(days: 365 * 5)),
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 365 * 5)),
+      initialDateRange: _startDate != null && _endDate != null
+          ? DateTimeRange(start: _startDate!, end: _endDate!)
+          : null,
       builder: (context, child) {
         return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: AppColors.gradientEnd,
-              secondary: AppColors.gradientEnd,
-              surface: Colors.white,
-              onPrimary: Colors.white,
-              onSurface: Theme.of(context).colorScheme.onSurface,
-            ),
-            dialogBackgroundColor: Colors.white,
-          ),
+          data: Theme.of(context),
           child: child!,
         );
       },
     );
-    if (picked != null) {
+    if (picked != null && mounted) {
       setState(() {
         _startDate = picked.start;
         _endDate = picked.end;
@@ -222,8 +216,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     }
 
     final finalTopic = _groupType == 'Topic'
-        ? (_customTopicController.text.isNotEmpty
-              ? _customTopicController.text
+        ? (_customTopicController.text.trim().isNotEmpty
+              ? _customTopicController.text.trim()
               : _selectedTopic)
         : null;
 
@@ -238,7 +232,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
 
     try {
       final group = await widget.chatService.createGroup(
-        name: _groupName,
+        name: _groupName.trim(),
         description: '',
         groupType: _groupType,
         topic: finalTopic,
@@ -258,7 +252,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
           MaterialPageRoute(
             builder: (_) => StudyRoomScreen(
               group: group,
-              showAddMemberPrompt: true, // Auto-popup Add Member
+              showAddMemberPrompt: true,
             ),
           ),
         );
@@ -279,10 +273,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text('Add Plan', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87))),
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        elevation: 0,
-        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),      ),
+        title: const Text('Create a study'),
+      ),
       body: _isLoading
           ? Center(
               child: CircularProgressIndicator(color: AppColors.gradientEnd),
@@ -291,22 +283,36 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
               padding: EdgeInsets.all(16.0),
               child: Form(
                 key: _formKey,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text(
+                      'Choose one clear focus and a realistic date range. '
+                      'You can invite up to 11 other people after creation.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
                     TextFormField(
                       cursorColor: Theme.of(context).colorScheme.onSurface,
                       style: TextStyle(fontWeight: FontWeight.bold),
                       decoration: InputDecoration(
-                        labelText: 'Group Name',
-                        labelStyle: TextStyle(color: AppColors.primary),
+                        labelText: 'Study name',
+                        hintText: 'Example: John before work',
                         border: const OutlineInputBorder(),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: AppColors.gradientEnd.withValues(alpha: 0.5)),
-                        ),
                       ),
-                      validator: (val) =>
-                          val == null || val.isEmpty ? 'Required' : null,
+                      maxLength: 80,
+                      textInputAction: TextInputAction.next,
+                      validator: (value) {
+                        final name = value?.trim() ?? '';
+                        if (name.isEmpty) return 'Enter a study name.';
+                        if (name.length > 80) {
+                          return 'Use no more than 80 characters.';
+                        }
+                        return null;
+                      },
                       onChanged: (val) => _groupName = val,
                     ),
                     SizedBox(height: 24),
@@ -323,7 +329,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                     _buildPlanTypeCard(
                       title: 'Bible',
                       description:
-                          'Choose one or more Bible books to read in your preferred order',
+                          'Read through one Bible book together',
                       icon: Icons.menu_book,
                       isSelected: _groupType == 'Bible',
                       onTap: () => setState(() => _groupType = 'Bible'),
@@ -346,14 +352,12 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       ),
                       SizedBox(height: 8),
                       DropdownButtonFormField<String>(
-                        decoration: InputDecoration(
-                          border: const OutlineInputBorder(),
-                          focusedBorder: OutlineInputBorder(
-                            borderSide: BorderSide(color: AppColors.gradientEnd.withValues(alpha: 0.5)),
-                          ),
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          labelText: 'Bible book',
                         ),
                         initialValue: _selectedBook,
-                        hint: Text('Choose a Bible Book'),
+                        hint: const Text('Choose a Bible book'),
                         items: _bibleBooks.map((book) {
                           return DropdownMenuItem(
                             value: book,
@@ -369,11 +373,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       ),
                       SizedBox(height: 8),
                       DropdownButtonFormField<String>(
-                        decoration: InputDecoration(
-                          border: const OutlineInputBorder(),
-                          focusedBorder: OutlineInputBorder(
-                            borderSide: BorderSide(color: AppColors.gradientEnd.withValues(alpha: 0.5)),
-                          ),
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          labelText: 'Suggested topic',
                         ),
                         initialValue: _selectedTopic,
                         hint: Text('Choose a Topic'),
@@ -399,12 +401,10 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       TextFormField(
                         controller: _customTopicController,
                         cursorColor: Theme.of(context).colorScheme.onSurface,
-                        decoration: InputDecoration(
+                        maxLength: 200,
+                        decoration: const InputDecoration(
                           hintText: 'Custom topic',
-                          border: const OutlineInputBorder(),
-                          focusedBorder: OutlineInputBorder(
-                            borderSide: BorderSide(color: AppColors.gradientEnd.withValues(alpha: 0.5)),
-                          ),
+                          border: OutlineInputBorder(),
                         ),
                         onChanged: (val) {
                           if (val.isNotEmpty && _selectedTopic != null) {
@@ -434,8 +434,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       ),
                       title: Text(
                         _startDate == null || _endDate == null
-                            ? 'Select Start & End Date'
-                            : '${DateFormat('MMM d, yyyy').format(_startDate!)} - ${DateFormat('MMM d, yyyy').format(_endDate!)}',
+                            ? 'Select start and end dates'
+                            : '${DateFormat('MMM d, yyyy').format(_startDate!)} '
+                                  '– ${DateFormat('MMM d, yyyy').format(_endDate!)}',
                       ),
                       onTap: _selectDateRange,
                     ),
@@ -444,17 +445,10 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                     SizedBox(
                       width: double.infinity,
                       height: 50,
-                      child: ElevatedButton.icon(
-                        onPressed: _createGroup,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.gradientEnd,
-                          foregroundColor: Colors.white,
-                        ),
-                        icon: Icon(Icons.check),
-                        label: Text(
-                          'Create Group & Invite',
-                          style: TextStyle(fontSize: 16),
-                        ),
+                      child: FilledButton.icon(
+                        onPressed: _isLoading ? null : _createGroup,
+                        icon: const Icon(Icons.check_rounded),
+                        label: const Text('Create study'),
                       ),
                     ),
                     SizedBox(height: 24),
@@ -472,52 +466,74 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     required bool isSelected,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: isSelected ? AppColors.primary : Theme.of(context).colorScheme.onSurface,
-            width: isSelected ? 2 : 1,
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: '$title study plan',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: isSelected
+                  ? AppColors.primary
+                  : Theme.of(context).colorScheme.onSurface,
+              width: isSelected ? 2 : 1,
+            ),
+            borderRadius: BorderRadius.circular(12),
+            color: isSelected
+                ? AppColors.primary.withValues(alpha: 0.05)
+                : Theme.of(context).colorScheme.surface,
           ),
-          borderRadius: BorderRadius.circular(12),
-          color: isSelected
-              ? AppColors.primary.withValues(alpha: 0.05)
-              : Theme.of(context).colorScheme.surface,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              icon,
-              color: isSelected ? AppColors.primary : Theme.of(context).colorScheme.onSurfaceVariant,
-              size: 28,
-            ),
-            SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: isSelected ? AppColors.primary : Theme.of(context).colorScheme.onSurface,
-                    ),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    description,
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
-                  ),
-                ],
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                icon,
+                color: isSelected
+                    ? AppColors.primary
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+                size: 28,
               ),
-            ),
-          ],
+              SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: isSelected
+                            ? AppColors.primary
+                            : Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      description,
+                      style: TextStyle(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.54),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _customTopicController.dispose();
+    super.dispose();
   }
 }

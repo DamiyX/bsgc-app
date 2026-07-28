@@ -7,7 +7,7 @@
 		<key>CFBundleDevelopmentRegion</key>
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
 		<key>CFBundleDisplayName</key>
-		<string>Bsgc App</string>
+		<string>Braid</string>
 		<key>CFBundleExecutable</key>
 		<string>$(EXECUTABLE_NAME)</string>
 		<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 		<key>CFBundleInfoDictionaryVersion</key>
 		<string>6.0</string>
 		<key>CFBundleName</key>
-		<string>bsgc_app</string>
+		<string>Braid</string>
 		<key>CFBundlePackageType</key>
 		<string>APPL</string>
 		<key>CFBundleShortVersionString</key>
@@ -47,12 +47,10 @@
 				</array>
 			</dict>
 		</dict>
-		<key>NSCameraUsageDescription</key>
-		<string>This app requires access to your camera to take photos.</string>
 		<key>NSMicrophoneUsageDescription</key>
-		<string>This app requires access to the microphone for voice notes.</string>
-		<key>NSContactsUsageDescription</key>
-		<string>This app requires access to your contacts to invite friends to groups.</string>
+		<string>Braid uses the microphone only when you choose to record a voice reflection.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>Braid opens your photo library only when you choose an image for your profile, group, or reflection.</string>
 		<key>UIApplicationSupportsIndirectInputEvents</key>
 		<true/>
 		<key>UILaunchStoryboardName</key>
@@ -62,8 +60,6 @@
 		<key>UISupportedInterfaceOrientations</key>
 		<array>
 			<string>UIInterfaceOrientationPortrait</string>
-			<string>UIInterfaceOrientationLandscapeLeft</string>
-			<string>UIInterfaceOrientationLandscapeRight</string>
 		</array>
 		<key>UISupportedInterfaceOrientations~ipad</key>
 		<array>

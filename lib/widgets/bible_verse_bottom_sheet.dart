@@ -27,27 +27,31 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
     _loadVerse();
   }
 
-  void _loadVerse() {
+  Future<void> _loadVerse() async {
     setState(() {
       _isLoading = true;
     });
-
-    // In a real app this might be async if it requires parsing on the fly,
-    // but here it's sync. We wrap in Future.microtask for UI smoothness.
-    Future.microtask(() {
+    try {
+      await _bibleService.init();
       final text = _bibleService.getVerseText(
-        _currentTranslation,
-        widget.reference.book,
-        widget.reference.chapter,
-        widget.reference.startVerse,
-        widget.reference.endVerse,
-      );
-
+          _currentTranslation,
+          widget.reference.book,
+          widget.reference.chapter,
+          widget.reference.startVerse,
+          widget.reference.endVerse,
+        );
+      if (!mounted) return;
       setState(() {
         _verseText = text;
         _isLoading = false;
       });
-    });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _verseText = null;
+        _isLoading = false;
+      });
+    }
   }
 
   String getTranslationFullName(String code) {
@@ -56,18 +60,6 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
         return 'King James Version';
       case 'WEB':
         return 'World English Bible';
-      case 'ESV':
-        return 'English Standard Version';
-      case 'BBE':
-        return 'Bible in Basic English';
-      case 'NIV':
-        return 'New International Version';
-      case 'NLT':
-        return 'New Living Translation';
-      case 'MSG':
-        return 'The Message';
-      case 'AMP':
-        return 'Amplified Bible';
       default:
         return code;
     }
@@ -75,13 +67,6 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isOnlineTranslation = [
-      'NIV',
-      'NLT',
-      'MSG',
-      'AMP',
-    ].contains(_currentTranslation);
-
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -148,9 +133,9 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
                     )
                   : _verseText == null
                   ? Text(
-                      isOnlineTranslation
-                          ? 'Loading or Network Error: Please check your internet connection to use this translation. \n\nIf you are offline, please switch to a downloaded version like KJV, WEB, ESV, or BBE.'
-                          : 'Could not find this verse in the database.',
+                      'This verse could not be found in the bundled '
+                      '$_currentTranslation text. KJV and WEB are available '
+                      'offline; Braid does not silently substitute another translation.',
                       style: TextStyle(color: Colors.red, height: 1.5),
                     )
                   : Text(
