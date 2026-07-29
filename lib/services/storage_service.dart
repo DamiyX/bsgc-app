@@ -1,24 +1,60 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:uuid/uuid.dart';
+
+class ManagedMediaAsset {
+  final String assetId;
+  final String storagePath;
+  final String mimeType;
+  final int sizeBytes;
+
+  const ManagedMediaAsset({
+    required this.assetId,
+    required this.storagePath,
+    required this.mimeType,
+    required this.sizeBytes,
+  });
+}
 
 /// Uploads user-generated media only to paths protected by storage.rules.
 class StorageService {
   static final FirebaseStorage _storage = FirebaseStorage.instance;
+  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static const Uuid _uuid = Uuid();
 
   static Future<String> uploadProfileImage({
     required Uint8List bytes,
     required String userId,
     String extension = 'jpg',
-  }) {
-    return _upload(
-      bytes: bytes,
-      path: 'users/$userId/profile/${_assetName(extension)}',
-      contentType: _imageContentType(extension),
-      metadata: {'ownerId': userId},
+  }) async {
+    if (bytes.isEmpty) {
+      throw ArgumentError.value(bytes, 'bytes', 'The upload cannot be empty.');
+    }
+    final path = 'users/$userId/profile/${_assetName(extension)}';
+    final assetId = _managedAssetIdForPath(path);
+    final contentType = _imageContentType(extension);
+    await _storage
+        .ref()
+        .child(path)
+        .putData(
+          bytes,
+          SettableMetadata(
+            contentType: contentType,
+            customMetadata: {'assetId': assetId, 'ownerId': userId},
+            cacheControl: 'private,no-store',
+          ),
+        );
+    await _waitForManagedAsset(
+      assetId: assetId,
+      storagePath: path,
+      ownerId: userId,
+      fallbackMimeType: contentType,
+      fallbackSizeBytes: bytes.length,
     );
+    return path;
   }
 
   static Future<String> uploadGroupCover({
@@ -26,16 +62,39 @@ class StorageService {
     required String groupId,
     required String ownerId,
     String extension = 'jpg',
-  }) {
-    return _upload(
-      bytes: bytes,
-      path: 'groups/$groupId/covers/${_assetName(extension)}',
-      contentType: _imageContentType(extension),
-      metadata: {'ownerId': ownerId, 'groupId': groupId},
+  }) async {
+    if (bytes.isEmpty) {
+      throw ArgumentError.value(bytes, 'bytes', 'The upload cannot be empty.');
+    }
+    final path = 'groups/$groupId/covers/${_assetName(extension)}';
+    final assetId = _managedAssetIdForPath(path);
+    final contentType = _imageContentType(extension);
+    await _storage
+        .ref()
+        .child(path)
+        .putData(
+          bytes,
+          SettableMetadata(
+            contentType: contentType,
+            customMetadata: {
+              'assetId': assetId,
+              'ownerId': ownerId,
+              'groupId': groupId,
+            },
+            cacheControl: 'private,no-store',
+          ),
+        );
+    await _waitForManagedAsset(
+      assetId: assetId,
+      storagePath: path,
+      ownerId: ownerId,
+      fallbackMimeType: contentType,
+      fallbackSizeBytes: bytes.length,
     );
+    return path;
   }
 
-  static Future<String> uploadMessageAsset({
+  static Future<ManagedMediaAsset> uploadMessageAsset({
     required Uint8List bytes,
     required String groupId,
     required String messageId,
@@ -48,58 +107,97 @@ class StorageService {
     if (!RegExp(r'^[A-Za-z0-9_.-]{1,160}$').hasMatch(resolvedAssetId)) {
       throw ArgumentError.value(assetId, 'assetId', 'Invalid asset ID.');
     }
-    return _uploadImmutable(
+    final path = 'groups/$groupId/messages/$messageId/$resolvedAssetId';
+    final managedAssetId = _managedAssetIdForPath(path);
+    return _uploadManagedMessageAsset(
       bytes: bytes,
-      path: 'groups/$groupId/messages/$messageId/$resolvedAssetId',
+      path: path,
       contentType: contentType,
       metadata: {
+        'assetId': managedAssetId,
         'ownerId': ownerId,
         'groupId': groupId,
         'messageId': messageId,
       },
+      managedAssetId: managedAssetId,
+      ownerId: ownerId,
     );
   }
 
-  static Future<String> _upload({
+  static Future<ManagedMediaAsset> _uploadManagedMessageAsset({
     required Uint8List bytes,
     required String path,
     required String contentType,
     required Map<String, String> metadata,
+    required String managedAssetId,
+    required String ownerId,
   }) async {
     if (bytes.isEmpty) {
       throw ArgumentError.value(bytes, 'bytes', 'The upload cannot be empty.');
     }
-
-    final reference = _storage.ref().child(path);
-    final snapshot = await reference.putData(
-      bytes,
-      SettableMetadata(
-        contentType: contentType,
-        customMetadata: metadata,
-        cacheControl: 'private,max-age=31536000,immutable',
-      ),
-    );
-    return snapshot.ref.getDownloadURL();
-  }
-
-  static Future<String> _uploadImmutable({
-    required Uint8List bytes,
-    required String path,
-    required String contentType,
-    required Map<String, String> metadata,
-  }) async {
     final reference = _storage.ref().child(path);
     try {
-      return await reference.getDownloadURL();
+      final existing = await reference.getMetadata();
+      if (existing.customMetadata?['assetId'] != managedAssetId ||
+          existing.customMetadata?['ownerId'] != ownerId) {
+        throw StateError('The existing managed asset identity does not match.');
+      }
     } on FirebaseException catch (error) {
       if (error.code != 'object-not-found') rethrow;
+      await reference.putData(
+        bytes,
+        SettableMetadata(
+          contentType: contentType,
+          customMetadata: metadata,
+          cacheControl: 'private,no-store',
+        ),
+      );
     }
-    return _upload(
-      bytes: bytes,
-      path: path,
-      contentType: contentType,
-      metadata: metadata,
+
+    return _waitForManagedAsset(
+      assetId: managedAssetId,
+      storagePath: path,
+      ownerId: ownerId,
+      fallbackMimeType: contentType,
+      fallbackSizeBytes: bytes.length,
     );
+  }
+
+  static Future<ManagedMediaAsset> _waitForManagedAsset({
+    required String assetId,
+    required String storagePath,
+    required String ownerId,
+    required String fallbackMimeType,
+    required int fallbackSizeBytes,
+  }) async {
+    for (var attempt = 0; attempt < 12; attempt++) {
+      final snapshot = await _firestore
+          .collection('managed_assets')
+          .doc(assetId)
+          .get(const GetOptions(source: Source.server));
+      final data = snapshot.data();
+      if (data != null) {
+        if (data['storagePath'] != storagePath ||
+            data['ownerUid'] != ownerId ||
+            !const ['pending', 'committed'].contains(data['status'])) {
+          throw StateError('Managed asset registration is inconsistent.');
+        }
+        return ManagedMediaAsset(
+          assetId: assetId,
+          storagePath: storagePath,
+          mimeType: data['mimeType']?.toString() ?? fallbackMimeType,
+          sizeBytes: data['sizeBytes'] is num
+              ? (data['sizeBytes'] as num).toInt()
+              : fallbackSizeBytes,
+        );
+      }
+      await Future<void>.delayed(Duration(milliseconds: 150 * (attempt + 1)));
+    }
+    throw StateError('Managed asset registration timed out.');
+  }
+
+  static String _managedAssetIdForPath(String storagePath) {
+    return base64Url.encode(utf8.encode(storagePath)).replaceAll('=', '');
   }
 
   static String _assetName(String extension) {

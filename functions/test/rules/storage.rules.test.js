@@ -6,7 +6,7 @@ const {
   assertSucceeds,
   initializeTestEnvironment,
 } = require("@firebase/rules-unit-testing");
-const { Timestamp, doc, setDoc } = require("firebase/firestore");
+const { Timestamp, doc, setDoc, updateDoc } = require("firebase/firestore");
 const {
   getBytes,
   ref,
@@ -84,7 +84,7 @@ describe("profile media", () => {
     await assertSucceeds(
       uploadBytes(ref(storage, "users/owner/profile/avatar.jpg"), bytes(), {
         contentType: "image/jpeg",
-        customMetadata: { ownerId: "owner" },
+        customMetadata: { assetId: "profile-owner", ownerId: "owner" },
       }),
     );
   });
@@ -99,7 +99,7 @@ describe("profile media", () => {
         bytes(),
         {
           contentType: "image/jpeg",
-          customMetadata: { ownerId: "member" },
+          customMetadata: { assetId: "profile-member", ownerId: "member" },
         },
       ),
     );
@@ -109,7 +109,7 @@ describe("profile media", () => {
         bytes(),
         {
           contentType: "application/octet-stream",
-          customMetadata: { ownerId: "owner" },
+          customMetadata: { assetId: "profile-exe", ownerId: "owner" },
         },
       ),
     );
@@ -129,6 +129,7 @@ describe("group media", () => {
         {
           contentType: "image/jpeg",
           customMetadata: {
+            assetId: "cover-new",
             ownerId: "owner",
             groupId: "group-a",
           },
@@ -142,6 +143,7 @@ describe("group media", () => {
         {
           contentType: "image/jpeg",
           customMetadata: {
+            assetId: "cover-member",
             ownerId: "member",
             groupId: "group-a",
           },
@@ -167,6 +169,7 @@ describe("group media", () => {
     const metadata = {
       contentType: "image/jpeg",
       customMetadata: {
+        assetId: "asset-message-a",
         ownerId: "member",
         groupId: "group-a",
         messageId: "message-a",
@@ -183,6 +186,7 @@ describe("group media", () => {
         {
           contentType: "application/pdf",
           customMetadata: {
+            assetId: "asset-message-b",
             ownerId: "member",
             groupId: "group-a",
             messageId: "message-b",
@@ -200,6 +204,7 @@ describe("group media", () => {
         {
           contentType: "image/jpeg",
           customMetadata: {
+            assetId: "asset-message-c",
             ownerId: "outsider",
             groupId: "group-a",
             messageId: "message-c",
@@ -207,5 +212,30 @@ describe("group media", () => {
         },
       ),
     );
+  });
+
+  test("authenticated SDK reads are revoked when membership is removed", async () => {
+    const member = testEnv.authenticatedContext("member");
+    const path = "groups/group-a/messages/message-revoked/voice.m4a";
+    await assertSucceeds(
+      uploadBytes(ref(member.storage(), path), bytes(), {
+        contentType: "audio/mp4",
+        customMetadata: {
+          assetId: "asset-revoked",
+          ownerId: "member",
+          groupId: "group-a",
+          messageId: "message-revoked",
+        },
+      }),
+    );
+    await assertSucceeds(getBytes(ref(member.storage(), path)));
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(context.firestore(), "groups/group-a"), {
+        members: ["owner"],
+      });
+    });
+
+    await assertFails(getBytes(ref(member.storage(), path)));
   });
 });

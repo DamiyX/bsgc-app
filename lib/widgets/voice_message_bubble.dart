@@ -125,13 +125,15 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   String? get _accountId =>
       widget.accountId ?? FirebaseAuth.instance.currentUser?.uid;
 
-  bool get _isRemoteSource =>
-      Uri.tryParse(widget.audioUrl)?.scheme.toLowerCase() == 'https';
+  bool get _isRemoteSource => const {
+    'https',
+    'firebase-storage',
+  }.contains(Uri.tryParse(widget.audioUrl)?.scheme.toLowerCase());
 
   @override
   void initState() {
     super.initState();
-    _cacheRepository = widget.cacheRepository ?? VoiceCacheService();
+    _cacheRepository = widget.cacheRepository ?? VoiceCacheService.shared;
     _player =
         widget.playbackController ?? AudioplayersVoicePlaybackController();
     _duration = Duration(seconds: widget.durationSeconds.clamp(1, 300));

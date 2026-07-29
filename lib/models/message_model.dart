@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 DateTime? _messageDate(dynamic value) {
@@ -30,15 +32,34 @@ enum MessageType { text, voice, hybrid, image, video, document }
 class MessagePart {
   final MessageType type;
 
-  /// Text content or an HTTPS/file URI for staged media.
+  /// Text, a local draft file URI, or a canonical Firebase Storage path.
   final String content;
+  final String? assetId;
   final int? durationSeconds;
 
   MessagePart({
     required this.type,
     required this.content,
+    this.assetId,
     this.durationSeconds,
   });
+
+  bool get hasCanonicalManagedIdentity {
+    if (type != MessageType.image && type != MessageType.voice) return false;
+    final expectedId = base64Url
+        .encode(utf8.encode(content))
+        .replaceAll('=', '');
+    return RegExp(
+          r'^groups/[A-Za-z0-9_-]{1,160}/messages/[A-Za-z0-9_-]{1,160}/[A-Za-z0-9_.-]{1,160}$',
+        ).hasMatch(content) &&
+        assetId == expectedId;
+  }
+
+  bool get isExternalMediaLink {
+    if (type != MessageType.image && type != MessageType.voice) return false;
+    return Uri.tryParse(content)?.scheme.toLowerCase() == 'https' &&
+        !hasCanonicalManagedIdentity;
+  }
 
   static MessageType _parseMessageType(dynamic typeStr) {
     if (typeStr == 'voice') return MessageType.voice;
@@ -54,6 +75,7 @@ class MessagePart {
     return MessagePart(
       type: _parseMessageType(data['type']),
       content: data['content']?.toString() ?? '',
+      assetId: data['assetId']?.toString(),
       durationSeconds: rawDuration is num ? rawDuration.toInt() : null,
     );
   }
@@ -62,6 +84,7 @@ class MessagePart {
     return {
       'type': type.name,
       'content': content,
+      if (assetId != null) 'assetId': assetId,
       if (durationSeconds != null) 'durationSeconds': durationSeconds,
     };
   }

@@ -549,7 +549,7 @@ class MessageOutboxService {
             (part.type == MessageType.voice
                 ? 'audio/mp4'
                 : 'application/octet-stream');
-        final remoteUrl = await StorageService.uploadMessageAsset(
+        final managedAsset = await StorageService.uploadMessageAsset(
           bytes: bytes,
           groupId: sending.groupId,
           messageId: sending.id,
@@ -561,7 +561,8 @@ class MessageOutboxService {
         uploadedParts.add(
           MessagePart(
             type: part.type,
-            content: remoteUrl,
+            content: managedAsset.storagePath,
+            assetId: managedAsset.assetId,
             durationSeconds: part.durationSeconds,
           ),
         );

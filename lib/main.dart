@@ -78,12 +78,32 @@ class _AppStartupGateState extends State<_AppStartupGate> {
       final firestore = FirebaseFirestore.instance;
       await firestore.clearPersistence();
       firestore.settings = const Settings(persistenceEnabled: false);
-      FlutterError.onError =
-          FirebaseCrashlytics.instance.recordFlutterFatalError;
-      PlatformDispatcher.instance.onError = (error, stack) {
-        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-        return true;
-      };
+      try {
+        final crashlytics = FirebaseCrashlytics.instance;
+        FlutterError.onError = (details) {
+          unawaited(
+            crashlytics
+                .recordFlutterFatalError(details)
+                .catchError(
+                  (Object error) =>
+                      debugPrint('Crash reporting failed: $error'),
+                ),
+          );
+        };
+        PlatformDispatcher.instance.onError = (error, stack) {
+          unawaited(
+            crashlytics
+                .recordError(error, stack, fatal: true)
+                .catchError(
+                  (Object reportingError) =>
+                      debugPrint('Crash reporting failed: $reportingError'),
+                ),
+          );
+          return true;
+        };
+      } catch (error) {
+        debugPrint('Crash reporting initialization failed: $error');
+      }
     }
     unawaited(
       DeepLinkService()

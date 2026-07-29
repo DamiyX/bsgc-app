@@ -1,14 +1,14 @@
 {
   "workflow": "Braid full audit remediation",
   "branch": "codex/bsgc-full-remediation",
-  "current_phase": "Branch review and Android preview",
-  "repository_implementation": "complete within source-controlled scope",
+  "current_phase": "Post-remediation implementation wave 4 verified; awaiting local commit",
+  "repository_implementation": "in progress against docs/post-remediation-audit/05-prioritized-implementation-plan.md",
   "automated_verification": {
     "flutter_format": "pass",
     "flutter_analyze": "pass",
-    "flutter_tests": "4 passed",
-    "functions_tests": "21 passed",
-    "firebase_rules_tests": "26 passed"
+    "flutter_tests": "73 passed",
+    "functions_tests": "44 passed",
+    "firebase_rules_tests": "28 passed"
   },
   "open_gates": [
     "Android emulator and physical-device visual/offline/accessibility review",
@@ -18,6 +18,6 @@
     "production signing and App/Universal Link verification",
     "legal, store, monitoring, and operational approval"
   ],
-  "next_action": "Review the pushed branch using docs/testing/branch-preview-guide.md before any default-branch merge or production deployment.",
-  "updated_at": "2026-07-29T12:15:00+01:00"
+  "next_action": "Commit verified Milestone 6, then implement Milestone 7 migration and abuse-resistance work; continue Milestones 8-12 before final branch review.",
+  "updated_at": "2026-07-29T17:19:36+01:00"
 }

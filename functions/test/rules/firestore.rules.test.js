@@ -102,6 +102,14 @@ async function seedFirestore() {
         createdAt: now(),
         updatedAt: now(),
       }),
+      setDoc(doc(db, "account_deletion_jobs/owner"), {
+        schemaVersion: 1,
+        uid: "owner",
+        status: "queued",
+        phase: "preflight",
+        requestedAt: now(),
+        updatedAt: now(),
+      }),
       setDoc(doc(db, "users_public/contact"), {
         schemaVersion: 2,
         uid: "contact",
@@ -121,6 +129,21 @@ async function seedFirestore() {
         role: "member",
         status: "active",
         joinedAt: now(),
+      }),
+      setDoc(doc(db, "managed_assets/asset-message-a"), {
+        schemaVersion: 1,
+        assetId: "asset-message-a",
+        bucket: "demo-braid-rules.appspot.com",
+        storagePath:
+          "groups/group-a/messages/message-media/attachment.jpg",
+        ownerUid: "member",
+        entityType: "message",
+        entityId: "message-media",
+        groupId: "group-a",
+        mimeType: "image/jpeg",
+        sizeBytes: 8,
+        status: "pending",
+        createdAt: now(),
       }),
       setDoc(doc(db, "insights/insight-a"), insightData()),
       setDoc(doc(db, "users/author/connections/contact"), {
@@ -379,8 +402,30 @@ describe("messages", () => {
         ...validMessage,
         parts: [{
           type: "voice",
-          content: "base64-inline-audio",
+          content: "https://tracker.example/audio.m4a",
           durationSeconds: 10,
+        }],
+      }),
+    );
+    await assertSucceeds(
+      setDoc(doc(db, "groups/group-a/messages/message-media"), {
+        ...validMessage,
+        parts: [{
+          type: "image",
+          content: "groups/group-a/messages/message-media/attachment.jpg",
+          assetId: "asset-message-a",
+          sizeBytes: 8,
+        }],
+      }),
+    );
+    await assertFails(
+      setDoc(doc(db, "groups/group-a/messages/wrong-media-owner"), {
+        ...validMessage,
+        parts: [{
+          type: "image",
+          content: "groups/group-a/messages/message-media/attachment.jpg",
+          assetId: "asset-message-a",
+          sizeBytes: 8,
         }],
       }),
     );
@@ -506,6 +551,18 @@ describe("contacts-only insights and safety controls", () => {
 });
 
 describe("private state and reporting", () => {
+  test("account deletion status is owner-readable and server-written", async () => {
+    const ownerDb = testEnv.authenticatedContext("owner").firestore();
+    const otherDb = testEnv.authenticatedContext("member").firestore();
+    const ownerJob = doc(ownerDb, "account_deletion_jobs/owner");
+
+    await assertSucceeds(getDoc(ownerJob));
+    await assertFails(
+      getDoc(doc(otherDb, "account_deletion_jobs/owner")),
+    );
+    await assertFails(updateDoc(ownerJob, { status: "complete" }));
+  });
+
   test("group mute state is owner-only, bounded, and group-bound", async () => {
     const ownerDb = testEnv.authenticatedContext("owner").firestore();
     const otherDb = testEnv.authenticatedContext("member").firestore();

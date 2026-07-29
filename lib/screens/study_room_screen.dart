@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +16,7 @@ import '../services/audio_service.dart';
 import '../services/chat_service.dart';
 import '../services/draft_service.dart';
 import '../services/message_outbox_service.dart';
+import '../services/voice_cache_service.dart';
 import '../theme.dart';
 import '../widgets/add_member_sheet.dart';
 import '../widgets/braid_media.dart';
@@ -1479,11 +1479,37 @@ class _MessagePartView extends StatelessWidget {
         ),
       );
     }
+    if (!part.hasCanonicalManagedIdentity) {
+      return Padding(
+        padding: const EdgeInsets.all(12),
+        child: Semantics(
+          label: 'External media link. Media is not loaded automatically.',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.link_rounded, size: 18),
+                  SizedBox(width: 6),
+                  Text('External media link'),
+                ],
+              ),
+              const SizedBox(height: 6),
+              SelectableText(
+                part.content,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     if (part.type == MessageType.voice) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         child: VoiceMessageBubble(
-          audioUrl: part.content,
+          audioUrl: 'firebase-storage:///${part.content}',
           isMe: false,
           durationSeconds: part.durationSeconds ?? 1,
           timestamp: DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
@@ -1491,44 +1517,93 @@ class _MessagePartView extends StatelessWidget {
       );
     }
     if (part.type == MessageType.image) {
-      return Padding(
-        padding: const EdgeInsets.all(8),
-        child: Semantics(
-          image: true,
-          label: 'Shared study image',
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: CachedNetworkImage(
-              imageUrl: part.content,
-              width: 280,
-              height: 220,
-              memCacheWidth: 840,
-              fit: BoxFit.cover,
-              placeholder: (_, _) => const SizedBox(
-                width: 280,
-                height: 220,
-                child: Center(child: CircularProgressIndicator()),
-              ),
-              errorWidget: (_, _, _) => Container(
-                width: 280,
-                height: 220,
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                alignment: Alignment.center,
-                child: const Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.image_not_supported_outlined),
-                    SizedBox(height: 6),
-                    Text('Image unavailable offline'),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
+      return _AuthenticatedImagePart(storagePath: part.content);
     }
     return const SizedBox.shrink();
+  }
+}
+
+class _AuthenticatedImagePart extends StatefulWidget {
+  final String storagePath;
+
+  const _AuthenticatedImagePart({required this.storagePath});
+
+  @override
+  State<_AuthenticatedImagePart> createState() =>
+      _AuthenticatedImagePartState();
+}
+
+class _AuthenticatedImagePartState extends State<_AuthenticatedImagePart> {
+  late Future<VoiceCacheEntry> _entry;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() {
+    final accountId = FirebaseAuth.instance.currentUser?.uid;
+    _entry = accountId == null
+        ? Future.error(StateError('Sign in to view this image.'))
+        : VoiceCacheService.shared.prepare(
+            accountId: accountId,
+            sourceUrl: 'firebase-storage:///${widget.storagePath}',
+          );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: Semantics(
+        image: true,
+        label: 'Shared study image',
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: FutureBuilder<VoiceCacheEntry>(
+            future: _entry,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const SizedBox(
+                  width: 280,
+                  height: 220,
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              final entry = snapshot.data;
+              if (snapshot.hasError || entry == null) {
+                return Container(
+                  width: 280,
+                  height: 220,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  alignment: Alignment.center,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.image_not_supported_outlined),
+                      const SizedBox(height: 6),
+                      const Text('Image unavailable or access revoked'),
+                      TextButton(
+                        onPressed: () => setState(_load),
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              return Image.file(
+                entry.file,
+                width: 280,
+                height: 220,
+                cacheWidth: 840,
+                fit: BoxFit.cover,
+              );
+            },
+          ),
+        ),
+      ),
+    );
   }
 }
 

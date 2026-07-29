@@ -20,7 +20,6 @@ const {
   normalizeInsightInput,
   normalizeReportInput,
   optionalString,
-  parseMessageAssetPath,
   requireInteger,
   requireString,
 } = require("./lib/contracts");
@@ -31,6 +30,21 @@ const {
   groupSummaryFromMessage,
   shouldReconcileGroupSummary,
 } = require("./lib/group_summary");
+const {
+  buildGroupCoverAssetRecord,
+  buildMessageAssetRecord,
+  buildProfilePhotoAssetRecord,
+  collectGroupCoverReference,
+  collectMessageAssetReferences,
+  collectProfilePhotoReference,
+  reconcileExpiredManagedAsset,
+  reconcileManagedReferences,
+  registerManagedAsset,
+} = require("./lib/managed_media");
+const {
+  createAccountDeletionHandlers,
+  processDeletionStep,
+} = require("./lib/account_deletion");
 
 admin.initializeApp();
 
@@ -1104,11 +1118,7 @@ exports.archiveStudyGroup = onCall(callableOptions, async (request) => {
 });
 
 exports.deleteCurrentAccount = onCall(
-  {
-    ...callableOptions,
-    timeoutSeconds: 540,
-    memory: "1GiB",
-  },
+  callableOptions,
   async (request) => {
     const uid = authenticatedUid(request);
     const authenticatedAtSeconds = request.auth?.token?.auth_time;
@@ -1120,133 +1130,145 @@ exports.deleteCurrentAccount = onCall(
       );
     }
 
-    const groupsSnapshot = await db
-      .collection("groups")
-      .where("members", "array-contains", uid)
-      .get();
-    const ownedSharedGroups = groupsSnapshot.docs.filter((document) => {
-      const group = document.data();
-      return group.ownerId === uid && (group.members ?? []).length > 1;
-    });
-    if (ownedSharedGroups.length > 0) {
-      throw new HttpsError(
-        "failed-precondition",
-        "Transfer ownership of every shared study before deleting your account.",
-      );
-    }
-
-    for (const groupDocument of groupsSnapshot.docs) {
-      const group = groupDocument.data();
-      if (group.ownerId === uid) {
-        await db.recursiveDelete(groupDocument.ref);
-      } else {
-        await groupDocument.ref.update({
-          members: FieldValue.arrayRemove(uid),
-          [`readingProgress.${uid}`]: FieldValue.delete(),
-          [`userCompletedChapters.${uid}`]: FieldValue.delete(),
-          [`unreadCounts.${uid}`]: FieldValue.delete(),
-        });
-        await groupDocument.ref.collection("members").doc(uid).set({
-          status: "deleted_account",
-          removedAt: Timestamp.now(),
-        }, { merge: true });
-      }
-    }
-
-    const [
-      insightsSnapshot,
-      messagesSnapshot,
-      commentsSnapshot,
-      reactionsSnapshot,
-      blockedBySnapshot,
-      connectionsSnapshot,
-      createdInvitesSnapshot,
-    ] =
-      await Promise.all([
-        db.collection("insights").where("authorUid", "==", uid).get(),
-        db.collectionGroup("messages").where("senderId", "==", uid).get(),
-        db.collectionGroup("comments").where("authorUid", "==", uid).get(),
-        db.collectionGroup("reactions").where("uid", "==", uid).get(),
-        db.collectionGroup("blocks").where("blockedUid", "==", uid).get(),
-        db.collection(`users/${uid}/connections`).get(),
-        db.collection("invites").where("createdBy", "==", uid).get(),
-      ]);
-    for (const insight of insightsSnapshot.docs) {
-      await db.recursiveDelete(insight.ref);
-    }
-
-    const bulkWriter = db.bulkWriter();
-    const reciprocalPrivateSnapshots = connectionsSnapshot.empty
-      ? []
-      : await db.getAll(
-        ...connectionsSnapshot.docs.map(
-          (connection) => db.doc(`users_private/${connection.id}`),
-        ),
-      );
-    for (const message of messagesSnapshot.docs) {
-      bulkWriter.update(message.ref, {
-        senderName: "Deleted account",
-        senderPhotoUrl: FieldValue.delete(),
-        parts: [],
-        isDeleted: true,
-        deletedAt: Timestamp.now(),
-      });
-    }
-    for (const comment of commentsSnapshot.docs) {
-      bulkWriter.delete(comment.ref);
-    }
-    for (const reaction of reactionsSnapshot.docs) {
-      bulkWriter.delete(reaction.ref);
-    }
-    for (const block of blockedBySnapshot.docs) {
-      bulkWriter.delete(block.ref);
-    }
-    for (let index = 0; index < connectionsSnapshot.docs.length; index++) {
-      const connection = connectionsSnapshot.docs[index];
-      bulkWriter.delete(
-        db.doc(`users/${connection.id}/connections/${uid}`),
-      );
-      const reciprocalPrivate = reciprocalPrivateSnapshots[index];
-      if (reciprocalPrivate?.exists
-        && (reciprocalPrivate.data().connectionCount ?? 0) > 0) {
-        bulkWriter.update(reciprocalPrivate.ref, {
-          connectionCount: FieldValue.increment(-1),
+    const jobRef = db.doc(`account_deletion_jobs/${uid}`);
+    const deletionJob = await db.runTransaction(async (transaction) => {
+      const existing = await transaction.get(jobRef);
+      if (existing.exists) {
+        const job = existing.data();
+        if (job.status === "complete") return job;
+        transaction.update(jobRef, {
+          status: "queued",
+          lastError: FieldValue.delete(),
+          retryAfter: FieldValue.delete(),
           updatedAt: Timestamp.now(),
         });
+        return { ...job, status: "queued" };
       }
-    }
-    for (const invite of createdInvitesSnapshot.docs) {
-      bulkWriter.delete(invite.ref);
-    }
-    await bulkWriter.close();
+      const now = Timestamp.now();
+      const job = {
+        schemaVersion: 1,
+        uid,
+        status: "queued",
+        phase: "preflight",
+        completedPages: 0,
+        requestedAt: now,
+        updatedAt: now,
+      };
+      transaction.set(jobRef, job);
+      transaction.set(db.doc(`users_private/${uid}`), {
+        deletionState: "requested",
+        updatedAt: now,
+      }, { merge: true });
+      return job;
+    });
+    return {
+      deleted: deletionJob.status === "complete",
+      status: deletionJob.status,
+      phase: deletionJob.phase,
+    };
+  },
+);
 
-    await mapInChunks(
-      messagesSnapshot.docs,
-      20,
-      (message) => {
-        const groupId = message.ref.parent.parent?.id;
-        if (!groupId) return Promise.resolve();
-        return admin.storage().bucket().deleteFiles({
-          prefix: `groups/${groupId}/messages/${message.id}/`,
-          force: true,
-        });
-      },
-    );
+async function runAccountDeletionJob(uid) {
+  const jobRef = db.doc(`account_deletion_jobs/${uid}`);
+  const lease = await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(jobRef);
+    if (!snapshot.exists || snapshot.data().status === "complete") return null;
+    const job = snapshot.data();
+    const nowMillis = Date.now();
+    if (job.status === "running" &&
+        job.leaseUntil?.toMillis?.() > nowMillis) {
+      return null;
+    }
+    transaction.update(jobRef, {
+      status: "running",
+      leaseUntil: Timestamp.fromMillis(nowMillis + 5 * 60 * 1000),
+      attempts: FieldValue.increment(1),
+      updatedAt: Timestamp.now(),
+    });
+    return job;
+  });
+  if (!lease) return;
 
-    await Promise.all([
-      db.recursiveDelete(db.doc(`users/${uid}`)),
-      db.recursiveDelete(db.doc(`rate_limits/${uid}`)),
-      db.doc(`users_public/${uid}`).delete(),
-      db.doc(`users_private/${uid}`).delete(),
-      admin.storage().bucket().deleteFiles({
-        prefix: `users/${uid}/`,
-        force: true,
+  try {
+    const result = await processDeletionStep({
+      job: lease,
+      handlers: createAccountDeletionHandlers({
+        uid,
+        db,
+        auth: admin.auth(),
+        bucket: admin.storage().bucket(),
+        FieldValue,
+        FieldPath: admin.firestore.FieldPath,
+        Timestamp,
+        job: lease,
       }),
-    ]);
-    await admin.auth().deleteUser(uid);
+    });
+    await jobRef.update({
+      status: result.complete ? "complete" : "queued",
+      phase: result.phase,
+      completedPages: result.completedPages,
+      processedInLastPage: result.processedInLastPage,
+      cursor: result.cursor == null
+        ? FieldValue.delete()
+        : result.cursor,
+      leaseUntil: FieldValue.delete(),
+      lastError: FieldValue.delete(),
+      updatedAt: Timestamp.now(),
+      ...(result.complete ? { completedAt: Timestamp.now() } : {}),
+    });
+  } catch (error) {
+    const blocked = error?.code === "failed-precondition";
+    await jobRef.update({
+      status: blocked ? "blocked" : "retrying",
+      leaseUntil: FieldValue.delete(),
+      lastError: blocked
+        ? error.message
+        : "Deletion paused after a temporary failure.",
+      retryAfter: blocked
+        ? FieldValue.delete()
+        : Timestamp.fromMillis(Date.now() + 5 * 60 * 1000),
+      updatedAt: Timestamp.now(),
+    });
+    logger.error("Account deletion step failed", {
+      uid,
+      phase: lease.phase,
+      blocked,
+      error,
+    });
+  }
+}
 
-    logger.info("Account deletion completed", { uid });
-    return { deleted: true };
+exports.processAccountDeletionJob = onDocumentWritten(
+  {
+    document: "account_deletion_jobs/{uid}",
+    region: "us-central1",
+  },
+  async (event) => {
+    const job = event.data?.after.data();
+    if (!job || job.status !== "queued") return;
+    await runAccountDeletionJob(event.params.uid);
+  },
+);
+
+exports.resumeAccountDeletionJobs = onSchedule(
+  {
+    schedule: "every 5 minutes",
+    region: "us-central1",
+    timeZone: "Etc/UTC",
+    retryCount: 3,
+  },
+  async () => {
+    const snapshot = await db.collection("account_deletion_jobs")
+      .where("status", "in", ["queued", "running", "retrying"])
+      .limit(20)
+      .get();
+    await mapInChunks(snapshot.docs, 5, async (document) => {
+      const job = document.data();
+      if (job.status === "retrying" &&
+          job.retryAfter?.toMillis?.() > Date.now()) return;
+      await runAccountDeletionJob(document.id);
+    });
   },
 );
 
@@ -1286,34 +1308,121 @@ exports.advanceGroupLifecycle = onSchedule(
   },
 );
 
-exports.trackPendingMessageMedia = onObjectFinalized(
+exports.trackManagedMedia = onObjectFinalized(
   {
     region: "us-central1",
     retry: true,
   },
   async (event) => {
     const object = event.data;
-    const identity = parseMessageAssetPath(object.name);
-    if (!identity || !object.bucket) return;
+    const record = buildMessageAssetRecord(object)
+      ?? buildGroupCoverAssetRecord(object)
+      ?? buildProfilePhotoAssetRecord(object);
+    if (!record) return;
+    await registerManagedAsset({
+      firestore: db,
+      record,
+      now: Timestamp.now(),
+    });
+  },
+);
 
-    const messageRef = db.doc(
-      `groups/${identity.groupId}/messages/${identity.messageId}`,
+exports.reconcileMessageManagedMedia = onDocumentWritten(
+  {
+    document: "groups/{groupId}/messages/{messageId}",
+    region: "us-central1",
+    retry: true,
+  },
+  async (event) => {
+    const { groupId, messageId } = event.params;
+    const beforeReferences = collectMessageAssetReferences(
+      event.data?.before.data(),
+      { groupId, messageId },
     );
-    if ((await messageRef.get()).exists) return;
+    const afterReferences = collectMessageAssetReferences(
+      event.data?.after.data(),
+      { groupId, messageId },
+    );
+    if (beforeReferences.size === 0 && afterReferences.size === 0) return;
+    await reconcileManagedReferences({
+      firestore: db,
+      storage: admin.storage(),
+      beforeReferences,
+      afterReferences,
+      expectedEntityType: "message",
+      expectedEntityId: messageId,
+      expectedGroupId: groupId,
+      now: Timestamp.now(),
+    });
+  },
+);
 
-    const manifestId = Buffer.from(object.name, "utf8").toString("base64url");
-    await db.doc(`pending_message_media/${manifestId}`).set({
-      schemaVersion: 1,
-      objectName: object.name,
-      bucket: object.bucket,
-      groupId: identity.groupId,
-      messageId: identity.messageId,
-      ownerId: typeof object.metadata?.ownerId === "string"
-        ? object.metadata.ownerId
-        : null,
-      uploadedAt: Timestamp.fromDate(
-        object.timeCreated ? new Date(object.timeCreated) : new Date(),
-      ),
+exports.reconcileGroupCoverManagedMedia = onDocumentWritten(
+  {
+    document: "groups/{groupId}",
+    region: "us-central1",
+    retry: true,
+  },
+  async (event) => {
+    const { groupId } = event.params;
+    const beforeReferences = collectGroupCoverReference(
+      event.data?.before.data(),
+      { groupId },
+    );
+    const afterReferences = collectGroupCoverReference(
+      event.data?.after.data(),
+      { groupId },
+    );
+    if (
+      beforeReferences.size === afterReferences.size &&
+      [...beforeReferences.keys()].every((id) => afterReferences.has(id))
+    ) {
+      return;
+    }
+    await reconcileManagedReferences({
+      firestore: db,
+      storage: admin.storage(),
+      beforeReferences,
+      afterReferences,
+      expectedEntityType: "group_cover",
+      expectedEntityId: groupId,
+      expectedGroupId: groupId,
+      now: Timestamp.now(),
+    });
+  },
+);
+
+exports.reconcileProfilePhotoManagedMedia = onDocumentWritten(
+  {
+    document: "users_public/{ownerUid}",
+    region: "us-central1",
+    retry: true,
+  },
+  async (event) => {
+    const { ownerUid } = event.params;
+    const beforeReferences = collectProfilePhotoReference(
+      event.data?.before.data(),
+      { ownerUid },
+    );
+    const afterReferences = collectProfilePhotoReference(
+      event.data?.after.data(),
+      { ownerUid },
+    );
+    if (
+      beforeReferences.size === afterReferences.size &&
+      [...beforeReferences.keys()].every((id) => afterReferences.has(id))
+    ) {
+      return;
+    }
+    await reconcileManagedReferences({
+      firestore: db,
+      storage: admin.storage(),
+      beforeReferences,
+      afterReferences,
+      expectedEntityType: "profile_photo",
+      expectedEntityId: ownerUid,
+      expectedGroupId: null,
+      now: Timestamp.now(),
     });
   },
 );
@@ -1341,7 +1450,8 @@ exports.cleanupExpiredData = onSchedule(
       feedSnapshot,
       eventSnapshot,
       rateSnapshot,
-      mediaSnapshot,
+      pendingMediaSnapshot,
+      deletionMediaSnapshot,
     ] = await Promise.all([
       db.collection("invites")
         .where("expiresAt", "<=", now)
@@ -1359,8 +1469,13 @@ exports.cleanupExpiredData = onSchedule(
         .where("windowStartedAt", "<=", oldRateLimitCutoff)
         .limit(400)
         .get(),
-      db.collection("pending_message_media")
-        .where("uploadedAt", "<=", orphanMediaCutoff)
+      db.collection("managed_assets")
+        .where("status", "==", "pending")
+        .where("createdAt", "<=", orphanMediaCutoff)
+        .limit(250)
+        .get(),
+      db.collection("managed_assets")
+        .where("status", "==", "delete_pending")
         .limit(250)
         .get(),
     ]);
@@ -1377,23 +1492,20 @@ exports.cleanupExpiredData = onSchedule(
       }
     }
 
+    let committedManagedMediaCount = 0;
     let removedOrphanMediaCount = 0;
-    for (const document of mediaSnapshot.docs) {
-      const media = document.data();
-      const identity = parseMessageAssetPath(media.objectName);
-      if (!identity || typeof media.bucket !== "string") {
-        bulkWriter.delete(document.ref);
-        continue;
-      }
-      const messageExists = (await db.doc(
-        `groups/${identity.groupId}/messages/${identity.messageId}`,
-      ).get()).exists;
-      if (!messageExists) {
-        await admin.storage().bucket(media.bucket).file(media.objectName)
-          .delete({ ignoreNotFound: true });
-        removedOrphanMediaCount += 1;
-      }
-      bulkWriter.delete(document.ref);
+    for (const document of [
+      ...pendingMediaSnapshot.docs,
+      ...deletionMediaSnapshot.docs,
+    ]) {
+      const result = await reconcileExpiredManagedAsset({
+        firestore: db,
+        storage: admin.storage(),
+        assetDocument: document,
+        now,
+      });
+      if (result === "committed") committedManagedMediaCount += 1;
+      if (result === "deleted") removedOrphanMediaCount += 1;
     }
     await bulkWriter.close();
 
@@ -1402,7 +1514,9 @@ exports.cleanupExpiredData = onSchedule(
       expiredFeedPointerCount: feedSnapshot.size,
       oldMessageEventCount: eventSnapshot.size,
       oldRateLimitCount: rateSnapshot.size,
-      reviewedPendingMediaCount: mediaSnapshot.size,
+      reviewedPendingMediaCount: pendingMediaSnapshot.size,
+      retriedMediaDeletionCount: deletionMediaSnapshot.size,
+      committedManagedMediaCount,
       removedOrphanMediaCount,
     });
   },

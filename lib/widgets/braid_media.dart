@@ -1,5 +1,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
+import '../services/media_reference_policy.dart';
+import '../services/voice_cache_service.dart';
 
 class BraidAvatar extends StatelessWidget {
   final String identity;
@@ -30,7 +34,16 @@ class BraidAvatar extends StatelessWidget {
         dimension: radius * 2,
         child: normalizedUrl.isEmpty
             ? fallback
-            : CachedNetworkImage(
+            : isCanonicalProfilePhotoPath(normalizedUrl, identity)
+            ? _AuthenticatedCoverImage(
+                storagePath: normalizedUrl,
+                fit: BoxFit.cover,
+                fallback: fallback,
+                cacheWidth: (radius * 4).round(),
+                cacheHeight: (radius * 4).round(),
+              )
+            : isAllowedLegacyProfileUrl(normalizedUrl, identity)
+            ? CachedNetworkImage(
                 imageUrl: normalizedUrl,
                 fit: BoxFit.cover,
                 memCacheWidth: (radius * 4).round(),
@@ -38,7 +51,8 @@ class BraidAvatar extends StatelessWidget {
                 placeholder: (_, _) => fallback,
                 errorWidget: (_, _, _) => fallback,
                 fadeInDuration: const Duration(milliseconds: 120),
-              ),
+              )
+            : fallback,
       ),
     );
 
@@ -107,17 +121,73 @@ class BraidCoverImage extends StatelessWidget {
           height: height,
           child: normalizedUrl.isEmpty
               ? fallback
-              : CachedNetworkImage(
-                  imageUrl: normalizedUrl,
+              : isCanonicalGroupCoverPath(normalizedUrl, identity)
+              ? _AuthenticatedCoverImage(
+                  storagePath: normalizedUrl,
                   fit: fit,
-                  memCacheWidth: (width * 2).round(),
-                  memCacheHeight: (height * 2).round(),
-                  placeholder: (_, _) => fallback,
-                  errorWidget: (_, _, _) => fallback,
-                  fadeInDuration: const Duration(milliseconds: 140),
-                ),
+                  fallback: fallback,
+                  cacheWidth: (width * 2).round(),
+                  cacheHeight: (height * 2).round(),
+                )
+              : fallback,
         ),
       ),
+    );
+  }
+}
+
+class _AuthenticatedCoverImage extends StatefulWidget {
+  final String storagePath;
+  final BoxFit fit;
+  final Widget fallback;
+  final int cacheWidth;
+  final int cacheHeight;
+
+  const _AuthenticatedCoverImage({
+    required this.storagePath,
+    required this.fit,
+    required this.fallback,
+    required this.cacheWidth,
+    required this.cacheHeight,
+  });
+
+  @override
+  State<_AuthenticatedCoverImage> createState() =>
+      _AuthenticatedCoverImageState();
+}
+
+class _AuthenticatedCoverImageState extends State<_AuthenticatedCoverImage> {
+  late final Future<VoiceCacheEntry> _entry = _load();
+
+  Future<VoiceCacheEntry> _load() {
+    final accountId = FirebaseAuth.instance.currentUser?.uid;
+    if (accountId == null) {
+      return Future.error(StateError('Sign in to view this cover.'));
+    }
+    return VoiceCacheService.shared.prepare(
+      accountId: accountId,
+      sourceUrl: 'firebase-storage:///${widget.storagePath}',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<VoiceCacheEntry>(
+      future: _entry,
+      builder: (context, snapshot) {
+        final entry = snapshot.data;
+        if (snapshot.connectionState != ConnectionState.done ||
+            snapshot.hasError ||
+            entry == null) {
+          return widget.fallback;
+        }
+        return Image.file(
+          entry.file,
+          fit: widget.fit,
+          cacheWidth: widget.cacheWidth,
+          cacheHeight: widget.cacheHeight,
+        );
+      },
     );
   }
 }

@@ -123,7 +123,8 @@ class AuthService {
               ),
               (
                 name: 'voice cache',
-                run: () => VoiceCacheService().clearAllForUser(signingOutUid),
+                run: () =>
+                    VoiceCacheService.shared.clearAllForUser(signingOutUid),
               ),
             ];
         for (final cleanup in cleanupOperations) {

@@ -7,6 +7,7 @@ import '../screens/view_insight_screen.dart';
 import '../services/contact_cache_service.dart';
 import '../theme.dart';
 import 'braid_media.dart';
+import 'current_user_avatar.dart';
 
 class InsightsRow extends StatefulWidget {
   final bool embedded;
@@ -216,10 +217,10 @@ class _InsightsRowState extends State<InsightsRow> {
                       shape: BoxShape.circle,
                       color: Theme.of(context).scaffoldBackgroundColor,
                     ),
-                    child: BraidAvatar(
-                      identity: user?.uid ?? 'me',
-                      displayName: user?.displayName ?? 'You',
-                      imageUrl: user?.photoURL,
+                    child: CurrentUserAvatar(
+                      userId: user?.uid ?? '',
+                      fallbackDisplayName: user?.displayName ?? 'You',
+                      fallbackPhotoUrl: user?.photoURL,
                       radius: 40,
                     ),
                   ),

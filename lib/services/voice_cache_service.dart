@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
 enum VoiceCacheFailureKind {
@@ -35,6 +36,18 @@ VoiceCacheFailureKind classifyVoiceCacheFailure(
 }) {
   if (error is VoiceCacheException) return error.kind;
   if (error is FormatException) return VoiceCacheFailureKind.unsupported;
+  if (error is FirebaseException) {
+    return switch (error.code) {
+      'unauthorized' ||
+      'unauthenticated' => VoiceCacheFailureKind.authorization,
+      'object-not-found' => VoiceCacheFailureKind.missing,
+      'retry-limit-exceeded' || 'unknown' =>
+        hasCachedFile
+            ? VoiceCacheFailureKind.transient
+            : VoiceCacheFailureKind.offlineMiss,
+      _ => VoiceCacheFailureKind.transient,
+    };
+  }
   if (error is VoiceHttpException) {
     if (error.statusCode == HttpStatus.unauthorized ||
         error.statusCode == HttpStatus.forbidden) {
@@ -109,6 +122,8 @@ typedef VoiceDownload = Future<VoiceDownloadResponse> Function(Uri uri);
 typedef VoiceCacheRootProvider = Future<Directory> Function(String accountId);
 
 class VoiceCacheService implements VoiceCacheRepository {
+  static final VoiceCacheService shared = VoiceCacheService();
+
   VoiceCacheService({
     this.maxBytes = 50 * 1024 * 1024,
     this.expiry = const Duration(days: 14),
@@ -123,6 +138,8 @@ class VoiceCacheService implements VoiceCacheRepository {
   final DateTime Function() _now;
   final VoiceCacheRootProvider? cacheRootProvider;
   final VoiceDownload _download;
+  final Map<String, Future<VoiceCacheEntry>> _inFlight = {};
+  final Map<String, int> _accountGenerations = {};
 
   static const _supportedExtensions = {
     'aac',
@@ -132,6 +149,10 @@ class VoiceCacheService implements VoiceCacheRepository {
     'opus',
     'wav',
     'webm',
+    'jpg',
+    'jpeg',
+    'png',
+    'webp',
   };
 
   @override
@@ -169,6 +190,33 @@ class VoiceCacheService implements VoiceCacheRepository {
     required String accountId,
     required String sourceUrl,
     void Function(VoiceCacheProgress progress)? onProgress,
+  }) {
+    final operationKey = '$accountId\u0000$sourceUrl';
+    final current = _inFlight[operationKey];
+    if (current != null) return current;
+
+    final generation = _accountGenerations[accountId] ?? 0;
+    late final Future<VoiceCacheEntry> operation;
+    operation =
+        _prepare(
+          accountId: accountId,
+          sourceUrl: sourceUrl,
+          generation: generation,
+          onProgress: onProgress,
+        ).whenComplete(() {
+          if (identical(_inFlight[operationKey], operation)) {
+            _inFlight.remove(operationKey);
+          }
+        });
+    _inFlight[operationKey] = operation;
+    return operation;
+  }
+
+  Future<VoiceCacheEntry> _prepare({
+    required String accountId,
+    required String sourceUrl,
+    required int generation,
+    void Function(VoiceCacheProgress progress)? onProgress,
   }) async {
     final cached = await lookup(accountId: accountId, sourceUrl: sourceUrl);
     if (cached != null) {
@@ -187,36 +235,75 @@ class VoiceCacheService implements VoiceCacheRepository {
     if (await temporary.exists()) await temporary.delete();
     IOSink? sink;
     try {
-      final response = await _download(location.uri);
-      sink = temporary.openWrite();
-      var receivedBytes = 0;
-      await for (final chunk in response.bytes) {
-        receivedBytes += chunk.length;
-        if (receivedBytes > maxBytes) {
+      int receivedBytes;
+      int? expectedBytes;
+      if (location.uri.scheme == 'firebase-storage') {
+        final storagePath = location.uri.path.substring(1);
+        final reference = FirebaseStorage.instance.ref().child(storagePath);
+        final metadata = await reference.getMetadata();
+        _requireCurrentGeneration(accountId, generation);
+        expectedBytes = metadata.size;
+        if (expectedBytes == null || expectedBytes <= 0) {
+          throw const VoiceCacheException(
+            VoiceCacheFailureKind.missing,
+            'The managed media object is empty or unavailable.',
+          );
+        }
+        if (expectedBytes > maxBytes) {
           throw const VoiceCacheException(
             VoiceCacheFailureKind.transient,
             'This recording is larger than the offline cache limit.',
           );
         }
-        sink.add(chunk);
-        onProgress?.call(
-          VoiceCacheProgress(
-            receivedBytes: receivedBytes,
-            totalBytes: response.contentLength,
-          ),
-        );
+        final task = reference.writeToFile(temporary);
+        final subscription = task.snapshotEvents.listen((snapshot) {
+          onProgress?.call(
+            VoiceCacheProgress(
+              receivedBytes: snapshot.bytesTransferred,
+              totalBytes: snapshot.totalBytes,
+            ),
+          );
+        });
+        try {
+          await task;
+        } finally {
+          await subscription.cancel();
+        }
+        receivedBytes = await temporary.length();
+      } else {
+        final response = await _download(location.uri);
+        _requireCurrentGeneration(accountId, generation);
+        expectedBytes = response.contentLength;
+        sink = temporary.openWrite();
+        receivedBytes = 0;
+        await for (final chunk in response.bytes) {
+          receivedBytes += chunk.length;
+          if (receivedBytes > maxBytes) {
+            throw const VoiceCacheException(
+              VoiceCacheFailureKind.transient,
+              'This recording is larger than the offline cache limit.',
+            );
+          }
+          sink.add(chunk);
+          onProgress?.call(
+            VoiceCacheProgress(
+              receivedBytes: receivedBytes,
+              totalBytes: expectedBytes,
+            ),
+          );
+        }
+        await sink.flush();
+        await sink.close();
+        sink = null;
       }
-      await sink.flush();
-      await sink.close();
-      sink = null;
       if (receivedBytes == 0 ||
-          (response.contentLength != null &&
-              response.contentLength != receivedBytes)) {
+          (expectedBytes != null && expectedBytes != receivedBytes)) {
         throw const VoiceCacheException(
           VoiceCacheFailureKind.transient,
           'The recording download was incomplete.',
         );
       }
+      _requireCurrentGeneration(accountId, generation);
       await temporary.rename(location.mediaFile.path);
       final now = _now().toUtc();
       await _writeMetadata(
@@ -283,8 +370,17 @@ class VoiceCacheService implements VoiceCacheRepository {
   }
 
   Future<void> clearAllForUser(String accountId) async {
+    _accountGenerations[accountId] = (_accountGenerations[accountId] ?? 0) + 1;
     final root = await _root(accountId);
     if (await root.exists()) await root.delete(recursive: true);
+  }
+
+  void _requireCurrentGeneration(String accountId, int generation) {
+    if ((_accountGenerations[accountId] ?? 0) == generation) return;
+    throw const VoiceCacheException(
+      VoiceCacheFailureKind.authorization,
+      'This account session ended before the download completed.',
+    );
   }
 
   Future<_VoiceCacheLocation> _location(
@@ -298,12 +394,18 @@ class VoiceCacheService implements VoiceCacheRepository {
         .last
         .toLowerCase();
     if (uri == null ||
-        uri.scheme != 'https' ||
+        !const {'https', 'firebase-storage'}.contains(uri.scheme) ||
         extension == null ||
         !_supportedExtensions.contains(extension)) {
       throw const VoiceCacheException(
         VoiceCacheFailureKind.unsupported,
         'This recording format is not supported.',
+      );
+    }
+    if (uri.scheme == 'firebase-storage' && !_isCanonicalManagedPath(uri)) {
+      throw const VoiceCacheException(
+        VoiceCacheFailureKind.unsupported,
+        'The managed media path is invalid.',
       );
     }
     final fingerprint = _fingerprint(sourceUrl);
@@ -317,6 +419,14 @@ class VoiceCacheService implements VoiceCacheRepository {
       mediaFile: mediaFile,
       metadataFile: File('${mediaFile.path}.json'),
     );
+  }
+
+  bool _isCanonicalManagedPath(Uri uri) {
+    if (uri.host.isNotEmpty || uri.hasQuery || uri.hasFragment) return false;
+    final path = uri.path.startsWith('/') ? uri.path.substring(1) : uri.path;
+    return RegExp(
+      r'^(users/[A-Za-z0-9_-]{1,160}/profile/[A-Za-z0-9_.-]{1,160}|groups/[A-Za-z0-9_-]{1,160}/covers/[A-Za-z0-9_.-]{1,160}|groups/[A-Za-z0-9_-]{1,160}/messages/[A-Za-z0-9_-]{1,160}/[A-Za-z0-9_.-]{1,160})$',
+    ).hasMatch(path);
   }
 
   Future<Directory> _root(String accountId) async {

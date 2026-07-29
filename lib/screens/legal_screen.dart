@@ -69,7 +69,12 @@ class LegalScreen extends StatelessWidget {
     ),
     (
       'Storage and offline data',
-      'The app caches previously viewed media and Firestore data so meaningful fallbacks and some content remain available offline. Drafts and failed media uploads can be stored locally per account. Sign-out clears Braid’s private draft, outbox, and image caches on that device.',
+      'The app can keep previously authorized media in a bounded, '
+          'account-scoped cache. Private Firestore data is not persisted to disk; '
+          'content already loaded may remain only for the current app session. '
+          'Drafts and failed media uploads can be stored locally per account. '
+          'Sign-out clears that account’s drafts, outbox, and media caches on '
+          'the device.',
     ),
     (
       'Notifications',
@@ -77,7 +82,13 @@ class LegalScreen extends StatelessWidget {
     ),
     (
       'Deletion and safety',
-      'You can delete your account from Settings after recent authentication. Owners must transfer shared groups first. Safety reports are retained for moderation and abuse prevention according to the operator’s final retention schedule.',
+      'You can request account deletion from Settings after recent '
+          'authentication. Owners must transfer shared groups first. Braid '
+          'processes deletion as a resumable background job and removes managed '
+          'server media before discarding its cleanup references. Removing access '
+          'cannot erase copies another recipient already downloaded. Safety '
+          'reports are anonymized or retained for moderation and abuse prevention '
+          'according to the operator’s final retention schedule.',
     ),
     (
       'Before external beta',

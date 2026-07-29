@@ -298,12 +298,44 @@ service cloud.firestore {
         && validGroupDocument(request.resource.data);
     }
 
-    function validMessagePart(part) {
+    function managedMessageAsset(part, groupId, messageId, senderId) {
+      let asset = get(
+        /databases/$(database)/documents/managed_assets/$(part.assetId)
+      ).data;
+      return part.keys().hasAny(['assetId'])
+        && part.assetId is string
+        && part.assetId.size() >= 1
+        && part.assetId.size() <= 768
+        && part.content.matches(
+          'groups/' + groupId + '/messages/' + messageId
+            + '/[A-Za-z0-9_.-]{1,160}'
+        )
+        && asset.assetId == part.assetId
+        && asset.storagePath == part.content
+        && asset.ownerUid == senderId
+        && asset.entityType == 'message'
+        && asset.entityId == messageId
+        && asset.groupId == groupId
+        && asset.status in ['pending', 'committed']
+        && (
+          (part.type == 'image'
+            && asset.mimeType.matches('image/(jpeg|png|webp)')
+            && asset.sizeBytes <= 10 * 1024 * 1024)
+          || (part.type == 'voice'
+            && asset.mimeType.matches(
+              'audio/(aac|m4a|mp4|mpeg|ogg|wav|webm)'
+            )
+            && asset.sizeBytes <= 25 * 1024 * 1024)
+        );
+    }
+
+    function validMessagePart(part, groupId, messageId, senderId) {
       return part is map
         && part.keys().hasAll(['type', 'content'])
         && part.keys().hasOnly([
           'type',
           'content',
+          'assetId',
           'durationSeconds',
           'fileName',
           'sizeBytes'
@@ -312,7 +344,11 @@ service cloud.firestore {
         && part.content is string
         && part.content.size() >= 1
         && part.content.size() <= 8000
-        && (part.type == 'text' || part.content.matches('https://.+'))
+        && (
+          (part.type == 'text' && !part.keys().hasAny(['assetId']))
+          || (part.type in ['voice', 'image']
+            && managedMessageAsset(part, groupId, messageId, senderId))
+        )
         && (
           (part.type == 'voice'
             && part.keys().hasAny(['durationSeconds'])
@@ -329,7 +365,7 @@ service cloud.firestore {
             && part.sizeBytes <= 25 * 1024 * 1024));
     }
 
-    function validMessageCreate(data) {
+    function validMessageCreate(data, groupId, messageId) {
       return data.keys().hasAll([
           'schemaVersion',
           'senderId',
@@ -373,16 +409,24 @@ service cloud.firestore {
         && data.parts is list
         && data.parts.size() >= 1
         && data.parts.size() <= 4
-        && validMessagePart(data.parts[0])
-        && (data.parts.size() < 2 || validMessagePart(data.parts[1]))
-        && (data.parts.size() < 3 || validMessagePart(data.parts[2]))
-        && (data.parts.size() < 4 || validMessagePart(data.parts[3]))
+        && validMessagePart(
+          data.parts[0], groupId, messageId, data.senderId
+        )
+        && (data.parts.size() < 2 || validMessagePart(
+          data.parts[1], groupId, messageId, data.senderId
+        ))
+        && (data.parts.size() < 3 || validMessagePart(
+          data.parts[2], groupId, messageId, data.senderId
+        ))
+        && (data.parts.size() < 4 || validMessagePart(
+          data.parts[3], groupId, messageId, data.senderId
+        ))
         && data.timestamp == request.time
         && (!data.keys().hasAny(['isEdited']) || data.isEdited == false)
         && (!data.keys().hasAny(['isDeleted']) || data.isDeleted == false);
     }
 
-    function canEditMessage() {
+    function canEditMessage(groupId, messageId) {
       return resource.data.senderId == request.auth.uid
         && request.time < resource.data.timestamp + duration.value(15, 'm')
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -393,13 +437,33 @@ service cloud.firestore {
         && request.resource.data.parts is list
         && request.resource.data.parts.size() >= 1
         && request.resource.data.parts.size() <= 4
-        && validMessagePart(request.resource.data.parts[0])
+        && validMessagePart(
+          request.resource.data.parts[0],
+          groupId,
+          messageId,
+          request.resource.data.senderId
+        )
         && (request.resource.data.parts.size() < 2
-          || validMessagePart(request.resource.data.parts[1]))
+          || validMessagePart(
+            request.resource.data.parts[1],
+            groupId,
+            messageId,
+            request.resource.data.senderId
+          ))
         && (request.resource.data.parts.size() < 3
-          || validMessagePart(request.resource.data.parts[2]))
+          || validMessagePart(
+            request.resource.data.parts[2],
+            groupId,
+            messageId,
+            request.resource.data.senderId
+          ))
         && (request.resource.data.parts.size() < 4
-          || validMessagePart(request.resource.data.parts[3]))
+          || validMessagePart(
+            request.resource.data.parts[3],
+            groupId,
+            messageId,
+            request.resource.data.senderId
+          ))
         && request.resource.data.isEdited == true
         && request.resource.data.editedAt == request.time;
     }
@@ -820,9 +884,12 @@ service cloud.firestore {
         allow get, list: if isGroupMember(groupId);
         allow create: if isGroupMember(groupId)
           && groupData(groupId).lifecycle == 'active'
-          && validMessageCreate(request.resource.data);
+          && validMessageCreate(request.resource.data, groupId, messageId);
         allow update: if isGroupMember(groupId)
-          && (canEditMessage() || canTombstoneMessage());
+          && (
+            canEditMessage(groupId, messageId)
+            || canTombstoneMessage()
+          );
         allow delete: if false;
 
         match /reactions/{uid} {
@@ -982,6 +1049,16 @@ service cloud.firestore {
       }
     }
 
+    match /managed_assets/{assetId} {
+      allow get: if signedIn()
+        && (
+          resource.data.ownerUid == request.auth.uid
+          || (resource.data.entityType == 'message'
+            && isGroupMember(resource.data.groupId))
+        );
+      allow list, create, update, delete: if false;
+    }
+
     match /reports/{reportId} {
       allow get: if signedIn()
         && (resource.data.reporterUid == request.auth.uid || isModerator());
@@ -997,6 +1074,11 @@ service cloud.firestore {
 
     match /cooldowns/{cooldownId} {
       allow read, write: if false;
+    }
+
+    match /account_deletion_jobs/{uid} {
+      allow get: if isSelf(uid);
+      allow list, create, update, delete: if false;
     }
 
     match /support_chats/{document=**} {

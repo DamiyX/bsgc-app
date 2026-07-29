@@ -42,7 +42,11 @@ Role/lifecycle record for audit and migration. The group document is the rules m
 
 ### `groups/{groupId}/messages/{messageId}`
 
-Stable client-generated document ID; `space` is `reflection`, `discussion`, or `prayer`; up to four bounded text/voice/image parts; server timestamp; author identity; optional reply pointer. Video/doc parts are deferred.
+Stable client-generated document ID; `space` is `reflection`, `discussion`, or
+`prayer`; up to four bounded text/voice/image parts; server timestamp; author
+identity; optional reply pointer. Voice/image parts reference an exact
+canonical Storage path and `managed_assets` ID. Arbitrary HTTPS media is not a
+trusted inline attachment. Video/doc parts are deferred.
 
 ### `insights/{insightId}`
 
@@ -52,9 +56,25 @@ Author-owned contacts reflection with explicit audience/status/expiry. Comments 
 
 Client-created immutable report and owner-only block state. Moderator read access requires a custom token claim.
 
-### `group_invites/{tokenHash}`
+### `invites/{tokenHash}`
 
 Server-managed expiring/revocable invite state. A transaction enforces use count, capacity, blocks, membership, and connection creation.
+
+### `managed_assets/{assetId}`
+
+Server-managed canonical metadata for profile photos, group covers, and
+message media. It retains bucket/path, owner/entity identity, MIME type, byte
+size, optional checksum, timestamps, and the lifecycle state `pending`,
+`committed`, `delete_pending`, `deleted`, or `failed`. Clients can get only the
+specific metadata needed for an authorized owned/group asset; they cannot
+write or list this collection.
+
+### `account_deletion_jobs/{uid}`
+
+Server-written resumable deletion state. The owner may read the specific job
+while authenticated but cannot mutate or list jobs. Phase, cursor, lease,
+attempt, retry, and completion fields allow interruption-safe cleanup after the
+profile and Auth identity are removed.
 
 ## Storage
 
@@ -62,8 +82,18 @@ Server-managed expiring/revocable invite state. A transaction enforces use count
 - `groups/{groupId}/covers/{assetId}`
 - `groups/{groupId}/messages/{messageId}/{assetId}`
 
-Rules enforce owner/member relationship, type, size, immutable paths, and matching custom metadata. Message outbox retries use deterministic asset names to avoid duplicate uploads.
+Rules enforce owner/member relationship, type, size, immutable paths, and
+matching custom metadata. Private media records retain canonical paths, never
+download URLs. Reads use the authenticated Storage SDK so current membership
+is re-evaluated. Message outbox retries use deterministic asset names to avoid
+duplicate uploads. Replacement/deletion first preserves a lifecycle record,
+then deletes the object idempotently.
 
 ## Compatibility
 
-Legacy `users/{uid}` remains owner-only during migration. Models accept carefully bounded v1 defaults, while all new writes use `schemaVersion: 2`. Remove compatibility only after migration reports show zero remaining v1 records and the minimum supported app version is v2.
+Legacy `users/{uid}` remains owner-only during migration. Models accept
+carefully bounded v1 defaults, while all new writes use `schemaVersion: 2`.
+Legacy HTTPS message media is displayed only as an explicit external
+reference; it is not auto-rendered as managed media. Remove compatibility only
+after migration reports show zero remaining v1 records and the minimum
+supported app version is v2.

@@ -7,7 +7,7 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/storage_service.dart';
-import '../widgets/braid_media.dart';
+import '../widgets/current_user_avatar.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -73,15 +73,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         quality: 82,
         format: CompressFormat.jpeg,
       );
-      final url = await StorageService.uploadProfileImage(
+      final storagePath = await StorageService.uploadProfileImage(
         bytes: compressed,
         userId: user.uid,
       );
       await FirebaseFirestore.instance
           .collection('users_public')
           .doc(user.uid)
-          .update({'photoUrl': url, 'updatedAt': FieldValue.serverTimestamp()});
-      await user.updatePhotoURL(url);
+          .update({
+            'photoUrl': storagePath,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
       _showMessage('Profile picture updated.');
     } on FirebaseException catch (error) {
       _showMessage(_friendlyError(error));
@@ -164,10 +166,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           Center(
                             child: Stack(
                               children: [
-                                BraidAvatar(
-                                  identity: user?.uid ?? 'me',
-                                  displayName: user?.displayName ?? 'You',
-                                  imageUrl: user?.photoURL,
+                                CurrentUserAvatar(
+                                  userId: user?.uid ?? '',
+                                  fallbackDisplayName:
+                                      user?.displayName ?? 'You',
+                                  fallbackPhotoUrl: user?.photoURL,
                                   radius: 52,
                                 ),
                                 Positioned(

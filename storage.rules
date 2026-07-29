@@ -47,7 +47,10 @@ service firebase.storage {
     function hasRequiredMessageMetadata(groupId, messageId) {
       return request.resource.metadata.ownerId == request.auth.uid
         && request.resource.metadata.groupId == groupId
-        && request.resource.metadata.messageId == messageId;
+        && request.resource.metadata.messageId == messageId
+        && request.resource.metadata.assetId is string
+        && request.resource.metadata.assetId.size() >= 1
+        && request.resource.metadata.assetId.size() <= 768;
     }
 
     match /users/{uid}/profile/{assetId} {
@@ -56,7 +59,10 @@ service firebase.storage {
         && isImage()
         && request.resource.size > 0
         && request.resource.size <= 5 * 1024 * 1024
-        && request.resource.metadata.ownerId == uid;
+        && request.resource.metadata.ownerId == uid
+        && request.resource.metadata.assetId is string
+        && request.resource.metadata.assetId.size() >= 1
+        && request.resource.metadata.assetId.size() <= 768;
       allow update: if false;
       allow delete: if isSelf(uid);
     }
@@ -68,7 +74,10 @@ service firebase.storage {
         && request.resource.size > 0
         && request.resource.size <= 5 * 1024 * 1024
         && request.resource.metadata.ownerId == request.auth.uid
-        && request.resource.metadata.groupId == groupId;
+        && request.resource.metadata.groupId == groupId
+        && request.resource.metadata.assetId is string
+        && request.resource.metadata.assetId.size() >= 1
+        && request.resource.metadata.assetId.size() <= 768;
       allow update: if false;
       allow delete: if isGroupOwner(groupId);
     }

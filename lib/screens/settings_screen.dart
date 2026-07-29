@@ -173,14 +173,15 @@ class _SettingsScreenState extends State<SettingsScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Permanently delete account?'),
+        title: const Text('Request account deletion?'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'This permanently removes your profile, private notes, saved '
-              'items, reflections, and account media. It cannot be undone.\n\n'
+              'This starts a durable deletion process for your profile, '
+              'private notes, saved items, reflections, and account media. '
+              'It cannot be undone after processing begins.\n\n'
               'You must transfer ownership of shared studies first.',
             ),
             const SizedBox(height: 16),
@@ -207,7 +208,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               dialogContext,
               controller.text.trim() == 'DELETE',
             ),
-            child: const Text('Delete permanently'),
+            child: const Text('Request deletion'),
           ),
         ],
       ),
@@ -218,7 +219,25 @@ class _SettingsScreenState extends State<SettingsScreen>
     setState(() => _isDeletingAccount = true);
     try {
       await FirebaseAuth.instance.currentUser?.getIdToken(true);
-      await AccountService().deleteCurrentAccount();
+      final request = await AccountService().deleteCurrentAccount();
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Deletion requested'),
+          content: Text(
+            'Your account deletion job is ${request.status}. Braid will '
+            'continue the cleanup safely in the background.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Continue'),
+            ),
+          ],
+        ),
+      );
       await AuthService().signOut();
       if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (error) {

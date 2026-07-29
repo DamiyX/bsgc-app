@@ -14,6 +14,7 @@ import '../services/note_service.dart';
 import '../services/notification_service.dart';
 import '../theme.dart';
 import '../widgets/braid_media.dart';
+import '../widgets/current_user_avatar.dart';
 import '../widgets/insights_row.dart';
 import '../widgets/note_card.dart';
 import 'create_group_screen.dart';
@@ -827,10 +828,10 @@ class _MainHallScreenState extends State<MainHallScreen> {
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
       children: [
         Center(
-          child: BraidAvatar(
-            identity: user?.uid ?? 'me',
-            displayName: user?.displayName ?? 'You',
-            imageUrl: user?.photoURL,
+          child: CurrentUserAvatar(
+            userId: user?.uid ?? '',
+            fallbackDisplayName: user?.displayName ?? 'You',
+            fallbackPhotoUrl: user?.photoURL,
             radius: 48,
           ),
         ),
