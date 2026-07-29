@@ -64,6 +64,7 @@ The final local checks produced:
 - Functions syntax checks: passed;
 - Functions contract/migration tests: 21 passed;
 - Firestore/Storage Rules Emulator tests: 26 passed;
+- GitHub clean-checkout Quality workflow: Flutter, Functions, and security-rules jobs passed at commit `1086723`;
 - generated dependencies tracked by Git: 0;
 - tracked APKs: 0.
 

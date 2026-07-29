@@ -29,7 +29,8 @@ This ledger reconciles the implementation with every phase in Report 6. “Imple
 | Functions contract/migration tests | Passed: 21/21 |
 | Firestore and Storage Rules Emulator tests | Passed: 26/26 |
 | Rules test determinism | Test files serialized with `--test-concurrency=1` to prevent shared-emulator cleanup races |
-| Repository whitespace validation | Required again after final documentation staging |
+| Repository whitespace validation | Passed before commit |
+| GitHub clean-checkout Quality workflow | Passed all Flutter, Functions, and security-rules jobs at commit `1086723` |
 | Android release AAB | Not completed locally; the R8 build was stopped because it caused unacceptable laptop load |
 | Physical Android UX regression | Not performed; no Android device/emulator was connected in this workspace |
 
