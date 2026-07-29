@@ -168,4 +168,9 @@ class NotificationDestinationStore
     await _persistence.clear();
     value = null;
   }
+
+  Future<void> discardAll() async {
+    await _persistence.clear();
+    value = null;
+  }
 }

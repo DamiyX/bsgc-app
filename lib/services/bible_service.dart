@@ -9,24 +9,35 @@ class BibleService {
   BibleService._internal();
 
   final Map<String, BibleModel> _bibles = {};
-  Future<void>? _initialization;
+  final Map<String, Future<void>> _translationLoads = {};
+  static const _translationAssets = {
+    'KJV': 'assets/bibles/kjv.json',
+    'WEB': 'assets/bibles/web.json',
+  };
 
   bool get isLoaded => _bibles.isNotEmpty;
 
-  List<String> get availableTranslations => const ['KJV', 'WEB'];
+  List<String> get availableTranslations =>
+      _translationAssets.keys.toList(growable: false);
 
-  Future<void> init() {
-    return _initialization ??= _loadBundledTranslations();
-  }
+  Future<void> init() => ensureTranslation('KJV');
 
-  Future<void> _loadBundledTranslations() async {
-    final results = await Future.wait([
-      _loadTranslation('KJV', 'assets/bibles/kjv.json'),
-      _loadTranslation('WEB', 'assets/bibles/web.json'),
-    ]);
-    if (results.every((loaded) => !loaded)) {
-      throw StateError('Bundled Bible translations could not be loaded.');
+  Future<void> ensureTranslation(String name) {
+    if (_bibles.containsKey(name)) return Future<void>.value();
+    final asset = _translationAssets[name];
+    if (asset == null) {
+      return Future<void>.error(
+        ArgumentError.value(name, 'name', 'Unknown Bible translation.'),
+      );
     }
+    return _translationLoads[name] ??= _loadTranslation(name, asset).then((
+      loaded,
+    ) {
+      if (!loaded) {
+        _translationLoads.remove(name);
+        throw StateError('$name could not be loaded.');
+      }
+    });
   }
 
   Future<bool> _loadTranslation(String name, String path) async {

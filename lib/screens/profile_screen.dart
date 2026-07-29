@@ -29,7 +29,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final NoteService _noteService = NoteService();
   final InsightService _insightService = InsightService();
 
-  bool _loadingProfile = true;
+  bool _loadingIdentity = true;
+  bool _loadingContacts = true;
+  bool _hasIdentity = false;
+  bool _identityLoadFailed = false;
+  bool _contactsLoadFailed = false;
   String _displayName = 'Your space';
   String _bio = 'Growing through Scripture and fellowship.';
   String? _photoUrl;
@@ -40,25 +44,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _loadProfile();
+    unawaited(_loadIdentity());
+    unawaited(_loadContacts());
   }
 
-  Future<void> _loadProfile() async {
+  Future<void> _loadIdentity() async {
     if (_uid.isEmpty) return;
+    setState(() {
+      _loadingIdentity = true;
+      _identityLoadFailed = false;
+    });
     try {
-      final results = await Future.wait([
-        FirebaseFirestore.instance.collection('users_public').doc(_uid).get(),
-        FirebaseFirestore.instance
-            .collection('users')
-            .doc(_uid)
-            .collection('connections')
-            .where('status', isEqualTo: 'accepted')
-            .limit(500)
-            .get(),
-      ]);
-      final profile = (results[0] as DocumentSnapshot<Map<String, dynamic>>)
-          .data();
-      final connections = results[1] as QuerySnapshot<Map<String, dynamic>>;
+      final reference = FirebaseFirestore.instance
+          .collection('users_public')
+          .doc(_uid);
+      DocumentSnapshot<Map<String, dynamic>> snapshot;
+      try {
+        snapshot = await reference.get(
+          const GetOptions(source: Source.serverAndCache),
+        );
+      } on FirebaseException catch (error) {
+        if (error.code != 'unavailable' &&
+            error.code != 'network-request-failed') {
+          rethrow;
+        }
+        snapshot = await reference.get(const GetOptions(source: Source.cache));
+      }
+      final profile = snapshot.data();
       if (!mounted) return;
       setState(() {
         _displayName =
@@ -69,11 +81,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ? profile!['bio'].toString().trim()
             : 'Growing through Scripture and fellowship.';
         _photoUrl = profile?['photoUrl']?.toString();
-        _studyContacts = connections.size;
-        _loadingProfile = false;
+        _hasIdentity = snapshot.exists;
+        _loadingIdentity = false;
       });
     } catch (_) {
-      if (mounted) setState(() => _loadingProfile = false);
+      if (mounted) {
+        setState(() {
+          _loadingIdentity = false;
+          _identityLoadFailed = true;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadContacts() async {
+    if (_uid.isEmpty) return;
+    setState(() {
+      _loadingContacts = true;
+      _contactsLoadFailed = false;
+    });
+    final query = FirebaseFirestore.instance
+        .collection('users')
+        .doc(_uid)
+        .collection('connections')
+        .where('status', isEqualTo: 'accepted');
+    try {
+      int count;
+      try {
+        count = (await query.count().get()).count ?? 0;
+      } on FirebaseException catch (error) {
+        if (error.code != 'unavailable' &&
+            error.code != 'network-request-failed') {
+          rethrow;
+        }
+        count =
+            (await query.limit(500).get(const GetOptions(source: Source.cache)))
+                .size;
+      }
+      if (mounted) {
+        setState(() {
+          _studyContacts = count;
+          _loadingContacts = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loadingContacts = false;
+          _contactsLoadFailed = true;
+        });
+      }
     }
   }
 
@@ -115,7 +172,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildHeader() {
-    if (_loadingProfile) {
+    if (_loadingIdentity && !_hasIdentity) {
       return const Padding(
         padding: EdgeInsets.all(32),
         child: Center(child: CircularProgressIndicator()),
@@ -148,11 +205,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            '$_studyContacts accepted study '
-            '${_studyContacts == 1 ? 'contact' : 'contacts'}',
-            style: Theme.of(context).textTheme.labelLarge,
-          ),
+          if (_identityLoadFailed)
+            TextButton.icon(
+              onPressed: _loadIdentity,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Retry profile'),
+            ),
+          if (_loadingContacts)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 6),
+              child: SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else if (_contactsLoadFailed)
+            TextButton.icon(
+              onPressed: _loadContacts,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Retry study contact count'),
+            )
+          else
+            Text(
+              '$_studyContacts accepted study '
+              '${_studyContacts == 1 ? 'contact' : 'contacts'}',
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: () async {
@@ -160,7 +238,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 context,
                 MaterialPageRoute(builder: (_) => const EditProfileScreen()),
               );
-              if (changed == true) await _loadProfile();
+              if (changed == true) await _loadIdentity();
             },
             icon: const Icon(Icons.edit_outlined),
             label: const Text('Edit profile'),

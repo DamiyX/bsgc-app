@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/insight_model.dart';
 import 'canonical_identity_service.dart';
+import 'firestore_commit_service.dart';
 
 bool shouldRemoveUnavailableSavedInsight(Object error) {
   return error is FirebaseException &&
@@ -349,22 +350,22 @@ class InsightService implements MyInsightsDataSource {
       throw StateError('You can publish only your own comment.');
     }
     final identity = await _identitySource.load(uid);
-    await _firestore
+    final reference = _firestore
         .collection('insights')
         .doc(insightId)
         .collection('comments')
-        .doc(comment.id)
-        .set({
-          'schemaVersion': 2,
-          'insightId': insightId,
-          'authorUid': uid,
-          'authorName': identity.displayName,
-          if (identity.photoUrl != null) 'authorPhotoUrl': identity.photoUrl,
-          'body': comment.body.trim(),
-          if (comment.replyToId?.isNotEmpty == true)
-            'replyToId': comment.replyToId,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
+        .doc(comment.id);
+    await reference.set({
+      'schemaVersion': 2,
+      'insightId': insightId,
+      'authorUid': uid,
+      'authorName': identity.displayName,
+      if (identity.photoUrl != null) 'authorPhotoUrl': identity.photoUrl,
+      'body': comment.body.trim(),
+      if (comment.replyToId?.isNotEmpty == true) 'replyToId': comment.replyToId,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    await waitForDocumentCommit(reference);
   }
 
   Future<void> toggleCommentLike(
@@ -437,6 +438,7 @@ class InsightService implements MyInsightsDataSource {
     }
     if (!isLiking) {
       await reference.delete();
+      await waitForDocumentCommit(reference);
       return;
     }
     await reference.set({
@@ -444,6 +446,7 @@ class InsightService implements MyInsightsDataSource {
       'reaction': 'helpful',
       'createdAt': FieldValue.serverTimestamp(),
     });
+    await waitForDocumentCommit(reference);
   }
 
   Future<void> saveInsight(String userId, InsightModel insight) async {
@@ -452,25 +455,27 @@ class InsightService implements MyInsightsDataSource {
         !insight.expiresAt.isAfter(DateTime.now())) {
       throw StateError('Only active Insights can be saved.');
     }
-    await _firestore
+    final reference = _firestore
         .collection('users')
         .doc(userId)
         .collection('saved_insights')
-        .doc(insight.id)
-        .set({
-          'insightId': insight.id,
-          'savedAt': FieldValue.serverTimestamp(),
-        });
+        .doc(insight.id);
+    await reference.set({
+      'insightId': insight.id,
+      'savedAt': FieldValue.serverTimestamp(),
+    });
+    await waitForDocumentCommit(reference);
   }
 
   Future<void> unsaveInsight(String userId, String insightId) async {
     if (_requireUserId() != userId) return;
-    await _firestore
+    final reference = _firestore
         .collection('users')
         .doc(userId)
         .collection('saved_insights')
-        .doc(insightId)
-        .delete();
+        .doc(insightId);
+    await reference.delete();
+    await waitForDocumentCommit(reference);
   }
 
   Stream<List<InsightModel>> getSavedInsights(String userId) {

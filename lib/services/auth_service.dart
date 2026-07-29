@@ -7,8 +7,10 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'notification_service.dart';
+import 'deep_link_service.dart';
 import 'draft_service.dart';
 import 'message_outbox_service.dart';
+import 'voice_cache_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -87,6 +89,19 @@ class AuthService {
     } catch (error) {
       if (kDebugMode) debugPrint('Device-token cleanup failed: $error');
     }
+    try {
+      await NotificationService().destination.discardAll();
+    } catch (error) {
+      if (kDebugMode) debugPrint('Notification-route cleanup failed: $error');
+    }
+    try {
+      final inviteToken = await DeepLinkService().getPendingInviteToken();
+      if (inviteToken != null) {
+        await DeepLinkService().clearPendingInviteToken(inviteToken);
+      }
+    } catch (error) {
+      if (kDebugMode) debugPrint('Invite-route cleanup failed: $error');
+    }
 
     try {
       await _googleSignIn.signOut();
@@ -95,17 +110,46 @@ class AuthService {
     } finally {
       await _auth.signOut();
       if (signingOutUid != null) {
-        await Future.wait([
-          DraftService().clearAllForUser(signingOutUid),
-          MessageOutboxService().clearAllForUser(signingOutUid),
-        ]);
+        final cleanupOperations =
+            <({String name, Future<void> Function() run})>[
+              (
+                name: 'draft',
+                run: () => DraftService().clearAllForUser(signingOutUid),
+              ),
+              (
+                name: 'outbox',
+                run: () =>
+                    MessageOutboxService().clearAllForUser(signingOutUid),
+              ),
+              (
+                name: 'voice cache',
+                run: () => VoiceCacheService().clearAllForUser(signingOutUid),
+              ),
+            ];
+        for (final cleanup in cleanupOperations) {
+          try {
+            await cleanup.run();
+          } catch (error) {
+            if (kDebugMode) {
+              debugPrint('${cleanup.name} cleanup failed: $error');
+            }
+          }
+        }
       }
-      final preferences = await SharedPreferences.getInstance();
-      await Future.wait([
-        preferences.remove('active_group_id'),
-        preferences.remove('active_route_timestamp'),
-        DefaultCacheManager().emptyCache(),
-      ]);
+      try {
+        final preferences = await SharedPreferences.getInstance();
+        await Future.wait([
+          preferences.remove('active_group_id'),
+          preferences.remove('active_route_timestamp'),
+        ]);
+      } catch (error) {
+        if (kDebugMode) debugPrint('Navigation-state cleanup failed: $error');
+      }
+      try {
+        await DefaultCacheManager().emptyCache();
+      } catch (error) {
+        if (kDebugMode) debugPrint('Image-cache cleanup failed: $error');
+      }
       PaintingBinding.instance.imageCache
         ..clear()
         ..clearLiveImages();

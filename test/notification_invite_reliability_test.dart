@@ -75,6 +75,22 @@ void main() {
 
       expect(store.value?.insightId, 'insight-3');
     });
+
+    test('sign-out cleanup discards every pending destination', () async {
+      final persistence = _MemoryDestinationPersistence();
+      final store = NotificationDestinationStore(persistence: persistence);
+      await store.setPending(
+        const NotificationDestination(
+          type: 'new_insight',
+          insightId: 'insight-a',
+        ),
+      );
+
+      await store.discardAll();
+
+      expect(store.value, isNull);
+      expect(persistence.payload, isNull);
+    });
   });
 
   group('notification permission truth', () {

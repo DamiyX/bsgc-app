@@ -86,7 +86,14 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
       final members = await _chatService.getGroupMembersProfiles(
         _group.members,
       );
-      if (mounted) setState(() => _members = members);
+      if (mounted) {
+        setState(() {
+          _members = members;
+          _memberLoadFailed = members.any(
+            (member) => member['profileAvailable'] != true,
+          );
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _memberLoadFailed = true);
     } finally {
@@ -488,32 +495,33 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          if (_membersLoading)
+          if (_membersLoading && _members.isEmpty)
             const Padding(
               padding: EdgeInsets.all(32),
               child: Center(child: CircularProgressIndicator()),
             )
-          else if (_memberLoadFailed)
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.cloud_off_outlined),
-                title: const Text('People could not be refreshed'),
-                subtitle: const Text(
-                  'Previously cached study access is not changed.',
-                ),
-                trailing: IconButton(
-                  tooltip: 'Retry',
-                  onPressed: _loadMembers,
-                  icon: const Icon(Icons.refresh_rounded),
+          else ...[
+            if (_memberLoadFailed)
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.cloud_off_outlined),
+                  title: const Text('Some profiles could not be refreshed'),
+                  subtitle: const Text(
+                    'Available people remain visible. Retry the missing profiles.',
+                  ),
+                  trailing: IconButton(
+                    tooltip: 'Retry',
+                    onPressed: _loadMembers,
+                    icon: const Icon(Icons.refresh_rounded),
+                  ),
                 ),
               ),
-            )
-          else
             Card(
               child: Column(
                 children: [for (final member in _members) _memberTile(member)],
               ),
             ),
+          ],
           const SizedBox(height: 24),
           Text(
             _isOwner ? 'Owner controls' : 'Study membership',

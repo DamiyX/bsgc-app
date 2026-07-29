@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../models/group_model.dart';
 import '../models/message_model.dart';
 import 'canonical_identity_service.dart';
+import 'firestore_commit_service.dart';
 
 class GroupInvite {
   final String token;
@@ -387,26 +388,39 @@ class ChatService {
   ) async {
     if (memberIds.isEmpty) return const [];
 
-    final documents = await Future.wait(
-      memberIds.map(
-        (uid) => _firestore.collection('users_public').doc(uid).get(),
-      ),
+    return Future.wait(
+      memberIds.map((uid) async {
+        try {
+          final document = await _firestore
+              .collection('users_public')
+              .doc(uid)
+              .get();
+          final data = document.data();
+          return {
+            'uid': uid,
+            'displayName': data?['displayName']?.toString() ?? 'Braid member',
+            'photoURL': data?['photoUrl']?.toString() ?? '',
+            'profileAvailable': document.exists,
+          };
+        } catch (_) {
+          return {
+            'uid': uid,
+            'displayName': 'Profile unavailable',
+            'photoURL': '',
+            'profileAvailable': false,
+          };
+        }
+      }),
     );
-    return List.generate(memberIds.length, (index) {
-      final data = documents[index].data();
-      return {
-        'uid': memberIds[index],
-        'displayName': data?['displayName']?.toString() ?? 'Believer',
-        'photoURL': data?['photoUrl']?.toString() ?? '',
-      };
-    });
   }
 
   Future<void> updateReadingProgress(String groupId, double progress) async {
     final user = _requireUser();
-    await _firestore.collection('groups').doc(groupId).update({
+    final reference = _firestore.collection('groups').doc(groupId);
+    await reference.update({
       'readingProgress.${user.uid}': progress.clamp(0, 1),
     });
+    await waitForDocumentCommit(reference);
   }
 
   Stream<List<MessageModel>> getGroupMessages(
@@ -538,6 +552,7 @@ class ChatService {
       'isEdited': false,
       'isDeleted': false,
     });
+    await waitForDocumentCommit(messageRef);
     return stableId;
   }
 

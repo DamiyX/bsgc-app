@@ -88,6 +88,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
   String? _replyToMessageId;
   MessageModel? _replyToMessage;
   List<OutboxMessage> _outbox = const [];
+  String? _outboxLoadError;
   final Set<String> _sendingOutboxIds = {};
   Timer? _draftTimer;
   Timer? _recordingTimer;
@@ -303,27 +304,57 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
 
   Future<void> _reloadOutbox({bool autoRetry = false}) async {
     if (_uid.isEmpty) return;
-    final entries = await _outboxService.list(
-      userId: _uid,
-      groupId: widget.group.id,
-    );
+    late final List<OutboxMessage> entries;
+    try {
+      entries = await _outboxService.list(
+        userId: _uid,
+        groupId: widget.group.id,
+      );
+    } on OutboxDataException {
+      if (mounted) {
+        setState(() {
+          _outboxLoadError =
+              'Saved uploads could not be checked. Try loading them again.';
+        });
+      }
+      return;
+    } on FileSystemException {
+      if (mounted) {
+        setState(() {
+          _outboxLoadError =
+              'Saved uploads are temporarily unavailable on this device.';
+        });
+      }
+      return;
+    }
     if (!mounted) return;
-    setState(() => _outbox = entries);
+    setState(() {
+      _outbox = entries;
+      _outboxLoadError = null;
+    });
     if (autoRetry) {
       for (final entry in entries.where(
-        (item) => item.status == OutboxStatus.queued,
+        (item) => item.canAttempt(manual: false, now: DateTime.now()),
       )) {
         if (!mounted) return;
-        await _attemptOutbox(entry, quiet: true);
+        await _attemptOutbox(entry, quiet: true, manual: false);
       }
     }
   }
 
-  Future<void> _attemptOutbox(OutboxMessage entry, {bool quiet = false}) async {
+  Future<void> _attemptOutbox(
+    OutboxMessage entry, {
+    bool quiet = false,
+    bool manual = true,
+  }) async {
     if (_sendingOutboxIds.contains(entry.id)) return;
     setState(() => _sendingOutboxIds.add(entry.id));
     try {
-      await _outboxService.send(entry, chatService: _chatService);
+      await _outboxService.send(
+        entry,
+        chatService: _chatService,
+        manual: manual,
+      );
       await _reloadOutbox();
     } catch (_) {
       await _reloadOutbox();
@@ -381,14 +412,20 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
     }
 
     final messageId = _draftMessageId ?? _chatService.createClientMessageId();
-    final entry = await _outboxService.enqueue(
-      id: messageId,
-      userId: _uid,
-      groupId: widget.group.id,
-      space: _selectedSpace.wireName,
-      parts: parts,
-      replyToMessageId: _replyToMessageId,
-    );
+    late final OutboxMessage entry;
+    try {
+      entry = await _outboxService.enqueue(
+        id: messageId,
+        userId: _uid,
+        groupId: widget.group.id,
+        space: _selectedSpace.wireName,
+        parts: parts,
+        replyToMessageId: _replyToMessageId,
+      );
+    } on OutboxQuotaException catch (error) {
+      _showMessage(error.message);
+      return;
+    }
 
     _restoringDraft = true;
     setState(() {
@@ -442,6 +479,8 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
         );
       });
       _scheduleDraftSave();
+    } on OutboxQuotaException catch (error) {
+      _showMessage(error.message);
     } catch (_) {
       _showMessage(
         'That photo could not be prepared. Choose another photo and try again.',
@@ -505,7 +544,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
         _recordingSeconds = 0;
       });
       _scheduleDraftSave();
-    } catch (error) {
+    } on OutboxQuotaException catch (error) {
+      _showMessage(error.message);
+    } catch (_) {
       _showMessage(
         'The recording is saved locally, but could not be prepared.',
       );
@@ -885,10 +926,25 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
       children: [
         if (messageError != null && messages.isNotEmpty)
           const _OfflineMessageBanner(),
+        if (_outboxLoadError != null)
+          MaterialBanner(
+            leading: const Icon(Icons.warning_amber_rounded),
+            content: Text(_outboxLoadError!),
+            actions: [
+              TextButton(
+                onPressed: _reloadOutbox,
+                child: const Text('Try again'),
+              ),
+            ],
+          ),
         if (_outbox.isNotEmpty)
           _OutboxStrip(
             entries: _outbox
-                .where((entry) => entry.space == _selectedSpace.wireName)
+                .where(
+                  (entry) =>
+                      entry.status == OutboxStatus.corrupt ||
+                      entry.space == _selectedSpace.wireName,
+                )
                 .toList(),
             sendingIds: _sendingOutboxIds,
             onRetry: _attemptOutbox,
@@ -1629,7 +1685,8 @@ class _OutboxStrip extends StatelessWidget {
             Row(
               children: [
                 Icon(
-                  entry.status == OutboxStatus.failed
+                  entry.status == OutboxStatus.failed ||
+                          entry.status == OutboxStatus.corrupt
                       ? Icons.error_outline_rounded
                       : Icons.schedule_send_outlined,
                   size: 18,
@@ -1639,8 +1696,11 @@ class _OutboxStrip extends StatelessWidget {
                   child: Text(
                     sendingIds.contains(entry.id)
                         ? 'Sending saved reflection…'
+                        : !entry.retryable
+                        ? entry.lastError ??
+                              'Saved upload needs to be discarded'
                         : entry.status == OutboxStatus.failed
-                        ? 'Saved locally • send failed'
+                        ? 'Saved locally • retry waiting'
                         : 'Saved locally • waiting to send',
                   ),
                 ),
@@ -1653,10 +1713,11 @@ class _OutboxStrip extends StatelessWidget {
                     ),
                   )
                 else ...[
-                  TextButton(
-                    onPressed: () => onRetry(entry),
-                    child: const Text('Retry'),
-                  ),
+                  if (entry.retryable)
+                    TextButton(
+                      onPressed: () => onRetry(entry),
+                      child: const Text('Retry'),
+                    ),
                   IconButton(
                     tooltip: 'Discard unsent reflection',
                     onPressed: () => onDiscard(entry),

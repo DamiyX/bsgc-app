@@ -10,22 +10,39 @@ class ThemeProvider extends ChangeNotifier {
   ThemeMode get themeMode => _themeMode;
   ChatBubbleTheme get chatBubbleTheme => _chatBubbleTheme;
 
-  ThemeProvider(SharedPreferences prefs) {
-    _loadTheme(prefs);
+  ThemeProvider([SharedPreferences? prefs]) {
+    if (prefs != null) _loadTheme(prefs);
   }
 
-  void setThemeMode(ThemeMode mode) async {
+  Future<void> load() async {
+    try {
+      _loadTheme(await SharedPreferences.getInstance());
+      notifyListeners();
+    } catch (_) {
+      // The default light theme remains usable when preferences are unavailable.
+    }
+  }
+
+  Future<void> setThemeMode(ThemeMode mode) async {
     _themeMode = mode;
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('theme_mode', mode.toString());
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('theme_mode', mode.toString());
+    } catch (_) {
+      // Keep the in-memory selection for this session.
+    }
   }
 
-  void setChatBubbleTheme(ChatBubbleTheme theme) async {
+  Future<void> setChatBubbleTheme(ChatBubbleTheme theme) async {
     _chatBubbleTheme = theme;
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('chat_bubble_theme', theme.index);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('chat_bubble_theme', theme.index);
+    } catch (_) {
+      // Keep the in-memory selection for this session.
+    }
   }
 
   void _loadTheme(SharedPreferences prefs) {

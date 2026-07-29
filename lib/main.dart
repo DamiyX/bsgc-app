@@ -1,9 +1,12 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:bsgc_app/services/auth_service.dart';
-import 'package:bsgc_app/services/bible_service.dart';
 import 'package:bsgc_app/services/deep_link_service.dart';
+import 'package:bsgc_app/services/startup_service.dart';
 import 'package:bsgc_app/screens/foyer_screen.dart';
 import 'package:bsgc_app/widgets/user_data_wrapper.dart';
 import 'package:bsgc_app/theme.dart';
@@ -15,57 +18,19 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:provider/provider.dart';
 import 'package:bsgc_app/providers/theme_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  final prefs = await SharedPreferences.getInstance();
-  Object? startupError;
-
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-
-    if (!kIsWeb) {
-      // Pass all uncaught "fatal" errors from the framework to Crashlytics
-      FlutterError.onError =
-          FirebaseCrashlytics.instance.recordFlutterFatalError;
-
-      // Pass all uncaught asynchronous errors that aren't handled by the Flutter framework to Crashlytics
-      PlatformDispatcher.instance.onError = (error, stack) {
-        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-        return true;
-      };
-    }
-
-    await Future.wait([
-      BibleService().init().catchError(
-        (Object error) =>
-            debugPrint('Bible data initialization failed: $error'),
-      ),
-      DeepLinkService().init().catchError(
-        (Object error) => debugPrint('Deep-link initialization failed: $error'),
-      ),
-    ]);
-  } catch (error, stackTrace) {
-    startupError = error;
-    debugPrint('Braid startup failed: $error\n$stackTrace');
-  }
-
   runApp(
     ChangeNotifierProvider(
-      create: (_) => ThemeProvider(prefs),
-      child: BraidApp(startupError: startupError),
+      create: (_) => ThemeProvider()..load(),
+      child: const BraidApp(),
     ),
   );
 }
 
 class BraidApp extends StatelessWidget {
-  final Object? startupError;
-
-  const BraidApp({super.key, this.startupError});
+  const BraidApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -77,17 +42,90 @@ class BraidApp extends StatelessWidget {
           theme: appTheme,
           darkTheme: darkAppTheme,
           themeMode: themeProvider.themeMode,
-          home: startupError == null
-              ? const AuthWrapper()
-              : const _StartupErrorScreen(),
+          home: const _AppStartupGate(),
         );
       },
     );
   }
 }
 
+class _AppStartupGate extends StatefulWidget {
+  const _AppStartupGate();
+
+  @override
+  State<_AppStartupGate> createState() => _AppStartupGateState();
+}
+
+class _AppStartupGateState extends State<_AppStartupGate> {
+  late final StartupController _controller = StartupController(
+    initialize: _initializeEssentialServices,
+  )..addListener(_refresh);
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_controller.start());
+  }
+
+  Future<void> _initializeEssentialServices() async {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    }
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    if (!kIsWeb) {
+      final firestore = FirebaseFirestore.instance;
+      await firestore.clearPersistence();
+      firestore.settings = const Settings(persistenceEnabled: false);
+      FlutterError.onError =
+          FirebaseCrashlytics.instance.recordFlutterFatalError;
+      PlatformDispatcher.instance.onError = (error, stack) {
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+        return true;
+      };
+    }
+    unawaited(
+      DeepLinkService()
+          .init()
+          .timeout(const Duration(seconds: 5))
+          .catchError(
+            (Object error) =>
+                debugPrint('Deep-link initialization failed: $error'),
+          ),
+    );
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _controller
+      ..removeListener(_refresh)
+      ..dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (_controller.status) {
+      StartupStatus.ready => const AuthWrapper(),
+      StartupStatus.failed => _StartupErrorScreen(onRetry: _controller.retry),
+      _ => const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: AppColors.gradientEnd),
+        ),
+      ),
+    };
+  }
+}
+
 class _StartupErrorScreen extends StatelessWidget {
-  const _StartupErrorScreen();
+  final Future<void> Function() onRetry;
+
+  const _StartupErrorScreen({required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
@@ -116,13 +154,19 @@ class _StartupErrorScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    'Close and reopen the app. If this continues, install the '
-                    'latest version or contact Braid support. Your local study '
-                    'data has not been changed.',
+                    'Braid could not initialize its secure local session. '
+                    'Check your connection and try again. Your local drafts '
+                    'have not been changed.',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
+                  ),
+                  const SizedBox(height: 24),
+                  FilledButton.icon(
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Try again'),
                   ),
                 ],
               ),
@@ -142,14 +186,41 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
-  late final Stream<User?> _authStream;
+  late Stream<User?> _authStream;
+  Timer? _authTimeout;
   bool _hasReceivedData = false;
   Widget? _lastScreen;
+  Object? _authError;
 
   @override
   void initState() {
     super.initState();
+    _subscribeToAuth();
+  }
+
+  void _subscribeToAuth() {
     _authStream = AuthService().userStream;
+    _authError = null;
+    _authTimeout?.cancel();
+    _authTimeout = Timer(const Duration(seconds: 12), () {
+      if (mounted && !_hasReceivedData) {
+        setState(() => _authError = TimeoutException('Auth state timed out.'));
+      }
+    });
+  }
+
+  void _retryAuth() {
+    setState(() {
+      _hasReceivedData = false;
+      _lastScreen = null;
+      _subscribeToAuth();
+    });
+  }
+
+  @override
+  void dispose() {
+    _authTimeout?.cancel();
+    super.dispose();
   }
 
   @override
@@ -157,15 +228,25 @@ class _AuthWrapperState extends State<AuthWrapper> {
     return StreamBuilder<User?>(
       stream: _authStream,
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          _authError = snapshot.error;
+        }
         if (snapshot.hasData || snapshot.data != null) {
+          _authTimeout?.cancel();
+          _authError = null;
           _hasReceivedData = true;
           _lastScreen = const UserDataWrapper();
         } else if (snapshot.connectionState == ConnectionState.active &&
             !snapshot.hasData) {
+          _authTimeout?.cancel();
+          _authError = null;
           _hasReceivedData = true;
           _lastScreen = const FoyerScreen();
         }
 
+        if (_authError != null) {
+          return _AuthLoadErrorScreen(onRetry: _retryAuth);
+        }
         if (!_hasReceivedData) {
           return const Scaffold(
             body: Center(
@@ -176,6 +257,49 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
         return _lastScreen ?? const FoyerScreen();
       },
+    );
+  }
+}
+
+class _AuthLoadErrorScreen extends StatelessWidget {
+  final VoidCallback onRetry;
+
+  const _AuthLoadErrorScreen({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.lock_clock_outlined, size: 52),
+                const SizedBox(height: 18),
+                Text(
+                  'Your session could not be checked',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Reconnect and try again. Braid will not open another '
+                  'account’s cached session.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Try again'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

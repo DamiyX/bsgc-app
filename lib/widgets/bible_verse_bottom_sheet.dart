@@ -32,7 +32,7 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
       _isLoading = true;
     });
     try {
-      await _bibleService.init();
+      await _bibleService.ensureTranslation(_currentTranslation);
       final text = _bibleService.getVerseText(
         _currentTranslation,
         widget.reference.book,
