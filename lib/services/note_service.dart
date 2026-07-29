@@ -1,8 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/note_model.dart';
 
-class NoteService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+abstract interface class NoteWriter {
+  Future<void> saveNote(NoteModel note);
+}
+
+class NoteService implements NoteWriter {
+  final FirebaseFirestore _firestore;
+
+  NoteService({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   Stream<List<NoteModel>> getUserNotes(String userId) {
     return _firestore
@@ -18,6 +25,7 @@ class NoteService {
         });
   }
 
+  @override
   Future<void> saveNote(NoteModel note) async {
     await _firestore
         .collection('users')

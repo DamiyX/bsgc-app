@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -14,18 +17,76 @@ import '../theme.dart';
 import '../widgets/report_dialog.dart';
 import '../widgets/braid_media.dart';
 
-import 'dart:ui' as ui;
-
 enum TtsState { playing, paused, stopped }
+
+int resolveInitialInsightIndex(
+  List<InsightModel> insights, {
+  String? initialInsightId,
+  Set<String> seenInsightIds = const {},
+}) {
+  if (insights.isEmpty) return 0;
+  if (initialInsightId != null) {
+    final selectedIndex = insights.indexWhere(
+      (insight) => insight.id == initialInsightId,
+    );
+    if (selectedIndex >= 0) return selectedIndex;
+  }
+  final firstUnseenIndex = insights.indexWhere(
+    (insight) => !seenInsightIds.contains(insight.id),
+  );
+  return firstUnseenIndex >= 0 ? firstUnseenIndex : 0;
+}
+
+class InsightSeenObserver extends StatefulWidget {
+  final String insightId;
+  final bool isVisible;
+  final ValueChanged<String> onSeen;
+
+  const InsightSeenObserver({
+    super.key,
+    required this.insightId,
+    required this.isVisible,
+    required this.onSeen,
+  });
+
+  @override
+  State<InsightSeenObserver> createState() => _InsightSeenObserverState();
+}
+
+class _InsightSeenObserverState extends State<InsightSeenObserver> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isVisible) widget.onSeen(widget.insightId);
+  }
+
+  @override
+  void didUpdateWidget(InsightSeenObserver oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final becameVisible = widget.isVisible && !oldWidget.isVisible;
+    final visibleInsightChanged =
+        widget.isVisible && oldWidget.insightId != widget.insightId;
+    if (becameVisible || visibleInsightChanged) {
+      widget.onSeen(widget.insightId);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
 
 class ViewInsightScreen extends StatefulWidget {
   final List<List<InsightModel>> userInsightsGroups;
   final int initialUserIndex;
+  final String? initialInsightId;
+  final Set<String> seenInsightIds;
 
   const ViewInsightScreen({
     super.key,
     required this.userInsightsGroups,
     required this.initialUserIndex,
+    this.initialInsightId,
+    this.seenInsightIds = const {},
   });
 
   @override
@@ -35,6 +96,7 @@ class ViewInsightScreen extends StatefulWidget {
 class _ViewInsightScreenState extends State<ViewInsightScreen> {
   late PageController _userPageController;
   late List<int> _insightIndices;
+  late int _currentUserIndex;
   final FlutterTts _flutterTts = FlutterTts();
   String? _playingInsightId;
   TtsState _ttsState = TtsState.stopped;
@@ -43,16 +105,16 @@ class _ViewInsightScreenState extends State<ViewInsightScreen> {
   void initState() {
     super.initState();
     _userPageController = PageController(initialPage: widget.initialUserIndex);
+    _currentUserIndex = widget.initialUserIndex;
 
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     _insightIndices = List.generate(widget.userInsightsGroups.length, (i) {
-      if (currentUserId != null) {
-        final firstUnseen = widget.userInsightsGroups[i].indexWhere(
-          (insight) => !insight.seenBy.contains(currentUserId),
-        );
-        if (firstUnseen != -1) return firstUnseen;
-      }
-      return 0;
+      return resolveInitialInsightIndex(
+        widget.userInsightsGroups[i],
+        initialInsightId: i == widget.initialUserIndex
+            ? widget.initialInsightId
+            : null,
+        seenInsightIds: widget.seenInsightIds,
+      );
     });
 
     _initTts();
@@ -185,6 +247,11 @@ class _ViewInsightScreenState extends State<ViewInsightScreen> {
           PageView.builder(
             controller: _userPageController,
             itemCount: widget.userInsightsGroups.length,
+            onPageChanged: (userIndex) {
+              if (_currentUserIndex != userIndex) {
+                setState(() => _currentUserIndex = userIndex);
+              }
+            },
             itemBuilder: (context, userIndex) {
               final insights = widget.userInsightsGroups[userIndex];
               final insightIndex = _insightIndices[userIndex];
@@ -197,6 +264,7 @@ class _ViewInsightScreenState extends State<ViewInsightScreen> {
                 insight: insight,
                 insightIndex: insightIndex,
                 totalInsights: insights.length,
+                isVisible: userIndex == _currentUserIndex,
                 ttsState: currentTtsState,
                 onTogglePlay: () => _togglePlay(insight),
                 onPrevious: () => _previousInsight(userIndex),
@@ -214,6 +282,7 @@ class _ViewInsightPage extends StatefulWidget {
   final InsightModel insight;
   final int insightIndex;
   final int totalInsights;
+  final bool isVisible;
   final TtsState ttsState;
   final VoidCallback onTogglePlay;
   final VoidCallback onPrevious;
@@ -224,6 +293,7 @@ class _ViewInsightPage extends StatefulWidget {
     required this.insight,
     required this.insightIndex,
     required this.totalInsights,
+    required this.isVisible,
     required this.ttsState,
     required this.onTogglePlay,
     required this.onPrevious,
@@ -242,6 +312,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
   InsightCommentModel? _replyingTo;
   bool _isLiked = false;
   bool _isSaved = false;
+  bool _isSavePending = false;
   double _dismissOffset = 0.0;
   bool _commentsVisible = false;
 
@@ -254,10 +325,6 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
     super.initState();
 
     final user = FirebaseAuth.instance.currentUser;
-    if (user != null && !widget.insight.seenBy.contains(user.uid)) {
-      _insightService.markAsSeen(widget.insight.id, user.uid);
-    }
-
     _isLiked = user != null && widget.insight.likedBy.contains(user.uid);
     _loadReactionStatus();
 
@@ -304,6 +371,69 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
       if (mounted) setState(() => _isLiked = isReacted);
     } catch (_) {
       // Legacy array state remains a read-only fallback during migration.
+    }
+  }
+
+  Future<void> _toggleSavedInsight() async {
+    if (_isSavePending) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final wasSaved = _isSaved;
+    setState(() => _isSavePending = true);
+    try {
+      if (wasSaved) {
+        await _insightService.unsaveInsight(user.uid, widget.insight.id);
+      } else {
+        await _insightService.saveInsight(user.uid, widget.insight);
+      }
+      if (!mounted) return;
+      setState(() => _isSaved = !wasSaved);
+      if (!wasSaved) {
+        NotificationService().playActionSound();
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Saved while this Insight is active.',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            behavior: SnackBarBehavior.floating,
+            elevation: 0,
+            duration: const Duration(milliseconds: 2000),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            wasSaved
+                ? "Couldn't remove this saved Insight. Try again."
+                : "Couldn't save this Insight. Try again.",
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSavePending = false);
+    }
+  }
+
+  Future<void> _markInsightAsSeen(String insightId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      await _insightService.markAsSeen(insightId, user.uid);
+    } catch (_) {
+      // The state stream will continue to show this Insight as unseen until a
+      // later view successfully persists the per-user marker.
     }
   }
 
@@ -557,52 +687,19 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                   ),
                   SizedBox(width: 8),
                   IconButton(
-                    icon: Icon(
-                      _isSaved ? Icons.bookmark : Icons.bookmark_border,
-                      color: _isSaved
-                          ? AppColors.gradientEnd
-                          : Theme.of(context).colorScheme.onSurface,
-                    ),
-                    onPressed: () async {
-                      if (!_isSaved) {
-                        NotificationService().playActionSound();
-                      }
-                      setState(() => _isSaved = !_isSaved);
-                      final user = FirebaseAuth.instance.currentUser;
-                      if (user != null) {
-                        if (_isSaved) {
-                          await _insightService.saveInsight(
-                            user.uid,
-                            widget.insight,
-                          );
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).clearSnackBars();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Insight saved',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                behavior: SnackBarBehavior.floating,
-                                elevation: 0,
-                                duration: const Duration(milliseconds: 1500),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                            );
-                          }
-                        } else {
-                          await _insightService.unsaveInsight(
-                            user.uid,
-                            widget.insight.id,
-                          );
-                        }
-                      }
-                    },
+                    tooltip: _isSaved ? 'Remove saved Insight' : 'Save Insight',
+                    icon: _isSavePending
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            _isSaved ? Icons.bookmark : Icons.bookmark_border,
+                            color: _isSaved
+                                ? AppColors.gradientEnd
+                                : Theme.of(context).colorScheme.onSurface,
+                          ),
+                    onPressed: _isSavePending ? null : _toggleSavedInsight,
                   ),
                 ],
               ),
@@ -1236,6 +1333,11 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
 
     return Stack(
       children: [
+        InsightSeenObserver(
+          insightId: widget.insight.id,
+          isVisible: widget.isVisible,
+          onSeen: (insightId) => unawaited(_markInsightAsSeen(insightId)),
+        ),
         AnimatedBuilder(
           animation: _commentsAnimController,
           builder: (context, child) {

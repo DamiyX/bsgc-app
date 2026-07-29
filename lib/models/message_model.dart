@@ -150,3 +150,21 @@ class MessageModel {
     };
   }
 }
+
+class MessageVisibilityState {
+  final Set<String> hiddenMessageIds;
+  final DateTime? clearedBefore;
+
+  const MessageVisibilityState({
+    this.hiddenMessageIds = const {},
+    this.clearedBefore,
+  });
+
+  bool allows(MessageModel message, {required String userId}) {
+    if (hiddenMessageIds.contains(message.id)) return false;
+    if (message.deletedFor.contains(userId)) return false;
+
+    final clearCutoff = clearedBefore;
+    return clearCutoff == null || message.timestamp.isAfter(clearCutoff);
+  }
+}

@@ -20,11 +20,13 @@ class InsightsRow extends StatefulWidget {
 class _InsightsRowState extends State<InsightsRow> {
   final InsightService _insightService = InsightService();
   late Stream<List<InsightModel>> _insightsStream;
+  late Stream<Set<String>> _seenInsightIdsStream;
 
   @override
   void initState() {
     super.initState();
     _insightsStream = _insightService.getActiveInsights();
+    _seenInsightIdsStream = _insightService.getSeenInsightIds();
   }
 
   @override
@@ -100,27 +102,41 @@ class _InsightsRowState extends State<InsightsRow> {
                 );
               }
 
-              return ListView.builder(
-                padding: EdgeInsets.only(left: 24, right: 8),
-                scrollDirection: Axis.horizontal,
-                itemCount: sortedUserIds.length + 1,
-                itemBuilder: (context, index) {
-                  if (index == 0) {
-                    return _buildMyInsightBox(
-                      context,
-                      hasMyInsights,
-                      globalGroupedList,
+              return StreamBuilder<Set<String>>(
+                stream: _seenInsightIdsStream,
+                initialData: const {},
+                builder: (context, seenSnapshot) {
+                  if (seenSnapshot.hasError) {
+                    return const Center(
+                      child: Text("Couldn't load Insight read status"),
                     );
                   }
+                  final seenInsightIds = seenSnapshot.data ?? const <String>{};
+                  return ListView.builder(
+                    padding: EdgeInsets.only(left: 24, right: 8),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: sortedUserIds.length + 1,
+                    itemBuilder: (context, index) {
+                      if (index == 0) {
+                        return _buildMyInsightBox(
+                          context,
+                          hasMyInsights,
+                          globalGroupedList,
+                          seenInsightIds,
+                        );
+                      }
 
-                  final userId = sortedUserIds[index - 1];
-                  final userInsights = groupedInsights[userId]!;
-                  final userIndex = hasMyInsights ? index : index - 1;
-                  return _buildUserInsightBubble(
-                    context,
-                    userInsights,
-                    globalGroupedList,
-                    userIndex,
+                      final userId = sortedUserIds[index - 1];
+                      final userInsights = groupedInsights[userId]!;
+                      final userIndex = hasMyInsights ? index : index - 1;
+                      return _buildUserInsightBubble(
+                        context,
+                        userInsights,
+                        globalGroupedList,
+                        userIndex,
+                        seenInsightIds,
+                      );
+                    },
                   );
                 },
               );
@@ -136,12 +152,13 @@ class _InsightsRowState extends State<InsightsRow> {
     BuildContext context,
     bool hasMyInsights,
     List<List<InsightModel>> globalGroupedList,
+    Set<String> seenInsightIds,
   ) {
     final user = FirebaseAuth.instance.currentUser;
     int unseenCount = 0;
     if (hasMyInsights && user != null) {
       unseenCount = globalGroupedList.first
-          .where((i) => !i.seenBy.contains(user.uid))
+          .where((insight) => !seenInsightIds.contains(insight.id))
           .length;
     }
     bool hasUnseen = unseenCount > 0;
@@ -161,6 +178,7 @@ class _InsightsRowState extends State<InsightsRow> {
                         builder: (_) => ViewInsightScreen(
                           userInsightsGroups: globalGroupedList,
                           initialUserIndex: 0,
+                          seenInsightIds: seenInsightIds,
                         ),
                       ),
                     );
@@ -275,6 +293,7 @@ class _InsightsRowState extends State<InsightsRow> {
     List<InsightModel> userInsights,
     List<List<InsightModel>> globalGroupedList,
     int userIndex,
+    Set<String> seenInsightIds,
   ) {
     final authorName = ContactCacheService().getContactName(
       userInsights.first.authorUid,
@@ -286,7 +305,7 @@ class _InsightsRowState extends State<InsightsRow> {
     int unseenCount = 0;
     if (currentUserId != null) {
       unseenCount = userInsights
-          .where((insight) => !insight.seenBy.contains(currentUserId))
+          .where((insight) => !seenInsightIds.contains(insight.id))
           .length;
     }
     bool hasUnseen = unseenCount > 0;
@@ -299,6 +318,7 @@ class _InsightsRowState extends State<InsightsRow> {
             builder: (_) => ViewInsightScreen(
               userInsightsGroups: globalGroupedList,
               initialUserIndex: userIndex,
+              seenInsightIds: seenInsightIds,
             ),
           ),
         );

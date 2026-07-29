@@ -1,5 +1,26 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+const int noteTitleMaxLength = 160;
+const int noteBodyMaxLength = 50000;
+
+String? validateNoteTitle(String? value) {
+  final title = value?.trim() ?? '';
+  if (title.isEmpty) return 'Give this note a short title.';
+  if (title.length > noteTitleMaxLength) {
+    return 'Use no more than 160 characters.';
+  }
+  return null;
+}
+
+String? validateNoteBody(String? value) {
+  final body = value?.trim() ?? '';
+  if (body.isEmpty) return 'Write something to save.';
+  if (body.length > noteBodyMaxLength) {
+    return 'Use no more than 50,000 characters.';
+  }
+  return null;
+}
+
 class NoteModel {
   final String id;
   final int schemaVersion;

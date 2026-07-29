@@ -130,7 +130,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     if (!_messageScrollController.hasClients) return;
     final position = _messageScrollController.position;
     if (position.pixels >= position.maxScrollExtent - 240) {
-      unawaited(_controller.loadOlder());
+      unawaited(_controller.loadOlder(_selectedSpace.wireName));
     }
   }
 
@@ -148,9 +148,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     MessageModel? reply;
     if (draft.replyToMessageId != null) {
       try {
-        reply = _controller.messages.firstWhere(
-          (message) => message.id == draft.replyToMessageId,
-        );
+        reply = _controller
+            .messagesFor(restoredSpace.wireName, userId: _uid)
+            .firstWhere((message) => message.id == draft.replyToMessageId);
       } catch (_) {
         reply = null;
       }
@@ -469,7 +469,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     );
     if (confirmed != true) return;
     try {
-      await _chatService.clearChatForMe(widget.group.id);
+      await _controller.clearChatForMe();
       _showMessage('Earlier messages are now hidden for you.');
     } catch (_) {
       _showMessage('Could not clear the room right now.');
@@ -777,16 +777,12 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
   }
 
   Widget _buildMessageSpace(GroupModel group) {
-    final messages = _controller.messages
-        .where(
-          (message) =>
-              message.space == _selectedSpace.wireName &&
-              !message.deletedFor.contains(_uid),
-        )
-        .toList();
+    final space = _selectedSpace.wireName;
+    final messages = _controller.messagesFor(space, userId: _uid);
+    final messageError = _controller.messageError(space);
     return Column(
       children: [
-        if (_controller.messageError != null && messages.isNotEmpty)
+        if (messageError != null && messages.isNotEmpty)
           const _OfflineMessageBanner(),
         if (_outbox.isNotEmpty)
           _OutboxStrip(
@@ -798,19 +794,25 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
             onDiscard: _removeOutbox,
           ),
         Expanded(
-          child: _controller.loadingMessages && messages.isEmpty
+          child: _controller.loadingMessages(space) && messages.isEmpty
               ? const Center(child: CircularProgressIndicator())
-              : _controller.messageError != null && messages.isEmpty
-              ? _RoomLoadError(onRetry: _controller.loadOlder)
+              : messageError != null && messages.isEmpty
+              ? _RoomLoadError(onRetry: () => _controller.loadOlder(space))
               : messages.isEmpty
-              ? _EmptyStudySpace(space: _selectedSpace)
+              ? _EmptyStudySpace(
+                  space: _selectedSpace,
+                  onLoadOlder: _controller.hasMore(space)
+                      ? () => _controller.loadOlder(space)
+                      : null,
+                )
               : ListView.builder(
                   key: PageStorageKey(_selectedSpace.wireName),
                   controller: _messageScrollController,
                   reverse: true,
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
                   itemCount:
-                      messages.length + (_controller.loadingOlder ? 1 : 0),
+                      messages.length +
+                      (_controller.loadingOlder(space) ? 1 : 0),
                   itemBuilder: (context, index) {
                     if (index == messages.length) {
                       return const Padding(
@@ -849,7 +851,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     final replyId = message.replyToMessageId;
     if (replyId == null) return null;
     try {
-      return _controller.messages.firstWhere((item) => item.id == replyId);
+      return _controller
+          .messagesFor(message.space, userId: _uid)
+          .firstWhere((item) => item.id == replyId);
     } catch (_) {
       return null;
     }
@@ -1080,7 +1084,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
 
   Future<void> _hideMessage(MessageModel message) async {
     try {
-      await _chatService.deleteMessageForMe(widget.group.id, message.id);
+      await _controller.hideMessageForMe(message.id);
       _showMessage('Message hidden for you.');
     } catch (_) {
       _showMessage('That message could not be hidden.');
@@ -1558,8 +1562,9 @@ class _OutboxStrip extends StatelessWidget {
 
 class _EmptyStudySpace extends StatelessWidget {
   final StudySpace space;
+  final Future<void> Function()? onLoadOlder;
 
-  const _EmptyStudySpace({required this.space});
+  const _EmptyStudySpace({required this.space, this.onLoadOlder});
 
   @override
   Widget build(BuildContext context) {
@@ -1584,6 +1589,13 @@ class _EmptyStudySpace extends StatelessWidget {
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyLarge,
             ),
+            if (onLoadOlder != null) ...[
+              const SizedBox(height: 16),
+              OutlinedButton(
+                onPressed: onLoadOlder,
+                child: const Text('Load older messages'),
+              ),
+            ],
           ],
         ),
       ),

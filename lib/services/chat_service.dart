@@ -305,12 +305,79 @@ class ChatService {
         );
   }
 
-  GroupMessagePager createMessagePager(String groupId, {int pageSize = 30}) {
+  GroupMessagePager createMessagePager(
+    String groupId, {
+    required String space,
+    int pageSize = 30,
+  }) {
     return GroupMessagePager(
       firestore: _firestore,
       groupId: groupId,
+      space: space,
       pageSize: pageSize,
     );
+  }
+
+  Stream<MessageVisibilityState> watchMessageVisibility(String groupId) {
+    final user = _requireUser();
+    final groupStateReference = _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('group_state')
+        .doc(groupId);
+    final hiddenMessagesReference = groupStateReference.collection(
+      'hidden_messages',
+    );
+
+    StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+    groupStateSubscription;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+    hiddenMessagesSubscription;
+    var hasGroupState = false;
+    var hasHiddenMessages = false;
+    DateTime? clearedBefore;
+    Set<String> hiddenMessageIds = const {};
+    late final StreamController<MessageVisibilityState> controller;
+
+    void emitWhenReady() {
+      if (!hasGroupState || !hasHiddenMessages || controller.isClosed) return;
+      controller.add(
+        MessageVisibilityState(
+          hiddenMessageIds: hiddenMessageIds,
+          clearedBefore: clearedBefore,
+        ),
+      );
+    }
+
+    controller = StreamController<MessageVisibilityState>(
+      onListen: () {
+        groupStateSubscription = groupStateReference.snapshots().listen((
+          snapshot,
+        ) {
+          final rawClearedBefore = snapshot.data()?['clearedBefore'];
+          clearedBefore = rawClearedBefore is Timestamp
+              ? rawClearedBefore.toDate()
+              : null;
+          hasGroupState = true;
+          emitWhenReady();
+        }, onError: controller.addError);
+        hiddenMessagesSubscription = hiddenMessagesReference.snapshots().listen(
+          (snapshot) {
+            hiddenMessageIds = snapshot.docs
+                .map((document) => document.id)
+                .toSet();
+            hasHiddenMessages = true;
+            emitWhenReady();
+          },
+          onError: controller.addError,
+        );
+      },
+      onCancel: () async {
+        await groupStateSubscription?.cancel();
+        await hiddenMessagesSubscription?.cancel();
+      },
+    );
+    return controller.stream;
   }
 
   Future<String> sendHybridMessage(
@@ -502,53 +569,165 @@ class ChatService {
   }
 }
 
-class GroupMessagePager {
+class GroupMessagePageItem {
+  final MessageModel message;
+  final int sortMillis;
+
+  const GroupMessagePageItem({required this.message, required this.sortMillis});
+}
+
+class GroupMessagePage {
+  final List<GroupMessagePageItem> items;
+  final Object? oldestCursor;
+  final bool hasMore;
+
+  const GroupMessagePage({
+    required this.items,
+    required this.oldestCursor,
+    required this.hasMore,
+  });
+}
+
+abstract interface class GroupMessagePageSource {
+  Stream<GroupMessagePage> watchLatest({
+    required String groupId,
+    required String space,
+    required int pageSize,
+  });
+
+  Future<GroupMessagePage> loadOlder({
+    required String groupId,
+    required String space,
+    required int pageSize,
+    required Object? cursor,
+  });
+}
+
+class FirestoreGroupMessagePageSource implements GroupMessagePageSource {
   final FirebaseFirestore firestore;
+
+  FirestoreGroupMessagePageSource(this.firestore);
+
+  Query<Map<String, dynamic>> _baseQuery(String groupId, String space) {
+    return firestore
+        .collection('groups')
+        .doc(groupId)
+        .collection('messages')
+        .where('space', isEqualTo: space)
+        .orderBy('timestamp', descending: true);
+  }
+
+  @override
+  Stream<GroupMessagePage> watchLatest({
+    required String groupId,
+    required String space,
+    required int pageSize,
+  }) {
+    return _baseQuery(groupId, space)
+        .limit(pageSize)
+        .snapshots(includeMetadataChanges: true)
+        .map(
+          (snapshot) => GroupMessagePage(
+            items: snapshot.docChanges
+                .where((change) => change.type != DocumentChangeType.removed)
+                .map((change) => _pageItem(change.doc))
+                .toList(growable: false),
+            oldestCursor: snapshot.docs.isEmpty ? null : snapshot.docs.last,
+            hasMore: snapshot.docs.length >= pageSize,
+          ),
+        );
+  }
+
+  @override
+  Future<GroupMessagePage> loadOlder({
+    required String groupId,
+    required String space,
+    required int pageSize,
+    required Object? cursor,
+  }) async {
+    var query = _baseQuery(groupId, space).limit(pageSize);
+    if (cursor != null) {
+      if (cursor is! DocumentSnapshot<Map<String, dynamic>>) {
+        throw StateError('The message page cursor is invalid.');
+      }
+      query = query.startAfterDocument(cursor);
+    }
+    final snapshot = await query.get();
+    return GroupMessagePage(
+      items: snapshot.docs.map(_pageItem).toList(growable: false),
+      oldestCursor: snapshot.docs.isEmpty ? null : snapshot.docs.last,
+      hasMore: snapshot.docs.length >= pageSize,
+    );
+  }
+
+  GroupMessagePageItem _pageItem(
+    DocumentSnapshot<Map<String, dynamic>> document,
+  ) {
+    final timestamp = document.data()?['timestamp'];
+    return GroupMessagePageItem(
+      message: MessageModel.fromFirestore(document),
+      sortMillis: timestamp is Timestamp
+          ? timestamp.millisecondsSinceEpoch
+          : 0x7FFFFFFFFFFFFFFF,
+    );
+  }
+}
+
+class GroupMessagePager {
   final String groupId;
+  final String space;
   final int pageSize;
+  final GroupMessagePageSource _pageSource;
   final StreamController<List<MessageModel>> _controller =
       StreamController.broadcast();
-  final Map<String, DocumentSnapshot<Map<String, dynamic>>> _documents = {};
+  final Map<String, GroupMessagePageItem> _items = {};
 
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _liveSubscription;
-  DocumentSnapshot<Map<String, dynamic>>? _oldestCursor;
+  StreamSubscription<GroupMessagePage>? _liveSubscription;
+  Object? _oldestCursor;
   bool _started = false;
   bool _loadingOlder = false;
   bool hasMore = true;
 
   GroupMessagePager({
-    required this.firestore,
+    required FirebaseFirestore firestore,
     required this.groupId,
+    required this.space,
     this.pageSize = 30,
-  });
+  }) : _pageSource = FirestoreGroupMessagePageSource(firestore) {
+    _validateSpace();
+  }
+
+  GroupMessagePager.fromSource(
+    this._pageSource, {
+    required this.groupId,
+    required this.space,
+    this.pageSize = 30,
+  }) {
+    _validateSpace();
+  }
+
+  void _validateSpace() {
+    if (!const {'reflection', 'discussion', 'prayer'}.contains(space)) {
+      throw ArgumentError.value(space, 'space', 'Unknown study space.');
+    }
+  }
 
   Stream<List<MessageModel>> get stream {
     _start();
     return _controller.stream;
   }
 
-  Query<Map<String, dynamic>> get _baseQuery => firestore
-      .collection('groups')
-      .doc(groupId)
-      .collection('messages')
-      .orderBy('timestamp', descending: true);
-
   void _start() {
     if (_started) return;
     _started = true;
-    _liveSubscription = _baseQuery
-        .limit(pageSize)
-        .snapshots(includeMetadataChanges: true)
-        .listen((snapshot) {
-          for (final change in snapshot.docChanges) {
-            if (change.type != DocumentChangeType.removed) {
-              _documents[change.doc.id] = change.doc;
-            }
+    _liveSubscription = _pageSource
+        .watchLatest(groupId: groupId, space: space, pageSize: pageSize)
+        .listen((page) {
+          for (final item in page.items) {
+            _items[item.message.id] = item;
           }
-          if (snapshot.docs.isNotEmpty) {
-            _oldestCursor ??= snapshot.docs.last;
-          }
-          if (snapshot.docs.length < pageSize) hasMore = false;
+          _oldestCursor ??= page.oldestCursor;
+          if (!page.hasMore) hasMore = false;
           _emit();
         }, onError: _controller.addError);
   }
@@ -557,15 +736,17 @@ class GroupMessagePager {
     if (_loadingOlder || !hasMore) return;
     _loadingOlder = true;
     try {
-      var query = _baseQuery.limit(pageSize);
-      final cursor = _oldestCursor;
-      if (cursor != null) query = query.startAfterDocument(cursor);
-      final snapshot = await query.get();
-      for (final document in snapshot.docs) {
-        _documents[document.id] = document;
+      final page = await _pageSource.loadOlder(
+        groupId: groupId,
+        space: space,
+        pageSize: pageSize,
+        cursor: _oldestCursor,
+      );
+      for (final item in page.items) {
+        _items[item.message.id] = item;
       }
-      if (snapshot.docs.isNotEmpty) _oldestCursor = snapshot.docs.last;
-      if (snapshot.docs.length < pageSize) hasMore = false;
+      _oldestCursor = page.oldestCursor ?? _oldestCursor;
+      hasMore = page.hasMore;
       _emit();
     } finally {
       _loadingOlder = false;
@@ -573,21 +754,14 @@ class GroupMessagePager {
   }
 
   void _emit() {
-    final documents = _documents.values.toList()
+    final items = _items.values.toList()
       ..sort((first, second) {
-        final firstTimestamp = first.data()?['timestamp'];
-        final secondTimestamp = second.data()?['timestamp'];
-        final firstMillis = firstTimestamp is Timestamp
-            ? firstTimestamp.millisecondsSinceEpoch
-            : DateTime.now().millisecondsSinceEpoch;
-        final secondMillis = secondTimestamp is Timestamp
-            ? secondTimestamp.millisecondsSinceEpoch
-            : DateTime.now().millisecondsSinceEpoch;
-        return secondMillis.compareTo(firstMillis);
+        final timestampOrder = second.sortMillis.compareTo(first.sortMillis);
+        return timestampOrder != 0
+            ? timestampOrder
+            : second.message.id.compareTo(first.message.id);
       });
-    _controller.add(
-      documents.map(MessageModel.fromFirestore).toList(growable: false),
-    );
+    _controller.add(items.map((item) => item.message).toList(growable: false));
   }
 
   Future<void> dispose() async {

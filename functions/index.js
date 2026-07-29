@@ -23,6 +23,9 @@ const {
   requireInteger,
   requireString,
 } = require("./lib/contracts");
+const {
+  commitLifecycleUpdates,
+} = require("./lib/lifecycle");
 
 admin.initializeApp();
 
@@ -1251,24 +1254,17 @@ exports.advanceGroupLifecycle = onSchedule(
         .limit(400)
         .get(),
     ]);
-    const batch = db.batch();
-    for (const document of scheduledSnapshot.docs) {
-      batch.update(document.ref, {
-        lifecycle: "active",
-        activatedAt: now,
-      });
-    }
-    for (const document of activeSnapshot.docs) {
-      batch.update(document.ref, {
-        lifecycle: "completed",
-        completedAt: now,
-      });
-    }
     if (scheduledSnapshot.empty && activeSnapshot.empty) return;
-    await batch.commit();
+    const result = await commitLifecycleUpdates({
+      firestore: db,
+      scheduledDocuments: scheduledSnapshot.docs,
+      activeDocuments: activeSnapshot.docs,
+      now,
+    });
     logger.info("Group lifecycle advancement", {
-      activatedCount: scheduledSnapshot.size,
-      completedCount: activeSnapshot.size,
+      activatedCount: result.activatedCount,
+      completedCount: result.completedCount,
+      batchCount: result.batchCount,
     });
   },
 );

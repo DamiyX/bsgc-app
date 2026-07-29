@@ -112,7 +112,7 @@ class _CreateNoteScreenState extends State<CreateNoteScreen> {
               const SizedBox(height: 20),
               TextFormField(
                 controller: _titleController,
-                maxLength: 160,
+                maxLength: noteTitleMaxLength,
                 textCapitalization: TextCapitalization.sentences,
                 textInputAction: TextInputAction.next,
                 style: theme.textTheme.titleLarge,
@@ -121,21 +121,14 @@ class _CreateNoteScreenState extends State<CreateNoteScreen> {
                   hintText: 'A thought to return to',
                   border: OutlineInputBorder(),
                 ),
-                validator: (value) {
-                  final text = value?.trim() ?? '';
-                  if (text.isEmpty) return 'Give this note a short title.';
-                  if (text.length > 160) {
-                    return 'Use no more than 160 characters.';
-                  }
-                  return null;
-                },
+                validator: validateNoteTitle,
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _bodyController,
                 minLines: 10,
                 maxLines: 20,
-                maxLength: 50000,
+                maxLength: noteBodyMaxLength,
                 textCapitalization: TextCapitalization.sentences,
                 decoration: const InputDecoration(
                   labelText: 'Note',
@@ -143,14 +136,7 @@ class _CreateNoteScreenState extends State<CreateNoteScreen> {
                   alignLabelWithHint: true,
                   border: OutlineInputBorder(),
                 ),
-                validator: (value) {
-                  final text = value?.trim() ?? '';
-                  if (text.isEmpty) return 'Write something to save.';
-                  if (text.length > 50000) {
-                    return 'Use no more than 50,000 characters.';
-                  }
-                  return null;
-                },
+                validator: validateNoteBody,
               ),
             ],
           ),

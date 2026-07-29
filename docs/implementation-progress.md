@@ -1,5 +1,12 @@
 # Braid full remediation — final repository ledger
 
+> **Superseded status notice (July 29, 2026):** A fresh post-remediation
+> audit found that this ledger overstated completion. Do not use it as the
+> current release or implementation authority. The current findings and
+> sequenced work plan are in `docs/post-remediation-audit/`, especially
+> `00-audit-scope-and-executive-summary.md` and
+> `05-prioritized-implementation-plan.md`.
+
 **Source audit:** `docs/audit/01-product-and-system-understanding.md` through `docs/audit/06-implementation-plan.md`
 
 **Implementation branch:** `codex/bsgc-full-remediation`

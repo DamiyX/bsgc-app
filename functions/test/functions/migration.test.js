@@ -52,6 +52,29 @@ describe("nested user data migration", () => {
     assert.equal(note.themeId, "paper");
   });
 
+  test("preserves legacy note bodies up to the v2 50,000 character limit", () => {
+    const body = "a".repeat(50_000);
+    const note = deriveNoteMigration(
+      "alice",
+      { title: "Long study", body },
+      timestamp,
+    );
+
+    assert.equal(note.body.length, 50_000);
+    assert.equal(note.body, body);
+  });
+
+  test("quarantines a legacy note that exceeds the v2 body limit", () => {
+    const migration = deriveNoteMigration(
+      "alice",
+      { title: "Oversized study", body: "a".repeat(50_001) },
+      timestamp,
+    );
+
+    assert.equal(migration.issue.code, "note-body-limit-exceeded");
+    assert.equal(migration.body, undefined);
+  });
+
   test("converts saved documents to private pointers", () => {
     assert.deepEqual(
       deriveSavedInsightMigration("insight-a", {}, timestamp),

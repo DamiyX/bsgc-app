@@ -8,6 +8,23 @@ import 'create_insight_screen.dart';
 import 'view_insight_screen.dart';
 import '../widgets/braid_media.dart';
 
+const myInsightsPrivacyNotice =
+    'Visible only to the people you choose while each Insight is active. '
+    'Braid stores and processes this content to provide the service.';
+
+ViewInsightScreen buildSelectedInsightViewer(
+  List<InsightModel> insights,
+  InsightModel selectedInsight, {
+  Set<String> seenInsightIds = const {},
+}) {
+  return ViewInsightScreen(
+    userInsightsGroups: [insights],
+    initialUserIndex: 0,
+    initialInsightId: selectedInsight.id,
+    seenInsightIds: seenInsightIds,
+  );
+}
+
 class MyInsightsScreen extends StatelessWidget {
   MyInsightsScreen({super.key});
 
@@ -140,9 +157,9 @@ class MyInsightsScreen extends StatelessWidget {
                               opaque: false,
                               pageBuilder:
                                   (context, animation, secondaryAnimation) =>
-                                      ViewInsightScreen(
-                                        userInsightsGroups: [insights],
-                                        initialUserIndex: 0,
+                                      buildSelectedInsightViewer(
+                                        insights,
+                                        insight,
                                       ),
                               transitionsBuilder:
                                   (
@@ -241,7 +258,6 @@ class MyInsightsScreen extends StatelessWidget {
                 },
               ),
             ),
-            // Bottom area with encryption text
             Container(
               padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
               color: Colors.white,
@@ -249,14 +265,14 @@ class MyInsightsScreen extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    Icons.lock_outline,
+                    Icons.group_outlined,
                     size: 14,
                     color: AppColors.gradientEnd,
                   ),
                   SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      'Your insights are end-to-end encrypted. They disappear after 3 days.',
+                      myInsightsPrivacyNotice,
                       style: TextStyle(
                         color: Theme.of(
                           context,

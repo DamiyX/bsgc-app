@@ -148,13 +148,21 @@ async function main() {
     }
     counts.connections += connectionDocuments.length;
     for (const noteDocument of noteDocuments) {
+      const noteMigration = deriveNoteMigration(
+        userDocument.id,
+        noteDocument.data(),
+        now,
+      );
+      if (noteMigration.issue) {
+        issues.push({
+          document: noteDocument.ref.path,
+          ...noteMigration.issue,
+        });
+        continue;
+      }
       operations.push({
         reference: noteDocument.ref,
-        data: deriveNoteMigration(
-          userDocument.id,
-          noteDocument.data(),
-          now,
-        ),
+        data: noteMigration,
       });
       counts.notes += 1;
     }

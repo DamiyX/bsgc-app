@@ -14,6 +14,10 @@ import '../widgets/saved_insight_card.dart';
 import 'create_note_screen.dart';
 import 'edit_profile_screen.dart';
 
+const savedInsightsRetentionNotice =
+    'Saved Insights are bookmarks available while they are active. '
+    'Expired or unavailable items are removed.';
+
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -219,8 +223,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           return const _ProfileListState(
             icon: Icons.bookmark_outline,
             title: 'Nothing saved yet',
-            description:
-                'Saved contacts’ Insights stay here for private revisiting.',
+            description: savedInsightsRetentionNotice,
           );
         }
         return ListView.builder(

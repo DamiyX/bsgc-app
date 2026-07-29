@@ -1,5 +1,10 @@
 # Braid remediation final handoff
 
+> **Superseded status notice (July 29, 2026):** This handoff describes the
+> earlier remediation pass, but a fresh data-flow audit found additional
+> release blockers. Use `docs/post-remediation-audit/` for current truth and
+> do not infer that the complete remediation is finished from this document.
+
 **Finalized:** July 29, 2026
 
 **Review branch:** `codex/bsgc-full-remediation`

@@ -127,11 +127,22 @@ function deriveInsightMigration(insight, timestamp) {
 }
 
 function deriveNoteMigration(uid, note, timestamp) {
+  const body = typeof note.body === "string" ? note.body.trim() : "";
+  if (body.length > 50000) {
+    return {
+      issue: {
+        code: "note-body-limit-exceeded",
+        message:
+          "Legacy note body exceeds 50,000 characters and requires manual review.",
+      },
+    };
+  }
+
   return {
     schemaVersion: 2,
     authorUid: uid,
     title: cleanString(note.title, 160) ?? "",
-    body: cleanString(note.body, 20000) ?? "",
+    body,
     themeId: cleanString(note.themeId ?? note.themeColor, 64) ?? "theme_0",
     createdAt: note.createdAt ?? timestamp,
     updatedAt: note.updatedAt ?? note.createdAt ?? timestamp,

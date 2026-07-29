@@ -4,6 +4,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/insight_model.dart';
 
+bool shouldRemoveUnavailableSavedInsight(Object error) {
+  return error is FirebaseException &&
+      (error.code == 'permission-denied' || error.code == 'not-found');
+}
+
 class InsightService {
   final FirebaseFirestore _firestore;
   final FirebaseFunctions _functions;
@@ -122,6 +127,21 @@ class InsightService {
           'seenAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
+  }
+
+  Stream<Set<String>> getSeenInsightIds({int limit = 100}) {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return Stream.value(const {});
+    return _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('insight_state')
+        .orderBy('updatedAt', descending: true)
+        .limit(limit.clamp(1, 100).toInt())
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs.map((document) => document.id).toSet(),
+        );
   }
 
   Stream<List<InsightCommentModel>> getComments(
@@ -249,6 +269,10 @@ class InsightService {
 
   Future<void> saveInsight(String userId, InsightModel insight) async {
     if (_requireUserId() != userId) return;
+    if (insight.status != 'active' ||
+        !insight.expiresAt.isAfter(DateTime.now())) {
+      throw StateError('Only active Insights can be saved.');
+    }
     await _firestore
         .collection('users')
         .doc(userId)
@@ -287,10 +311,20 @@ class InsightService {
                     .collection('insights')
                     .doc(saved.id)
                     .get();
-                return document.exists
-                    ? InsightModel.fromFirestore(document)
-                    : null;
-              } catch (_) {
+                if (!document.exists) {
+                  await saved.reference.delete();
+                  return null;
+                }
+                final insight = InsightModel.fromFirestore(document);
+                if (insight.status != 'active' ||
+                    !insight.expiresAt.isAfter(DateTime.now())) {
+                  await saved.reference.delete();
+                  return null;
+                }
+                return insight;
+              } catch (error) {
+                if (!shouldRemoveUnavailableSavedInsight(error)) rethrow;
+                await saved.reference.delete();
                 return null;
               }
             }),

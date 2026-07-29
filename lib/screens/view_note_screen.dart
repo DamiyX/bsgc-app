@@ -7,8 +7,10 @@ import '../widgets/clickable_scripture_text.dart';
 
 class ViewNoteScreen extends StatefulWidget {
   final NoteModel note;
+  final NoteWriter noteWriter;
 
-  const ViewNoteScreen({super.key, required this.note});
+  ViewNoteScreen({super.key, required this.note, NoteWriter? noteWriter})
+    : noteWriter = noteWriter ?? NoteService();
 
   @override
   State<ViewNoteScreen> createState() => _ViewNoteScreenState();
@@ -16,14 +18,16 @@ class ViewNoteScreen extends StatefulWidget {
 
 class _ViewNoteScreenState extends State<ViewNoteScreen> {
   bool _isEditing = false;
+  bool _isSaving = false;
   late TextEditingController _titleController;
   late TextEditingController _bodyController;
+  String? _titleError;
+  String? _bodyError;
 
   // Undo/Redo controllers
   final UndoHistoryController _titleUndoController = UndoHistoryController();
   final UndoHistoryController _bodyUndoController = UndoHistoryController();
 
-  final NoteService _noteService = NoteService();
   bool _isTitleFocused = false;
 
   @override
@@ -42,7 +46,19 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
     super.dispose();
   }
 
-  void _saveChanges() {
+  Future<void> _saveChanges() async {
+    if (_isSaving) return;
+
+    final titleError = validateNoteTitle(_titleController.text);
+    final bodyError = validateNoteBody(_bodyController.text);
+    if (titleError != null || bodyError != null) {
+      setState(() {
+        _titleError = titleError;
+        _bodyError = bodyError;
+      });
+      return;
+    }
+
     final updatedNote = NoteModel(
       id: widget.note.id,
       authorUid: widget.note.authorUid,
@@ -52,16 +68,33 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
       createdAt: widget.note.createdAt,
       updatedAt: DateTime.now(),
     );
-    // Fire and forget save
-    _noteService.saveNote(updatedNote);
 
-    if (mounted) {
+    setState(() {
+      _isSaving = true;
+      _titleError = null;
+      _bodyError = null;
+    });
+
+    try {
+      await widget.noteWriter.saveNote(updatedNote);
+      if (!mounted) return;
       setState(() {
         _isEditing = false;
       });
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Note saved!')));
+      ).showSnackBar(const SnackBar(content: Text('Note saved.')));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "Couldn't save this note. Your changes are still here. Try again.",
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -115,12 +148,23 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
                 );
               },
             ),
-            IconButton(
-              icon: Icon(Icons.check, color: AppColors.gradientEnd),
-              onPressed: _saveChanges,
-            ),
+            if (_isSaving)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            else
+              IconButton(
+                tooltip: 'Save note',
+                icon: Icon(Icons.check, color: AppColors.gradientEnd),
+                onPressed: _saveChanges,
+              ),
           ] else ...[
             IconButton(
+              tooltip: 'Edit note',
               icon: Icon(
                 Icons.edit,
                 color: Theme.of(
@@ -184,8 +228,10 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
                     if (hasFocus) setState(() => _isTitleFocused = true);
                   },
                   child: TextField(
+                    key: const ValueKey('note-title-field'),
                     controller: _titleController,
                     undoController: _titleUndoController,
+                    maxLength: noteTitleMaxLength,
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
@@ -196,7 +242,12 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
                     decoration: const InputDecoration(
                       hintText: 'Note Title',
                       border: InputBorder.none,
-                    ),
+                    ).copyWith(errorText: _titleError),
+                    onChanged: (_) {
+                      if (_titleError != null) {
+                        setState(() => _titleError = null);
+                      }
+                    },
                   ),
                 ),
                 SizedBox(height: 16),
@@ -206,8 +257,10 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
                       if (hasFocus) setState(() => _isTitleFocused = false);
                     },
                     child: TextField(
+                      key: const ValueKey('note-body-field'),
                       controller: _bodyController,
                       undoController: _bodyUndoController,
+                      maxLength: noteBodyMaxLength,
                       maxLines: null,
                       expands: true,
                       style: TextStyle(
@@ -220,7 +273,12 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
                       decoration: const InputDecoration(
                         hintText: 'Write your thoughts...',
                         border: InputBorder.none,
-                      ),
+                      ).copyWith(errorText: _bodyError),
+                      onChanged: (_) {
+                        if (_bodyError != null) {
+                          setState(() => _bodyError = null);
+                        }
+                      },
                     ),
                   ),
                 ),
