@@ -62,12 +62,10 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
   final AudioPlayer _audioPlayer = AudioPlayer();
-  final ValueNotifier<NotificationDestination?> destination =
-      ValueNotifier(null);
+  final ValueNotifier<NotificationDestination?> destination = ValueNotifier(
+    null,
+  );
 
-  StreamSubscription<String>? _tokenRefreshSubscription;
-  StreamSubscription<RemoteMessage>? _foregroundSubscription;
-  StreamSubscription<RemoteMessage>? _openedSubscription;
   bool _pluginInitialized = false;
 
   Future<void> init() async {
@@ -93,7 +91,7 @@ class NotificationService {
       ),
     );
     await _localNotifications.initialize(
-      initializationSettings,
+      settings: initializationSettings,
       onDidReceiveNotificationResponse: (response) {
         final payload = response.payload;
         if (payload == null || payload.isEmpty) return;
@@ -134,23 +132,15 @@ class NotificationService {
     await androidPlugin?.createNotificationChannel(messageChannel);
     await androidPlugin?.createNotificationChannel(insightChannel);
 
-    _foregroundSubscription = FirebaseMessaging.onMessage.listen(
-      _showForegroundNotification,
-    );
-    _openedSubscription = FirebaseMessaging.onMessageOpenedApp.listen(
-      _routeRemoteMessage,
-    );
+    FirebaseMessaging.onMessage.listen(_showForegroundNotification);
+    FirebaseMessaging.onMessageOpenedApp.listen(_routeRemoteMessage);
     final initialMessage = await _messaging.getInitialMessage();
     if (initialMessage != null) _routeRemoteMessage(initialMessage);
 
-    _tokenRefreshSubscription = _messaging.onTokenRefresh.listen(
-      _writeDeviceToken,
-    );
+    _messaging.onTokenRefresh.listen(_writeDeviceToken);
   }
 
-  Future<void> registerCurrentDevice({
-    bool requestPermission = false,
-  }) async {
+  Future<void> registerCurrentDevice({bool requestPermission = false}) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
@@ -310,12 +300,12 @@ class NotificationService {
         : 'message_notification';
 
     await _localNotifications.show(
-      message.messageId.hashCode,
-      notification.title ?? 'Braid',
-      preferences['preview'] == true
+      id: message.messageId.hashCode,
+      title: notification.title ?? 'Braid',
+      body: preferences['preview'] == true
           ? notification.body ?? 'New activity'
           : 'Open Braid to view this update.',
-      NotificationDetails(
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           channelId,
           isInsight ? 'Braid reflections' : 'Braid messages',
@@ -345,21 +335,16 @@ class NotificationService {
     await _playAsset('sounds/action_notification.mp3');
   }
 
-  Future<void> playInsightSound() => _playAsset(
-    'sounds/insight_notification.mp3',
-  );
+  Future<void> playInsightSound() =>
+      _playAsset('sounds/insight_notification.mp3');
 
-  Future<void> playMessageSound() => _playAsset(
-    'sounds/message_notification.mp3',
-  );
+  Future<void> playMessageSound() =>
+      _playAsset('sounds/message_notification.mp3');
 
   Future<void> _playAsset(String path) async {
     try {
       await _audioPlayer.stop();
-      await _audioPlayer.play(
-        AssetSource(path),
-        mode: PlayerMode.lowLatency,
-      );
+      await _audioPlayer.play(AssetSource(path), mode: PlayerMode.lowLatency);
     } catch (_) {
       // Sound is decorative; notification delivery must not depend on it.
     }

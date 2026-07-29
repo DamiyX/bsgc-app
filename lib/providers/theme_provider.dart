@@ -30,13 +30,17 @@ class ThemeProvider extends ChangeNotifier {
 
   void _loadTheme(SharedPreferences prefs) {
     final savedMode = prefs.getString('theme_mode');
-    
+
     int? themeIndex = prefs.getInt('chat_bubble_theme');
-    if (themeIndex != null && themeIndex >= 0 && themeIndex < ChatBubbleTheme.values.length) {
+    if (themeIndex != null &&
+        themeIndex >= 0 &&
+        themeIndex < ChatBubbleTheme.values.length) {
       _chatBubbleTheme = ChatBubbleTheme.values[themeIndex];
     } else {
       bool useSimple = prefs.getBool('use_simple_chat_color') ?? false;
-      _chatBubbleTheme = useSimple ? ChatBubbleTheme.lightGray : ChatBubbleTheme.gradient;
+      _chatBubbleTheme = useSimple
+          ? ChatBubbleTheme.lightGray
+          : ChatBubbleTheme.gradient;
     }
 
     if (savedMode != null) {

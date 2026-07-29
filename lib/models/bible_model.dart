@@ -16,9 +16,14 @@ class BibleModel {
 class BibleBook {
   final String name;
   final String abbreviation;
-  final List<List<String>> chapters; // chapters[0] is chapter 1, chapters[0][0] is verse 1
+  final List<List<String>>
+  chapters; // chapters[0] is chapter 1, chapters[0][0] is verse 1
 
-  BibleBook({required this.name, required this.abbreviation, required this.chapters});
+  BibleBook({
+    required this.name,
+    required this.abbreviation,
+    required this.chapters,
+  });
 
   factory BibleBook.fromJson(Map<String, dynamic> json) {
     List<List<String>> chapters = [];

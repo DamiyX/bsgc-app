@@ -8,7 +8,6 @@ import '../models/insight_model.dart';
 import '../services/insight_service.dart';
 import '../services/notification_service.dart';
 import '../widgets/clickable_scripture_text.dart';
-import 'my_insights_screen.dart';
 import 'create_insight_screen.dart';
 import '../services/contact_cache_service.dart';
 import '../theme.dart';
@@ -44,11 +43,13 @@ class _ViewInsightScreenState extends State<ViewInsightScreen> {
   void initState() {
     super.initState();
     _userPageController = PageController(initialPage: widget.initialUserIndex);
-    
+
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     _insightIndices = List.generate(widget.userInsightsGroups.length, (i) {
       if (currentUserId != null) {
-        final firstUnseen = widget.userInsightsGroups[i].indexWhere((insight) => !insight.seenBy.contains(currentUserId));
+        final firstUnseen = widget.userInsightsGroups[i].indexWhere(
+          (insight) => !insight.seenBy.contains(currentUserId),
+        );
         if (firstUnseen != -1) return firstUnseen;
       }
       return 0;
@@ -175,7 +176,9 @@ class _ViewInsightScreenState extends State<ViewInsightScreen> {
             child: BackdropFilter(
               filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
               child: Container(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.2),
               ), // Slight dark tint
             ),
           ),
@@ -254,10 +257,10 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
     if (user != null && !widget.insight.seenBy.contains(user.uid)) {
       _insightService.markAsSeen(widget.insight.id, user.uid);
     }
-    
+
     _isLiked = user != null && widget.insight.likedBy.contains(user.uid);
     _loadReactionStatus();
-    
+
     _checkSavedStatus();
 
     _commentsAnimController = AnimationController(
@@ -281,7 +284,10 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
   void _checkSavedStatus() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      final isSaved = await _insightService.isInsightSaved(user.uid, widget.insight.id);
+      final isSaved = await _insightService.isInsightSaved(
+        user.uid,
+        widget.insight.id,
+      );
       if (mounted) {
         setState(() {
           _isSaved = isSaved;
@@ -407,7 +413,12 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
       authorPhotoUrl: user.photoURL,
       body: text,
       replyToId: _replyingTo?.id,
-      replyToName: _replyingTo == null ? null : ContactCacheService().getContactName(_replyingTo!.authorUid, _replyingTo!.authorName),
+      replyToName: _replyingTo == null
+          ? null
+          : ContactCacheService().getContactName(
+              _replyingTo!.authorUid,
+              _replyingTo!.authorName,
+            ),
       createdAt: DateTime.now(),
     );
 
@@ -428,31 +439,35 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
         mainAxisSize: MainAxisSize.min,
         children: [
           if (widget.insight.title.isNotEmpty) ...[
-          Text(
-            widget.insight.title,
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
-              height: 1.3,
+            Text(
+              widget.insight.title,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.87),
+                height: 1.3,
+              ),
             ),
-          ),
-          SizedBox(height: 16),
-        ],
+            SizedBox(height: 16),
+          ],
 
-        Padding(
-          padding: EdgeInsets.only(left: 12.0),
-          child: ClickableScriptureText(
-            text: widget.insight.body,
-            style: TextStyle(
-              fontSize: 16,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
-              height: 1.5,
+          Padding(
+            padding: EdgeInsets.only(left: 12.0),
+            child: ClickableScriptureText(
+              text: widget.insight.body,
+              style: TextStyle(
+                fontSize: 16,
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.87),
+                height: 1.5,
+              ),
             ),
           ),
-        ),
-      ],
-    ),
+        ],
+      ),
     );
   }
 
@@ -481,17 +496,20 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                 child: GestureDetector(
                   onTap: _toggleComments,
                   child: Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).brightness == Brightness.light ? Colors.grey[200] : Theme.of(context).cardColor,
+                      color: Theme.of(context).brightness == Brightness.light
+                          ? Colors.grey[200]
+                          : Theme.of(context).cardColor,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
                       'Add a comment...',
-                      style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                      style: TextStyle(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.54),
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -507,13 +525,17 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                     children: [
                       IconButton(
                         icon: Icon(
-                          _isLiked ? Icons.thumb_up : Icons.thumb_up_alt_outlined,
-                          color: _isLiked ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onSurface,
+                          _isLiked
+                              ? Icons.thumb_up
+                              : Icons.thumb_up_alt_outlined,
+                          color: _isLiked
+                              ? Theme.of(context).colorScheme.onSurface
+                              : Theme.of(context).colorScheme.onSurface,
                         ),
                         onPressed: () async {
                           final user = FirebaseAuth.instance.currentUser;
                           if (user == null) return;
-                          
+
                           if (!_isLiked) {
                             NotificationService().playActionSound();
                           }
@@ -521,8 +543,12 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                           setState(() {
                             _isLiked = !_isLiked;
                           });
-                          
-                          await _insightService.toggleInsightLike(widget.insight.id, user.uid, _isLiked);
+
+                          await _insightService.toggleInsightLike(
+                            widget.insight.id,
+                            user.uid,
+                            _isLiked,
+                          );
                         },
                         padding: EdgeInsets.all(4),
                         constraints: const BoxConstraints(),
@@ -533,7 +559,9 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                   IconButton(
                     icon: Icon(
                       _isSaved ? Icons.bookmark : Icons.bookmark_border,
-                      color: _isSaved ? AppColors.gradientEnd : Theme.of(context).colorScheme.onSurface,
+                      color: _isSaved
+                          ? AppColors.gradientEnd
+                          : Theme.of(context).colorScheme.onSurface,
                     ),
                     onPressed: () async {
                       if (!_isSaved) {
@@ -543,30 +571,44 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                       final user = FirebaseAuth.instance.currentUser;
                       if (user != null) {
                         if (_isSaved) {
-                          await _insightService.saveInsight(user.uid, widget.insight);
+                          await _insightService.saveInsight(
+                            user.uid,
+                            widget.insight,
+                          );
                           if (mounted) {
                             ScaffoldMessenger.of(context).clearSnackBars();
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('Insight saved', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                content: Text(
+                                  'Insight saved',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                                 behavior: SnackBarBehavior.floating,
                                 elevation: 0,
                                 duration: const Duration(milliseconds: 1500),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                             );
                           }
                         } else {
-                          await _insightService.unsaveInsight(user.uid, widget.insight.id);
+                          await _insightService.unsaveInsight(
+                            user.uid,
+                            widget.insight.id,
+                          );
                         }
                       }
                     },
+                  ),
+                ],
               ),
             ],
           ),
-        ],
-      ),
-      StreamBuilder<List<InsightCommentModel>>(
+          StreamBuilder<List<InsightCommentModel>>(
             stream: countStream,
             builder: (context, snapshot) {
               final count = snapshot.hasData ? snapshot.data!.length : 0;
@@ -580,13 +622,21 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                     children: [
                       Icon(
                         Icons.keyboard_arrow_up,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.45),
                         size: 20,
                       ),
                       if (count > 0)
                         Text(
                           '$count comments',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45)),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.45),
+                          ),
                         ),
                     ],
                   ),
@@ -625,8 +675,14 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                   margin: EdgeInsets.only(right: 8, top: 4),
                   decoration: BoxDecoration(
                     border: Border(
-                      left: BorderSide(color: Theme.of(context).dividerColor, width: 2),
-                      bottom: BorderSide(color: Theme.of(context).dividerColor, width: 2),
+                      left: BorderSide(
+                        color: Theme.of(context).dividerColor,
+                        width: 2,
+                      ),
+                      bottom: BorderSide(
+                        color: Theme.of(context).dividerColor,
+                        width: 2,
+                      ),
                     ),
                     borderRadius: BorderRadius.only(
                       bottomLeft: Radius.circular(12),
@@ -645,19 +701,21 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 0,
-                        vertical: 4,
-                      ),
+                      padding: EdgeInsets.symmetric(horizontal: 0, vertical: 4),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            ContactCacheService().getContactName(comment.authorUid, comment.authorName),
+                            ContactCacheService().getContactName(
+                              comment.authorUid,
+                              comment.authorName,
+                            ),
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 13,
-                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.87),
                             ),
                           ),
                           SizedBox(height: 4),
@@ -665,7 +723,9 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                             comment.body,
                             style: TextStyle(
                               fontSize: 14,
-                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.87),
                             ),
                           ),
                         ],
@@ -684,7 +744,9 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                             ).format(comment.createdAt),
                             style: TextStyle(
                               fontSize: 11,
-                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.54),
                             ),
                           ),
                           StreamBuilder<bool>(
@@ -733,7 +795,9 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
-                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.54),
                               ),
                             ),
                           ),
@@ -757,15 +821,14 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
 
   Widget _buildCommentInputArea() {
     return Container(
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 8,
-        bottom: 12,
-      ),
+      padding: EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 12),
       decoration: BoxDecoration(
         color: Theme.of(context).scaffoldBackgroundColor,
-        border: Border(top: BorderSide(color: Theme.of(context).colorScheme.onSurfaceVariant!)),
+        border: Border(
+          top: BorderSide(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -780,7 +843,9 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                     'Replying to ${ContactCacheService().getContactName(_replyingTo!.authorUid, _replyingTo!.authorName)}',
                     style: TextStyle(
                       fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.54),
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -790,7 +855,9 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                     child: Icon(
                       Icons.close,
                       size: 16,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.54),
                     ),
                   ),
                 ],
@@ -806,7 +873,11 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                   onSubmitted: (_) => _submitDirectComment(),
                   decoration: InputDecoration(
                     hintText: 'Write a comment...',
-                    hintStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                    hintStyle: TextStyle(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.54),
+                    ),
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(
                       horizontal: 16,
@@ -821,15 +892,17 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                       borderSide: BorderSide.none,
                     ),
                     filled: true,
-                    fillColor: Theme.of(context).brightness == Brightness.light ? Colors.grey[200] : Theme.of(context).cardColor,
+                    fillColor: Theme.of(context).brightness == Brightness.light
+                        ? Colors.grey[200]
+                        : Theme.of(context).cardColor,
                   ),
                 ),
               ),
               SizedBox(width: 8),
-                GestureDetector(
-                  onTap: _submitDirectComment,
-                  child: Icon(Icons.send, color: AppColors.gradientEnd),
-                ),
+              GestureDetector(
+                onTap: _submitDirectComment,
+                child: Icon(Icons.send, color: AppColors.gradientEnd),
+              ),
             ],
           ),
         ],
@@ -867,7 +940,9 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.87),
                     ),
                   ),
                   SizedBox(width: 8),
@@ -881,7 +956,9 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                         '$count',
                         style: TextStyle(
                           fontSize: 14,
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.54),
                         ),
                       );
                     },
@@ -899,7 +976,11 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                     return Center(
                       child: Text(
                         'No comments yet.',
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                        style: TextStyle(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.54),
+                        ),
                       ),
                     );
                   }
@@ -911,10 +992,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
 
                   return ListView.builder(
                     controller: _scrollController,
-                    padding: EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                     itemCount: topLevelComments.length,
                     itemBuilder: (context, index) {
                       return _buildFacebookStyleComment(
@@ -971,10 +1049,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
 
               // Author Info
               Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 4,
-                ),
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 child: Row(
                   children: [
                     Stack(
@@ -1004,13 +1079,17 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                                   color: AppColors.gradientEnd,
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: Theme.of(context).scaffoldBackgroundColor,
+                                    color: Theme.of(
+                                      context,
+                                    ).scaffoldBackgroundColor,
                                     width: 2,
                                   ),
                                 ),
                                 child: Icon(
                                   Icons.add,
-                                  color: Theme.of(context).scaffoldBackgroundColor,
+                                  color: Theme.of(
+                                    context,
+                                  ).scaffoldBackgroundColor,
                                   size: 10,
                                 ),
                               ),
@@ -1024,11 +1103,16 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            ContactCacheService().getContactName(widget.insight.authorUid, widget.insight.authorName),
+                            ContactCacheService().getContactName(
+                              widget.insight.authorUid,
+                              widget.insight.authorName,
+                            ),
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
-                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.87),
                             ),
                           ),
                           Text(
@@ -1036,7 +1120,9 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                               'MMM d, h:mm a',
                             ).format(widget.insight.createdAt),
                             style: TextStyle(
-                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.54),
                               fontSize: 12,
                             ),
                           ),
@@ -1048,7 +1134,9 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                         widget.ttsState == TtsState.playing
                             ? Icons.pause_circle_filled
                             : Icons.volume_up,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.87),
                       ),
                       onPressed: widget.onTogglePlay,
                     ),
@@ -1154,14 +1242,23 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
             final double value = _commentsAnimController.value;
             return Transform(
               transform: Matrix4.identity()
-                ..translate(
+                ..translateByDouble(
                   0.0,
                   MediaQuery.of(context).size.height * -0.03 * value,
+                  0.0,
+                  1.0,
                 )
-                ..scale(_scaleAnimation.value)
-                ..translate(
+                ..scaleByDouble(
+                  _scaleAnimation.value,
+                  _scaleAnimation.value,
+                  _scaleAnimation.value,
+                  1.0,
+                )
+                ..translateByDouble(
                   0.0,
                   MediaQuery.of(context).size.height * 0.03 * value,
+                  0.0,
+                  1.0,
                 ),
               alignment: Alignment.topCenter,
               child: Container(
@@ -1215,7 +1312,3 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
     );
   }
 }
-
-
-
-

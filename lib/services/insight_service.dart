@@ -142,10 +142,7 @@ class InsightService {
         );
   }
 
-  Future<void> addComment(
-    String insightId,
-    InsightCommentModel comment,
-  ) async {
+  Future<void> addComment(String insightId, InsightCommentModel comment) async {
     final uid = _requireUserId();
     if (comment.authorUid != uid) {
       throw StateError('You can publish only your own comment.');
@@ -217,10 +214,7 @@ class InsightService {
     return snapshot.exists;
   }
 
-  Stream<bool> hasCommentReaction(
-    String insightId,
-    String commentId,
-  ) {
+  Stream<bool> hasCommentReaction(String insightId, String commentId) {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return Stream.value(false);
     return _firestore

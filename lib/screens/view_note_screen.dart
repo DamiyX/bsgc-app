@@ -18,7 +18,7 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
   bool _isEditing = false;
   late TextEditingController _titleController;
   late TextEditingController _bodyController;
-  
+
   // Undo/Redo controllers
   final UndoHistoryController _titleUndoController = UndoHistoryController();
   final UndoHistoryController _bodyUndoController = UndoHistoryController();
@@ -59,7 +59,9 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
       setState(() {
         _isEditing = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Note saved!')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Note saved!')));
     }
   }
 
@@ -70,34 +72,44 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
       appBar: AppBar(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
-        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
+        iconTheme: IconThemeData(
+          color: Theme.of(
+            context,
+          ).colorScheme.onSurface.withValues(alpha: 0.87),
+        ),
         actions: [
           if (_isEditing) ...[
             // Undo/Redo buttons
             ValueListenableBuilder<UndoHistoryValue>(
-              valueListenable: _isTitleFocused ? _titleUndoController : _bodyUndoController,
+              valueListenable: _isTitleFocused
+                  ? _titleUndoController
+                  : _bodyUndoController,
               builder: (context, value, child) {
                 return Row(
                   children: [
                     IconButton(
                       icon: Icon(Icons.undo),
-                      onPressed: value.canUndo ? () {
-                        if (_isTitleFocused) {
-                          _titleUndoController.undo();
-                        } else {
-                          _bodyUndoController.undo();
-                        }
-                      } : null,
+                      onPressed: value.canUndo
+                          ? () {
+                              if (_isTitleFocused) {
+                                _titleUndoController.undo();
+                              } else {
+                                _bodyUndoController.undo();
+                              }
+                            }
+                          : null,
                     ),
                     IconButton(
                       icon: Icon(Icons.redo),
-                      onPressed: value.canRedo ? () {
-                        if (_isTitleFocused) {
-                          _titleUndoController.redo();
-                        } else {
-                          _bodyUndoController.redo();
-                        }
-                      } : null,
+                      onPressed: value.canRedo
+                          ? () {
+                              if (_isTitleFocused) {
+                                _titleUndoController.redo();
+                              } else {
+                                _bodyUndoController.redo();
+                              }
+                            }
+                          : null,
                     ),
                   ],
                 );
@@ -109,7 +121,12 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
             ),
           ] else ...[
             IconButton(
-              icon: Icon(Icons.edit, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
+              icon: Icon(
+                Icons.edit,
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.87),
+              ),
               onPressed: () {
                 setState(() {
                   _isEditing = true;
@@ -127,17 +144,24 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
             children: [
               if (!_isEditing) ...[
                 Text(
-                  _titleController.text.isEmpty ? 'Untitled Note' : _titleController.text,
+                  _titleController.text.isEmpty
+                      ? 'Untitled Note'
+                      : _titleController.text,
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.87),
                   ),
                 ),
                 SizedBox(height: 8),
                 Text(
                   DateFormat('MMM d, yyyy').format(widget.note.updatedAt),
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 13,
+                  ),
                 ),
                 SizedBox(height: 24),
                 Expanded(
@@ -147,7 +171,9 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
                       style: TextStyle(
                         fontSize: 16,
                         height: 1.6,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.87),
                       ),
                     ),
                   ),
@@ -163,7 +189,9 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.87),
                     ),
                     decoration: const InputDecoration(
                       hintText: 'Note Title',
@@ -185,7 +213,9 @@ class _ViewNoteScreenState extends State<ViewNoteScreen> {
                       style: TextStyle(
                         fontSize: 16,
                         height: 1.6,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.87),
                       ),
                       decoration: const InputDecoration(
                         hintText: 'Write your thoughts...',

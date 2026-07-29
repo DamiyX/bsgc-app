@@ -52,10 +52,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             .limit(500)
             .get(),
       ]);
-      final profile =
-          (results[0] as DocumentSnapshot<Map<String, dynamic>>).data();
-      final connections =
-          results[1] as QuerySnapshot<Map<String, dynamic>>;
+      final profile = (results[0] as DocumentSnapshot<Map<String, dynamic>>)
+          .data();
+      final connections = results[1] as QuerySnapshot<Map<String, dynamic>>;
       if (!mounted) return;
       setState(() {
         _displayName =
@@ -102,10 +101,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   Expanded(
                     child: TabBarView(
-                      children: [
-                        _buildNotes(),
-                        _buildSavedInsights(),
-                      ],
+                      children: [_buildNotes(), _buildSavedInsights()],
                     ),
                   ),
                 ],
@@ -135,9 +131,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Text(
             _displayName,
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 5),
           Text(
@@ -158,9 +154,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             onPressed: () async {
               final changed = await Navigator.push<bool>(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => const EditProfileScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const EditProfileScreen()),
               );
               if (changed == true) await _loadProfile();
             },
@@ -291,9 +285,9 @@ class _ProfileListState extends StatelessWidget {
             Text(
               title,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
             if (description != null) ...[
               const SizedBox(height: 6),

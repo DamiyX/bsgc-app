@@ -7,7 +7,6 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/storage_service.dart';
-import '../theme.dart';
 import '../widgets/braid_media.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -81,10 +80,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       await FirebaseFirestore.instance
           .collection('users_public')
           .doc(user.uid)
-          .update({
-            'photoUrl': url,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
+          .update({'photoUrl': url, 'updatedAt': FieldValue.serverTimestamp()});
       await user.updatePhotoURL(url);
       _showMessage('Profile picture updated.');
     } on FirebaseException catch (error) {
@@ -131,8 +127,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   String _friendlyError(FirebaseException error) {
-    if (error.code == 'unavailable' ||
-        error.code == 'network-request-failed') {
+    if (error.code == 'unavailable' || error.code == 'network-request-failed') {
       return 'You appear to be offline. Reconnect and try again.';
     }
     if (error.code == 'permission-denied') {

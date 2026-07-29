@@ -1,87 +1,90 @@
-# Braid Full Remediation — Implementation Progress
+# Braid full remediation — final repository ledger
 
-**Source audit:** `docs/audit/`
+**Source audit:** `docs/audit/01-product-and-system-understanding.md` through `docs/audit/06-implementation-plan.md`
+
 **Implementation branch:** `codex/bsgc-full-remediation`
-**Started:** 2026-07-28
-**Status:** In progress
 
-This is the durable execution ledger for the full audit remediation. A phase is marked complete only after its repository changes and available automated checks pass. Deployment-only or account-owner actions remain explicitly separated from repository implementation.
+**Audited baseline:** `777e266`
 
-## Verification baseline
+**Audit-plan commit:** `d8b5710`
 
-- [x] Audit documents reconciled with commit `777e266`.
-- [x] Remote audit branch fetched and confirmed current at `d8b5710`.
-- [x] Clean implementation branch created from the audit branch.
-- [x] Existing workspace build memory reviewed.
-- [ ] Flutter/Dart static analysis available.
-- [ ] Firebase Emulator rule tests available.
-- [ ] Android release build environment available.
-- [ ] Deployed Firebase state captured.
-- [ ] Production backup captured before migration.
+**Repository implementation commit before final verification:** `c6e328e`
 
-## Phase status
+**Final verification date:** July 29, 2026
 
-| Phase | Scope | Status | Evidence |
+**Repository status:** ready for branch review; not yet approved for production deployment
+
+This ledger reconciles the implementation with every phase in Report 6. “Implemented” means the repository contains the change. “Automated verified” means the available static, unit, integration, or Rules Emulator checks passed. “Manual/external” means the result depends on a physical device, production credentials, signing material, deployed data, legal facts, or store consoles and therefore cannot be proven from source code.
+
+## Final verification evidence
+
+| Check | Result |
+| --- | --- |
+| Flutter dependency restore | Passed with Flutter 3.44.8 / Dart 3.12.2 |
+| Dart formatting | 59 files checked, 0 changes required after formatting |
+| Flutter static analysis | Passed: no issues found |
+| Flutter tests | Passed: 4/4 |
+| Functions lockfile restore | `npm ci` passed |
+| Functions syntax | `functions/index.js` and `functions/scripts/migrate-v2.js` passed `node --check` |
+| Functions contract/migration tests | Passed: 21/21 |
+| Firestore and Storage Rules Emulator tests | Passed: 26/26 |
+| Rules test determinism | Test files serialized with `--test-concurrency=1` to prevent shared-emulator cleanup races |
+| Repository whitespace validation | Required again after final documentation staging |
+| Android release AAB | Not completed locally; the R8 build was stopped because it caused unacceptable laptop load |
+| Physical Android UX regression | Not performed; no Android device/emulator was connected in this workspace |
+
+The local Node installation is v24 while Functions declares Node 22. The JavaScript tests pass locally, and CI explicitly uses Node 22. This distinction is environment evidence, not an application failure.
+
+## Alignment with the original implementation plan
+
+| Phase | Repository result | Automated evidence | Remaining manual/external gate |
 | --- | --- | --- | --- |
-| 0 | Baseline, governance, repository hygiene, CI, release configuration | In progress | Working branch and ledger created |
-| 1 | Security, privacy, schema, rules, migrations, rule tests | In progress | Threat model and current paths revalidated |
-| 2 | Invitations, onboarding, connections | Not started | — |
-| 3 | Group lifecycle and administration | Not started | — |
-| 4 | Reliable chat, outbox, media | Not started | — |
-| 5 | Offline media and session hygiene | Not started | — |
-| 6 | Reflection-centered product and UI | Not started | — |
-| 7 | Accessibility | Not started | — |
-| 8 | Notifications and backend scale | Not started | — |
-| 9 | Bible, backup, deferred features | Not started | — |
-| 10 | Size, release, policy, store readiness | Not started | — |
+| 0 — baseline and governance | Implemented locally: isolated branch, CI, release workflow, README, architecture/product/design/release documents, generated-artifact cleanup, lockfiles, signing template, and ignored build outputs | Flutter, Node, JSON, and rules checks available | Decide default-branch replacement; capture deployed Firebase state; production backup; configure signing secrets |
+| 1 — security and data contract | Implemented: schema v2, public/private/device data boundaries, authoritative roles and lifecycle, immutable/bounded message contract, contacts-only Insight access, reports/blocks, strict Firestore/Storage rules, resumable migration tooling, rollout runbook | 21 Functions tests and 26 Rules Emulator tests pass | Review real data dry-run, back up production, staged deployment, then App Check rollout |
+| 2 — invitations and onboarding | Implemented: opaque expiring/revocable tokens, canonical join route, continuation flow, QR/share, capacity enforcement, accepted connections, and removal of global user-directory discovery | Invite token, normalization, and accepted-connection contracts tested | Real signing fingerprint/domain association; installed/not-installed device testing |
+| 3 — group lifecycle | Implemented: draft/scheduled/active/completed/archived behavior, progress, owner transfer, member removal, leave/archive, extension/reactivation, live metadata, and recap | Rules and Functions contracts cover authority/lifecycle boundaries | Multi-user device exercise and scheduled-time behavior |
+| 4 — reliable chat and outbox | Implemented: controller/service separation, persistent drafts, stable IDs, queued/sending/sent/failed/retry states, cursor paging, `clearedBefore`, idempotent media paths, bounded image/voice, and hidden unsupported attachments | Message contracts, media paths, widget compilation, analyzer, and group-message rules pass | Airplane-mode restart/retry, upload-progress, playback, and duplicate-prevention checks on Android |
+| 5 — offline media and session hygiene | Implemented: shared cached avatar/cover widgets, deterministic initials, bounded decode sizes, explicit offline/error states, account-scoped drafts/outbox, and sign-out cache cleanup | Flutter tests and analyzer pass | Cold/warm airplane-mode and account-switch cache-isolation checks |
+| 6 — reflection-centered product and UI | Implemented: semantic design system, Today/Groups/Journal/Me navigation, Plan/Reflections/Discussion/Prayer room structure, explicit audiences, contacts feed, private notes, safety/settings, and full async-state patterns | Theme/narrow-layout widget tests and analyzer pass | Visual product review on representative phone sizes; final copy/design approval |
+| 7 — accessibility | Repository improvements implemented: semantics, tooltips, labels, larger controls, dynamic layouts, theme contrast tokens, and safer reduced-motion behavior | Narrow-screen and semantic compilation checks pass | TalkBack journey, 200% text, focus order, contrast tooling, RTL, and switch/keyboard testing |
+| 8 — notifications and scale | Implemented: per-device tokens/preferences, explicit permission UX, per-study mute, privacy-safe previews, routing, invalid-token cleanup, bounded feeds, cleanup jobs, publish/report rate limits, and connection caps | Notification contract tests pass | Production FCM states, metrics/alerts, load tests, and stronger abuse controls for direct message/comment/reaction volume |
+| 9 — Bible, backup, deferred features | Implemented as planned: KJV/WEB initialization and honest availability; unsafe backup, video, document, and fake support experiences remain removed/deferred | Flutter analysis/tests pass | Translation/license review; backup only after its complete safety contract exists |
+| 10 — size and release | Implemented locally: unused APKs/assets/dependencies removed, shrinking configured, release signing cannot fall back to debug, permissions reduced, manual signed-AAB CI workflow added | Dependency cleanup and build configuration inspected; Flutter/Node/rules checks pass | Successful signed AAB and size report, physical closed-track QA, real App Links, legal/store declarations |
 
-## Phase 0 checklist
+## Original high-risk findings now addressed
 
-- [x] Confirm audited baseline and branch divergence.
-- [x] Create isolated implementation branch.
-- [ ] Capture deployed Firestore rules, indexes, Functions, Storage rules, and Firebase environment.
-- [ ] Back up production data.
-- [ ] Establish canonical Android application ID and domain in repository documentation.
-- [ ] Configure production signing without committing secrets.
-- [ ] Add CI for format, analyze, tests, rules, Functions, and release AAB.
-- [ ] Replace template README with setup/build/release documentation.
-- [ ] Stop tracking generated dependencies, APKs, logs, and temporary scripts.
-- [ ] Add versioned schema, product, design, and release documents.
+The repository changes directly cover the audit’s major risk families:
 
-## Phase 1 checklist
+- offline profile/group media no longer relies on a successful network request to render identity;
+- private user/device fields are separated from public identity;
+- group membership, roles, lifecycle, invitations, publication, moderation, and deletion use server-authoritative operations;
+- Firestore and Storage permissions are deny-by-default and regression-tested;
+- global user-directory/contact downloads were removed;
+- chat drafts and queued media survive transient failure with stable identifiers;
+- unsupported or misleading controls are hidden instead of pretending to work;
+- contacts-scoped Insights require an accepted author-viewer relationship;
+- notifications honor per-device and privacy preferences;
+- release builds cannot silently use debug signing;
+- tracked APKs, generated dependencies, caches, logs, and patch scripts are removed;
+- the app’s product structure is centered on reflection, study, discussion, prayer, and private journaling rather than generic social metrics.
 
-- [ ] Add and document schema version 2.
-- [ ] Split public, private, and per-device user data.
-- [ ] Add explicit group owner, lifecycle, roles, and member records.
-- [ ] Define immutable message content and private per-user state.
-- [ ] Define and enforce contacts-scoped Insight audience.
-- [ ] Add blocks, reports, and moderation state.
-- [ ] Rewrite Firestore rules with allowlisted fields, types, lengths, ownership, and transitions.
-- [ ] Rewrite Storage rules with ownership/membership/type/size/path controls.
-- [ ] Add Firestore and Storage Emulator tests for allowed and denied paths.
-- [ ] Add idempotent dry-run/apply migration tooling and rollback report.
-- [ ] Add staged compatibility/deployment runbook.
-- [ ] Add App Check configuration only after rules are proven.
+## Deliberately incomplete or deferred items
 
-## External action register
+These are not omissions that another coding agent should silently “finish.” They require authority, credentials, product decisions, or human observation:
 
-These actions cannot be truthfully completed from source code alone:
+1. Production Firestore/Storage backup and deployed-state capture.
+2. Migration dry-run against real data and review of every unsafe legacy record.
+3. Staged deployment of indexes, Functions, Firestore Rules, and Storage Rules.
+4. App Check enforcement after verified clients are live.
+5. Android upload keystore, passwords, and release certificate SHA-256.
+6. Real `assetlinks.json`, Apple Team ID, iOS Firebase registration, and physical link verification.
+7. Operator/legal facts, privacy/terms approval, child-safety position, retention policy, and store declarations.
+8. Physical Android offline, accessibility, notifications, microphone, media upload/playback, lifecycle, and account-deletion regression.
+9. Production metrics, alerts, crash monitoring, moderation operations, backup/restore drills, and load tests.
+10. A completed release AAB size analysis. The historical 90–97 MB universal/debug package is not a reliable Play download-size measurement.
 
-1. Export deployed Firebase state and production data using an authorized project identity.
-2. Supply the production upload-signing certificate fingerprint for Android App Links.
-3. Configure production signing material in local/CI secret storage.
-4. Publish canonical-domain association files and verify them over HTTPS.
-5. Deploy rules, indexes, Functions, Storage rules, and migrations after review.
-6. Create store-console privacy/data-safety declarations and moderation operations.
+## Branch-review decision
 
-## Change discipline
+This branch is materially safer, more testable, more maintainable, and more coherent than the audited baseline. It is suitable for Android emulator/device review and code review. It is not yet a production release because the external gates above remain open.
 
-For every implementation slice:
-
-1. State the current failing contract.
-2. Add the smallest meaningful regression or contract test.
-3. Prove the test fails when the environment permits.
-4. Implement the repository change.
-5. Run focused verification, then broader verification.
-6. Record remaining environment or deployment gaps here.
-7. Commit a coherent verified slice; do not push until the final external-action gate.
+Do not merge it to the default branch merely because automated checks pass. First complete the preview matrix in `docs/testing/branch-preview-guide.md`, record defects with exact reproduction steps, fix confirmed blockers on this branch, and obtain product-owner approval.

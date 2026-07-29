@@ -54,8 +54,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _notificationsEnabled = notificationPreferences['enabled'] ?? true;
       _messageNotifications = notificationPreferences['messages'] ?? true;
       _insightNotifications = notificationPreferences['insights'] ?? true;
-      _previewNotificationContent =
-          notificationPreferences['preview'] ?? false;
+      _previewNotificationContent = notificationPreferences['preview'] ?? false;
     });
   }
 
@@ -139,9 +138,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
     } finally {
       if (mounted) setState(() => _isDeletingAccount = false);
     }
@@ -184,10 +183,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     value: ThemeMode.light,
                     child: Text('Light'),
                   ),
-                  DropdownMenuItem(
-                    value: ThemeMode.dark,
-                    child: Text('Dark'),
-                  ),
+                  DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark')),
                 ],
               ),
             ),
@@ -273,7 +269,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ..clear()
                 ..clearLiveImages();
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Temporary image memory cleared.')),
+                const SnackBar(
+                  content: Text('Temporary image memory cleared.'),
+                ),
               );
             },
           ),
@@ -309,9 +307,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => const LegalScreen(
-                  document: LegalDocument.privacy,
-                ),
+                builder: (_) =>
+                    const LegalScreen(document: LegalDocument.privacy),
               ),
             ),
           ),
@@ -321,9 +318,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => const LegalScreen(
-                  document: LegalDocument.terms,
-                ),
+                builder: (_) =>
+                    const LegalScreen(document: LegalDocument.terms),
               ),
             ),
           ),

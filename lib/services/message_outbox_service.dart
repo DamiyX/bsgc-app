@@ -81,9 +81,8 @@ class OutboxMessage {
           ? rawParts
                 .whereType<Map>()
                 .map(
-                  (part) => MessagePart.fromMap(
-                    Map<String, dynamic>.from(part),
-                  ),
+                  (part) =>
+                      MessagePart.fromMap(Map<String, dynamic>.from(part)),
                 )
                 .toList(growable: false)
           : const [],
@@ -95,9 +94,7 @@ class OutboxMessage {
         (value) => value.name == data['status'],
         orElse: () => OutboxStatus.queued,
       ),
-      attempts: data['attempts'] is num
-          ? (data['attempts'] as num).toInt()
-          : 0,
+      attempts: data['attempts'] is num ? (data['attempts'] as num).toInt() : 0,
       lastError: data['lastError']?.toString(),
     );
   }
@@ -120,8 +117,9 @@ class MessageOutboxService {
     required String extension,
   }) async {
     final normalizedExtension = extension.toLowerCase().replaceAll('.', '');
-    if (!RegExp(r'^(jpg|jpeg|png|webp|m4a|aac)$')
-        .hasMatch(normalizedExtension)) {
+    if (!RegExp(
+      r'^(jpg|jpeg|png|webp|m4a|aac)$',
+    ).hasMatch(normalizedExtension)) {
       throw ArgumentError('Unsupported attachment type.');
     }
     final isAudio = {'m4a', 'aac'}.contains(normalizedExtension);
@@ -197,7 +195,9 @@ class MessageOutboxService {
         // A damaged entry stays on disk for support recovery but cannot send.
       }
     }
-    entries.sort((first, second) => first.createdAt.compareTo(second.createdAt));
+    entries.sort(
+      (first, second) => first.createdAt.compareTo(second.createdAt),
+    );
     return entries;
   }
 
@@ -226,7 +226,8 @@ class MessageOutboxService {
         }
         final bytes = await file.readAsBytes();
         final extension = file.path.split('.').last.toLowerCase();
-        final contentType = lookupMimeType(file.path) ??
+        final contentType =
+            lookupMimeType(file.path) ??
             (part.type == MessageType.voice
                 ? 'audio/mp4'
                 : 'application/octet-stream');

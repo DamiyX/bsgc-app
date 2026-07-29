@@ -22,7 +22,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   void initState() {
     super.initState();
-    final suggestedName = FirebaseAuth.instance.currentUser?.displayName?.trim();
+    final suggestedName = FirebaseAuth.instance.currentUser?.displayName
+        ?.trim();
     _displayNameController = TextEditingController(text: suggestedName ?? '');
   }
 
@@ -45,7 +46,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final displayName = _displayNameController.text.trim();
     final firestore = FirebaseFirestore.instance;
     final publicReference = firestore.collection('users_public').doc(user.uid);
-    final privateReference = firestore.collection('users_private').doc(user.uid);
+    final privateReference = firestore
+        .collection('users_private')
+        .doc(user.uid);
 
     try {
       final existingProfiles = await Future.wait([
@@ -53,33 +56,25 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         privateReference.get(),
       ]);
       final batch = firestore.batch();
-      batch.set(
-        publicReference,
-        {
-          'schemaVersion': 2,
-          'uid': user.uid,
-          'displayName': displayName,
-          if (user.photoURL?.isNotEmpty == true) 'photoUrl': user.photoURL,
-          if (!existingProfiles[0].exists)
-            'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
-      batch.set(
-        privateReference,
-        {
-          'schemaVersion': 2,
-          'uid': user.uid,
-          if (user.email?.isNotEmpty == true) 'email': user.email,
-          'contactDiscoveryConsent': false,
-          'onboardingComplete': true,
-          if (!existingProfiles[1].exists)
-            'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      batch.set(publicReference, {
+        'schemaVersion': 2,
+        'uid': user.uid,
+        'displayName': displayName,
+        if (user.photoURL?.isNotEmpty == true) 'photoUrl': user.photoURL,
+        if (!existingProfiles[0].exists)
+          'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      batch.set(privateReference, {
+        'schemaVersion': 2,
+        'uid': user.uid,
+        if (user.email?.isNotEmpty == true) 'email': user.email,
+        'contactDiscoveryConsent': false,
+        'onboardingComplete': true,
+        if (!existingProfiles[1].exists)
+          'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
       await batch.commit();
       if (user.displayName != displayName) {
         await user.updateDisplayName(displayName);
@@ -167,9 +162,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     Text(
                       'How should your study group know you?',
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 12),
                     Text(

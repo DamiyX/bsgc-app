@@ -92,9 +92,9 @@ class FaqScreen extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(4, 20, 4, 8),
               child: Text(
                 section.key,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
               ),
             ),
             for (final item in section.value)
@@ -110,10 +110,7 @@ class FaqScreen extends StatelessWidget {
                   childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   expandedCrossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      item.$2,
-                      style: const TextStyle(height: 1.5),
-                    ),
+                    Text(item.$2, style: const TextStyle(height: 1.5)),
                   ],
                 ),
               ),

@@ -10,7 +10,9 @@ enum MessageType { text, voice, hybrid, image, video, document }
 
 class MessagePart {
   final MessageType type;
+
   /// Text content or an HTTPS/file URI for staged media.
+  final String content;
   final int? durationSeconds;
 
   MessagePart({
@@ -57,7 +59,6 @@ class MessageModel {
   final String? replyToMessageId;
   final List<MessagePart> parts;
   final DateTime timestamp;
-  final List<String> starredBy;
   final List<String> deletedFor;
   final bool isDeleted;
   final bool isEdited;
@@ -75,7 +76,6 @@ class MessageModel {
     this.replyToMessageId,
     required this.parts,
     required this.timestamp,
-    required this.starredBy,
     this.deletedFor = const [],
     this.isDeleted = false,
     this.isEdited = false,
@@ -88,15 +88,12 @@ class MessageModel {
     final data = rawData is Map<String, dynamic>
         ? rawData
         : const <String, dynamic>{};
-    
+
     List<MessagePart> parsedParts = [];
     if (data['parts'] is List) {
       parsedParts = (data['parts'] as List)
           .whereType<Map>()
-          .map(
-            (item) =>
-                MessagePart.fromMap(Map<String, dynamic>.from(item)),
-          )
+          .map((item) => MessagePart.fromMap(Map<String, dynamic>.from(item)))
           .toList(growable: false);
     } else {
       // Backward compatibility for old single-part messages
@@ -107,7 +104,7 @@ class MessageModel {
           durationSeconds: data['durationSeconds'] is num
               ? (data['durationSeconds'] as num).toInt()
               : null,
-        )
+        ),
       ];
     }
 
@@ -126,9 +123,6 @@ class MessageModel {
       replyToMessageId: data['replyToMessageId']?.toString(),
       parts: parsedParts,
       timestamp: _messageDate(data['timestamp']),
-      starredBy: data['starredBy'] is List
-          ? (data['starredBy'] as List).whereType<String>().toList()
-          : const [],
       deletedFor: data['deletedFor'] is List
           ? (data['deletedFor'] as List).whereType<String>().toList()
           : const [],
@@ -150,7 +144,6 @@ class MessageModel {
       if (replyToMessageId != null) 'replyToMessageId': replyToMessageId,
       'parts': parts.map((p) => p.toMap()).toList(),
       'timestamp': timestamp,
-      'starredBy': starredBy,
       'deletedFor': deletedFor,
       'isDeleted': isDeleted,
       'isEdited': isEdited,

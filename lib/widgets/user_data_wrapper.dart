@@ -40,8 +40,7 @@ class _UserDataWrapperState extends State<UserDataWrapper> {
 
     try {
       final privateProfile = await _readPrivateProfile(user.uid);
-      final onboardingComplete =
-          privateProfile?['onboardingComplete'] == true;
+      final onboardingComplete = privateProfile?['onboardingComplete'] == true;
 
       setStateIfMounted(() {
         _resolvedScreen = onboardingComplete

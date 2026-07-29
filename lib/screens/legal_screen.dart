@@ -20,9 +20,9 @@ class LegalScreen extends StatelessWidget {
         children: [
           Text(
             privacy ? 'Braid Privacy Notice' : 'Braid Community Terms',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
           Text(
@@ -42,9 +42,9 @@ class LegalScreen extends StatelessWidget {
             const SizedBox(height: 22),
             Text(
               section.$1,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
             Text(section.$2, style: const TextStyle(height: 1.55)),

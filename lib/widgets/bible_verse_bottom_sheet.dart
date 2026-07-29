@@ -9,7 +9,7 @@ class BibleVerseBottomSheet extends StatefulWidget {
   const BibleVerseBottomSheet({super.key, required this.reference});
 
   @override
-  _BibleVerseBottomSheetState createState() => _BibleVerseBottomSheetState();
+  State<BibleVerseBottomSheet> createState() => _BibleVerseBottomSheetState();
 }
 
 class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
@@ -34,12 +34,12 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
     try {
       await _bibleService.init();
       final text = _bibleService.getVerseText(
-          _currentTranslation,
-          widget.reference.book,
-          widget.reference.chapter,
-          widget.reference.startVerse,
-          widget.reference.endVerse,
-        );
+        _currentTranslation,
+        widget.reference.book,
+        widget.reference.chapter,
+        widget.reference.startVerse,
+        widget.reference.endVerse,
+      );
       if (!mounted) return;
       setState(() {
         _verseText = text;
@@ -89,7 +89,9 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.87),
                   ),
                 ),
               ),
@@ -99,7 +101,9 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
                   underline: SizedBox(),
                   icon: Icon(
                     Icons.keyboard_arrow_down,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.54),
                   ),
                   items: _bibleService.availableTranslations.map((t) {
                     return DropdownMenuItem(
@@ -128,7 +132,9 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
                   ? Center(
                       child: Padding(
                         padding: EdgeInsets.all(32),
-                        child: CircularProgressIndicator(color: AppColors.gradientEnd),
+                        child: CircularProgressIndicator(
+                          color: AppColors.gradientEnd,
+                        ),
                       ),
                     )
                   : _verseText == null
@@ -143,7 +149,9 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
                       style: TextStyle(
                         fontSize: 16,
                         height: 1.5,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.87),
                       ),
                     ),
             ),
@@ -155,7 +163,9 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
               getTranslationFullName(_currentTranslation),
               style: TextStyle(
                 fontSize: 11,
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.45),
                 fontStyle: FontStyle.italic,
               ),
             ),
@@ -165,4 +175,3 @@ class _BibleVerseBottomSheetState extends State<BibleVerseBottomSheet> {
     );
   }
 }
-

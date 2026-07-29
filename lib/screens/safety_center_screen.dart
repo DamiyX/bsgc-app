@@ -51,9 +51,7 @@ class SafetyCenterScreen extends StatelessWidget {
                   final name = data?['displayName']?.toString() ?? 'Account';
                   return ListTile(
                     leading: CircleAvatar(
-                      child: Text(
-                        name.isEmpty ? '?' : name[0].toUpperCase(),
-                      ),
+                      child: Text(name.isEmpty ? '?' : name[0].toUpperCase()),
                     ),
                     title: Text(name),
                     subtitle: const Text('Blocked'),

@@ -67,13 +67,14 @@ class BraidSemanticColors extends ThemeExtension<BraidSemanticColors> {
   }
 
   @override
-  BraidSemanticColors lerp(
-    covariant BraidSemanticColors? other,
-    double t,
-  ) {
+  BraidSemanticColors lerp(covariant BraidSemanticColors? other, double t) {
     if (other == null) return this;
     return BraidSemanticColors(
-      scriptureSurface: Color.lerp(scriptureSurface, other.scriptureSurface, t)!,
+      scriptureSurface: Color.lerp(
+        scriptureSurface,
+        other.scriptureSurface,
+        t,
+      )!,
       scriptureText: Color.lerp(scriptureText, other.scriptureText, t)!,
       privateAudience: Color.lerp(privateAudience, other.privateAudience, t)!,
       contactsAudience: Color.lerp(
@@ -123,9 +124,7 @@ ThemeData _buildTheme(Brightness brightness) {
     brightness: brightness,
     seedColor: AppColors.primary,
     primary: isDark ? const Color(0xFFD8B8E3) : AppColors.primary,
-    secondary: isDark
-        ? const Color(0xFF9EC2A5)
-        : const Color(0xFF4F7658),
+    secondary: isDark ? const Color(0xFF9EC2A5) : const Color(0xFF4F7658),
     surface: isDark ? const Color(0xFF1D191E) : AppColors.offWhite,
   );
   final base = ThemeData(
@@ -134,9 +133,7 @@ ThemeData _buildTheme(Brightness brightness) {
     scaffoldBackgroundColor: isDark
         ? const Color(0xFF151216)
         : AppColors.offWhite,
-    extensions: [
-      isDark ? _darkSemanticColors : _lightSemanticColors,
-    ],
+    extensions: [isDark ? _darkSemanticColors : _lightSemanticColors],
   );
 
   return base.copyWith(
@@ -144,9 +141,7 @@ ThemeData _buildTheme(Brightness brightness) {
       bodyColor: scheme.onSurface,
       displayColor: scheme.onSurface,
     ),
-    progressIndicatorTheme: ProgressIndicatorThemeData(
-      color: scheme.primary,
-    ),
+    progressIndicatorTheme: ProgressIndicatorThemeData(color: scheme.primary),
     dividerColor: scheme.outlineVariant,
     snackBarTheme: SnackBarThemeData(
       backgroundColor: isDark
@@ -200,9 +195,7 @@ ThemeData _buildTheme(Brightness brightness) {
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         minimumSize: const Size(48, 48),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
@@ -211,9 +204,7 @@ ThemeData _buildTheme(Brightness brightness) {
         foregroundColor: scheme.onPrimary,
         minimumSize: const Size(48, 48),
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     ),
     iconButtonTheme: IconButtonThemeData(

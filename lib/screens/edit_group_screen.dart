@@ -50,9 +50,9 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to update group: $e')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Failed to update group: $e')));
         }
       } finally {
         if (mounted) setState(() => _isLoading = false);
@@ -69,7 +69,9 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
       ),
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: _isLoading
-          ? Center(child: CircularProgressIndicator(color: AppColors.gradientEnd))
+          ? Center(
+              child: CircularProgressIndicator(color: AppColors.gradientEnd),
+            )
           : SingleChildScrollView(
               child: Padding(
                 padding: EdgeInsets.all(24.0),
@@ -158,4 +160,3 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
     super.dispose();
   }
 }
-

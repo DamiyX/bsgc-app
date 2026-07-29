@@ -7,6 +7,7 @@
 *.iws
 
 # Dart and Flutter
+.tooling/
 .dart_tool/
 .flutter-plugins-dependencies
 .pub/
@@ -36,6 +37,21 @@ android/key.properties
 *.map.json
 *.log
 *.bak
+/.gitconfig_codex
+/add_member_sheet_diff.txt
+/analyze*.txt
+/build*.txt
+/*_log.txt
+/*_output.txt
+/compile_errors.txt
+/dart_analyze.txt
+/debug_flutter.txt
+/diff.txt
+/flutter_*.txt
+/output.txt
+/tail.txt
+/test.jpg
+/web_deployment/.firebase/
 
 # Cloud Functions
 functions/node_modules/

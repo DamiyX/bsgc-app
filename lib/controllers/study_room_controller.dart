@@ -35,14 +35,14 @@ class StudyRoomController extends ChangeNotifier {
 
   void initialize() {
     _pager = chatService.createMessagePager(groupId);
-    _groupSub = firestore.collection('groups').doc(groupId).snapshots().listen(
-      (snapshot) {
-        if (snapshot.exists) {
-          group = GroupModel.fromFirestore(snapshot);
-          _notify();
-        }
-      },
-    );
+    _groupSub = firestore.collection('groups').doc(groupId).snapshots().listen((
+      snapshot,
+    ) {
+      if (snapshot.exists) {
+        group = GroupModel.fromFirestore(snapshot);
+        _notify();
+      }
+    });
     _messageSub = _pager.stream.listen(
       (value) {
         messages = value;

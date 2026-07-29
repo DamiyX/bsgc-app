@@ -51,9 +51,7 @@ class _FoyerScreenState extends State<FoyerScreen> {
   void _openLegal(LegalDocument document) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => LegalScreen(document: document),
-      ),
+      MaterialPageRoute(builder: (_) => LegalScreen(document: document)),
     );
   }
 
@@ -127,9 +125,7 @@ class _FoyerScreenState extends State<FoyerScreen> {
                                   semanticsLabel: 'Google',
                                 ),
                           label: Text(
-                            _isLoading
-                                ? 'Signing in…'
-                                : 'Continue with Google',
+                            _isLoading ? 'Signing in…' : 'Continue with Google',
                           ),
                         ),
                       ),
@@ -149,8 +145,7 @@ class _FoyerScreenState extends State<FoyerScreen> {
                         spacing: 4,
                         children: [
                           TextButton(
-                            onPressed: () =>
-                                _openLegal(LegalDocument.privacy),
+                            onPressed: () => _openLegal(LegalDocument.privacy),
                             child: const Text('Privacy'),
                           ),
                           TextButton(

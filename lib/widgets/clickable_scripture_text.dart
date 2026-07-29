@@ -27,12 +27,15 @@ class ClickableScriptureText extends StatelessWidget {
         children: ScriptureParser.parseText(
           text: text,
           defaultStyle: style,
-          linkStyle: style.merge(linkStyle ?? TextStyle(
-            color: Colors.purpleAccent,
-            fontWeight: FontWeight.bold,
-            decoration: TextDecoration.underline,
-            decorationColor: Colors.purpleAccent,
-          )),
+          linkStyle: style.merge(
+            linkStyle ??
+                TextStyle(
+                  color: Colors.purpleAccent,
+                  fontWeight: FontWeight.bold,
+                  decoration: TextDecoration.underline,
+                  decorationColor: Colors.purpleAccent,
+                ),
+          ),
           onReferenceTap: (reference) {
             showDialog(
               context: context,

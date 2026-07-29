@@ -44,9 +44,8 @@ class DraftService {
             ? rawParts
                   .whereType<Map>()
                   .map(
-                    (part) => MessagePart.fromMap(
-                      Map<String, dynamic>.from(part),
-                    ),
+                    (part) =>
+                        MessagePart.fromMap(Map<String, dynamic>.from(part)),
                   )
                   .toList(growable: false)
             : const [],
@@ -100,10 +99,7 @@ class DraftService {
     }
   }
 
-  Future<void> clear({
-    required String userId,
-    required String groupId,
-  }) async {
+  Future<void> clear({required String userId, required String groupId}) async {
     final file = await _draftFile(userId, groupId);
     if (await file.exists()) await file.delete();
   }

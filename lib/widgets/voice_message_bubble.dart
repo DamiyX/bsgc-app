@@ -107,7 +107,9 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   Widget build(BuildContext context) {
     final progress = _duration.inMilliseconds <= 0
         ? 0.0
-        : (_position.inMilliseconds / _duration.inMilliseconds).clamp(0, 1);
+        : (_position.inMilliseconds / _duration.inMilliseconds)
+              .clamp(0.0, 1.0)
+              .toDouble();
     if (_error != null) {
       return Semantics(
         label: _error,
@@ -146,8 +148,8 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
                   Slider(
                     value: progress,
                     onChanged: (value) {
-                      final milliseconds =
-                          (_duration.inMilliseconds * value).round();
+                      final milliseconds = (_duration.inMilliseconds * value)
+                          .round();
                       unawaited(
                         _player.seek(Duration(milliseconds: milliseconds)),
                       );
@@ -163,10 +165,7 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
                 ],
               ),
             ),
-            TextButton(
-              onPressed: _cycleRate,
-              child: Text('${_rate}x'),
-            ),
+            TextButton(onPressed: _cycleRate, child: Text('${_rate}x')),
           ],
         ),
       ),

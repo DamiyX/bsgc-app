@@ -23,7 +23,9 @@ class SavedInsightCard extends StatelessWidget {
           context,
           MaterialPageRoute(
             builder: (_) => ViewInsightScreen(
-              userInsightsGroups: [[insight]],
+              userInsightsGroups: [
+                [insight],
+              ],
               initialUserIndex: 0,
             ),
           ),
@@ -47,8 +49,13 @@ class SavedInsightCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      insight.title.isEmpty ? 'Untitled Insight' : insight.title,
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      insight.title.isEmpty
+                          ? 'Untitled Insight'
+                          : insight.title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -60,7 +67,9 @@ class SavedInsightCard extends StatelessWidget {
                       padding: EdgeInsets.zero,
                       icon: Icon(
                         Icons.more_vert,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.54),
                         size: 20,
                       ),
                       onSelected: (val) {
@@ -90,14 +99,23 @@ class SavedInsightCard extends StatelessWidget {
               SizedBox(height: 8),
               ClickableScriptureText(
                 text: insight.body,
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.4, fontSize: 14),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  height: 1.4,
+                  fontSize: 14,
+                ),
                 maxLines: 4,
                 overflow: TextOverflow.ellipsis,
               ),
               SizedBox(height: 8),
               Text(
                 DateFormat('MMM d, yyyy').format(insight.createdAt),
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 12),
+                style: TextStyle(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.54),
+                  fontSize: 12,
+                ),
               ),
             ],
           ),

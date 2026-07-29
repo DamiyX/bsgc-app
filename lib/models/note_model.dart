@@ -43,8 +43,8 @@ class NoteModel {
       updatedAt: updatedAt is Timestamp
           ? updatedAt.toDate()
           : createdAt is Timestamp
-              ? createdAt.toDate()
-              : DateTime.now(),
+          ? createdAt.toDate()
+          : DateTime.now(),
     );
   }
 

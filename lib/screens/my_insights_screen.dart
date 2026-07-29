@@ -39,11 +39,19 @@ class MyInsightsScreen extends StatelessWidget {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Insight deleted', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            content: Text(
+              'Insight deleted',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             behavior: SnackBarBehavior.floating,
             elevation: 0,
             duration: const Duration(seconds: 3),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             action: SnackBarAction(
               label: 'UNDO',
               textColor: AppColors.gradientStart,
@@ -64,10 +72,18 @@ class MyInsightsScreen extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
-        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
+        iconTheme: IconThemeData(
+          color: Theme.of(
+            context,
+          ).colorScheme.onSurface.withValues(alpha: 0.87),
+        ),
         title: Text(
           'My Insights',
-          style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
+          style: TextStyle(
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.87),
+          ),
         ),
       ),
       body: SafeArea(
@@ -81,7 +97,9 @@ class MyInsightsScreen extends StatelessWidget {
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return Center(
-                      child: CircularProgressIndicator(color: AppColors.gradientEnd),
+                      child: CircularProgressIndicator(
+                        color: AppColors.gradientEnd,
+                      ),
                     );
                   }
                   if (snapshot.hasError) {
@@ -93,7 +111,11 @@ class MyInsightsScreen extends StatelessWidget {
                     return Center(
                       child: Text(
                         'You have no active notes.',
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                        style: TextStyle(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.54),
+                        ),
                       ),
                     );
                   }
@@ -101,25 +123,39 @@ class MyInsightsScreen extends StatelessWidget {
                   return ListView.separated(
                     padding: EdgeInsets.symmetric(horizontal: 0, vertical: 8),
                     itemCount: insights.length,
-                    separatorBuilder: (context, index) => Divider(height: 1, indent: 76),
+                    separatorBuilder: (context, index) =>
+                        Divider(height: 1, indent: 76),
                     itemBuilder: (context, index) {
                       final insight = insights[index];
                       final user = FirebaseAuth.instance.currentUser;
                       return ListTile(
-                        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 4,
+                        ),
                         onTap: () {
                           Navigator.push(
                             context,
                             PageRouteBuilder(
                               opaque: false,
-                              pageBuilder: (context, animation, secondaryAnimation) =>
-                                  ViewInsightScreen(
-                                    userInsightsGroups: [insights],
-                                    initialUserIndex: 0,
-                                  ),
-                              transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                                return FadeTransition(opacity: animation, child: child);
-                              },
+                              pageBuilder:
+                                  (context, animation, secondaryAnimation) =>
+                                      ViewInsightScreen(
+                                        userInsightsGroups: [insights],
+                                        initialUserIndex: 0,
+                                      ),
+                              transitionsBuilder:
+                                  (
+                                    context,
+                                    animation,
+                                    secondaryAnimation,
+                                    child,
+                                  ) {
+                                    return FadeTransition(
+                                      opacity: animation,
+                                      child: child,
+                                    );
+                                  },
                             ),
                           );
                         },
@@ -152,8 +188,16 @@ class MyInsightsScreen extends StatelessWidget {
                           ),
                         ),
                         title: Text(
-                          insight.title.isEmpty ? 'Untitled Note' : insight.title,
-                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87)),
+                          insight.title.isEmpty
+                              ? 'Untitled Note'
+                              : insight.title,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.87),
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -162,16 +206,20 @@ class MyInsightsScreen extends StatelessWidget {
                           child: Text(
                             '${DateFormat('MMM d, HH:mm').format(insight.createdAt)} · Shared with study contacts',
                             style: TextStyle(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface
-                                  .withValues(alpha: 0.54),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.54),
                               fontSize: 13,
                             ),
                           ),
                         ),
                         trailing: PopupMenuButton<String>(
-                          icon: Icon(Icons.more_vert, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                          icon: Icon(
+                            Icons.more_vert,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.54),
+                          ),
                           onSelected: (val) {
                             if (val == 'delete') {
                               _deleteInsight(context, insight);
@@ -180,7 +228,10 @@ class MyInsightsScreen extends StatelessWidget {
                           itemBuilder: (context) => [
                             const PopupMenuItem(
                               value: 'delete',
-                              child: Text('Delete', style: TextStyle(color: Colors.red)),
+                              child: Text(
+                                'Delete',
+                                style: TextStyle(color: Colors.red),
+                              ),
                             ),
                           ],
                         ),
@@ -192,20 +243,26 @@ class MyInsightsScreen extends StatelessWidget {
             ),
             // Bottom area with encryption text
             Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: 16.0,
-                vertical: 12.0,
-              ),
+              padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
               color: Colors.white,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.lock_outline, size: 14, color: AppColors.gradientEnd),
+                  Icon(
+                    Icons.lock_outline,
+                    size: 14,
+                    color: AppColors.gradientEnd,
+                  ),
                   SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       'Your insights are end-to-end encrypted. They disappear after 3 days.',
-                      style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 11),
+                      style: TextStyle(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.54),
+                        fontSize: 11,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                   ),

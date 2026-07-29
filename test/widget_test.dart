@@ -69,13 +69,7 @@ void main() {
   });
 
   test('light and dark themes expose the Braid semantic colors', () {
-    expect(
-      appTheme.extension<BraidSemanticColors>(),
-      isNotNull,
-    );
-    expect(
-      darkAppTheme.extension<BraidSemanticColors>(),
-      isNotNull,
-    );
+    expect(appTheme.extension<BraidSemanticColors>(), isNotNull);
+    expect(darkAppTheme.extension<BraidSemanticColors>(), isNotNull);
   });
 }

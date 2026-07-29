@@ -19,7 +19,7 @@ The registered Android application ID remains `com.bsgc.bsgc_app` for compatibil
 ## Prerequisites
 
 - Flutter stable with a Dart SDK compatible with `pubspec.yaml`;
-- Android SDK and Java 17 for Android builds;
+- Android SDK and Java 21 for the verified Android build environment;
 - Node.js 22 for Cloud Functions;
 - Java 11 or newer plus Firebase CLI for Emulator Suite tests;
 - an authorized Firebase project identity only for deployment or migration.
@@ -43,7 +43,7 @@ The checked-in Firebase configuration identifies the existing Braid Firebase app
 From `functions/`:
 
 ```text
-npm install
+npm ci
 npm run check
 npm test
 npm run test:rules
@@ -104,6 +104,7 @@ The website intentionally does not serve a repository APK.
 - `docs/release/backend-rollout.md`
 - `docs/release/release-checklist.md`
 - `docs/testing/test-matrix.md`
+- `docs/testing/branch-preview-guide.md`
 - `docs/implementation-progress.md`
 
 ## Git discipline

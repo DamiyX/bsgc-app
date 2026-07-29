@@ -40,28 +40,34 @@ class InsightThemes {
       id: 'theme_2',
       type: InsightThemeType.gradient,
       label: 'Sunset',
-      gradientColors: [Color(0xFFFF512F), Color(0xFFDD2476)], // Orange/Pink gradient
+      gradientColors: [
+        Color(0xFFFF512F),
+        Color(0xFFDD2476),
+      ], // Orange/Pink gradient
       baseColor: Color(0xFFDD2476),
     ),
     InsightTheme(
       id: 'theme_3',
       type: InsightThemeType.image,
       label: 'Forest',
-      imageUrl: 'https://images.unsplash.com/photo-1473448912268-2022ce9509d8?w=800&q=80',
+      imageUrl:
+          'https://images.unsplash.com/photo-1473448912268-2022ce9509d8?w=800&q=80',
       baseColor: Color(0xFF1B5E20),
     ),
     InsightTheme(
       id: 'theme_4',
       type: InsightThemeType.image,
       label: 'Minimal',
-      imageUrl: 'https://images.unsplash.com/photo-1517409249764-7d5a570c1844?w=800&q=80',
+      imageUrl:
+          'https://images.unsplash.com/photo-1517409249764-7d5a570c1844?w=800&q=80',
       baseColor: Color(0xFF757575),
     ),
     InsightTheme(
       id: 'theme_5',
       type: InsightThemeType.image,
       label: 'Texture',
-      imageUrl: 'https://images.unsplash.com/photo-1518606894874-98c4fb24e41b?w=800&q=80',
+      imageUrl:
+          'https://images.unsplash.com/photo-1518606894874-98c4fb24e41b?w=800&q=80',
       baseColor: Color(0xFF5D4037),
     ),
   ];

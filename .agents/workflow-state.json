@@ -1,14 +1,23 @@
 {
-  "workflow": "BSGC Group App Development",
-  "current_phase": "Session Handoff & Memory Hygiene",
-  "completion_pct": 95,
-  "notes": "Session completed. Fixed UI glitching with insight navigation by swapping ValueKey for didUpdateWidget. Fixed severe infinite scroll loop in chat history by implementing a strict _hasMoreMessages data boundary. Updated and successfully compiled all app icons and splash screens. App built successfully but failed install due to user's device being full. Ready for handoff to a fresh context window to handle any final polish or backend syncing.",
-  "key_decisions": [
-    "Wrapped native-dependent Firebase initialization (Crashlytics) in try-catch in main.dart to prevent complete app death if native SDK integration is incomplete.",
-    "Transitioned from Firebase Storage to Cloudinary for image hosting to avoid 'Pay as you go' billing requirement.",
-    "Used TextEditingController in IntlPhoneField instead of relying on initialValue to guarantee reliable state persistence across widget rebuilds.",
-    "Opted for a local visual update for added contacts in AddMemberSheet prior to building the full backend syncing logic to unblock UI testing.",
-    "Used didUpdateWidget instead of ValueKey for smoother insight navigation state transitions."
+  "workflow": "Braid full audit remediation",
+  "branch": "codex/bsgc-full-remediation",
+  "current_phase": "Branch review and Android preview",
+  "repository_implementation": "complete within source-controlled scope",
+  "automated_verification": {
+    "flutter_format": "pass",
+    "flutter_analyze": "pass",
+    "flutter_tests": "4 passed",
+    "functions_tests": "21 passed",
+    "firebase_rules_tests": "26 passed"
+  },
+  "open_gates": [
+    "Android emulator and physical-device visual/offline/accessibility review",
+    "successful signed release AAB and size analysis",
+    "production backup and migration dry-run review",
+    "staged Firebase backend deployment",
+    "production signing and App/Universal Link verification",
+    "legal, store, monitoring, and operational approval"
   ],
-  "blockers": []
+  "next_action": "Review the pushed branch using docs/testing/branch-preview-guide.md before any default-branch merge or production deployment.",
+  "updated_at": "2026-07-29T12:15:00+01:00"
 }

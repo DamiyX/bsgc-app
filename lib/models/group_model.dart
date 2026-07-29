@@ -12,7 +12,8 @@ class GroupModel {
   final String ownerId;
   String name;
   final List<String> members; // user IDs
-  final Map<String, double> readingProgress; // mapping user ID to progress 0.0-1.0
+  final Map<String, double>
+  readingProgress; // mapping user ID to progress 0.0-1.0
   final String pinnedScripture;
   String description;
   String? photoUrl;
@@ -64,7 +65,7 @@ class GroupModel {
     final data = rawData is Map<String, dynamic>
         ? rawData
         : const <String, dynamic>{};
-    
+
     // Parse readingProgress safely
     Map<String, double> parsedProgress = {};
     if (data['readingProgress'] is Map) {
@@ -97,9 +98,7 @@ class GroupModel {
     // Parse unreadCounts safely
     Map<String, int> parsedUnreadCounts = {};
     if (data['unreadCounts'] is Map) {
-      final rawUnreads = Map<String, dynamic>.from(
-        data['unreadCounts'] as Map,
-      );
+      final rawUnreads = Map<String, dynamic>.from(data['unreadCounts'] as Map);
       rawUnreads.forEach((key, value) {
         if (value is num) parsedUnreadCounts[key] = value.toInt();
       });
@@ -111,7 +110,8 @@ class GroupModel {
     return GroupModel(
       id: doc.id,
       schemaVersion: data['schemaVersion'] is int ? data['schemaVersion'] : 1,
-      ownerId: data['ownerId']?.toString() ??
+      ownerId:
+          data['ownerId']?.toString() ??
           (members.isNotEmpty ? members.first : ''),
       name: data['name']?.toString() ?? 'Study group',
       members: members,
@@ -137,13 +137,14 @@ class GroupModel {
       extensionCount: data['extensionCount'] is num
           ? (data['extensionCount'] as num).toInt().clamp(0, 3).toInt()
           : 0,
-      lifecycle: const {
-        'draft',
-        'scheduled',
-        'active',
-        'completed',
-        'archived',
-      }.contains(data['lifecycle'])
+      lifecycle:
+          const {
+            'draft',
+            'scheduled',
+            'active',
+            'completed',
+            'archived',
+          }.contains(data['lifecycle'])
           ? data['lifecycle'] as String
           : 'active',
     );
@@ -167,10 +168,13 @@ class GroupModel {
       'topic': topic,
       'startDate': startDate != null ? Timestamp.fromDate(startDate!) : null,
       'endDate': endDate != null ? Timestamp.fromDate(endDate!) : null,
-      if (lastMessageTime != null) 'lastMessageTime': Timestamp.fromDate(lastMessageTime!),
+      if (lastMessageTime != null)
+        'lastMessageTime': Timestamp.fromDate(lastMessageTime!),
       if (lastMessageText != null) 'lastMessageText': lastMessageText,
-      if (lastMessageSenderName != null) 'lastMessageSenderName': lastMessageSenderName,
-      if (lastMessageSenderId != null) 'lastMessageSenderId': lastMessageSenderId,
+      if (lastMessageSenderName != null)
+        'lastMessageSenderName': lastMessageSenderName,
+      if (lastMessageSenderId != null)
+        'lastMessageSenderId': lastMessageSenderId,
       'unreadCounts': unreadCounts,
       'extensionCount': extensionCount,
       'lifecycle': lifecycle,

@@ -50,8 +50,7 @@ class StorageService {
     }
     return _uploadImmutable(
       bytes: bytes,
-      path:
-          'groups/$groupId/messages/$messageId/$resolvedAssetId',
+      path: 'groups/$groupId/messages/$messageId/$resolvedAssetId',
       contentType: contentType,
       metadata: {
         'ownerId': ownerId,
@@ -106,7 +105,11 @@ class StorageService {
   static String _assetName(String extension) {
     final normalized = extension.toLowerCase().replaceAll('.', '');
     if (!RegExp(r'^[a-z0-9]{2,5}$').hasMatch(normalized)) {
-      throw ArgumentError.value(extension, 'extension', 'Unsupported file extension.');
+      throw ArgumentError.value(
+        extension,
+        'extension',
+        'Unsupported file extension.',
+      );
     }
     return '${_uuid.v4()}.$normalized';
   }
@@ -121,7 +124,11 @@ class StorageService {
       case 'webp':
         return 'image/webp';
       default:
-        throw ArgumentError.value(extension, 'extension', 'Unsupported image type.');
+        throw ArgumentError.value(
+          extension,
+          'extension',
+          'Unsupported image type.',
+        );
     }
   }
 }

@@ -27,7 +27,7 @@ class _TtsSettingsScreenState extends State<TtsSettingsScreen> {
     _selectedVoiceName = prefs.getString('tts_voice_name');
 
     List<dynamic> voices = await _flutterTts.getVoices;
-    
+
     // Group voices by locale
     List<Map<String, String>> usVoices = [];
     List<Map<String, String>> gbVoices = [];
@@ -49,7 +49,7 @@ class _TtsSettingsScreenState extends State<TtsSettingsScreen> {
 
     // Limit and map names
     List<Map<String, String>> mappedVoices = [];
-    
+
     // US Voices
     for (int i = 0; i < usVoices.length && i < 4; i++) {
       mappedVoices.add({
@@ -89,13 +89,16 @@ class _TtsSettingsScreenState extends State<TtsSettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('tts_voice_name', voice['originalName']!);
     await prefs.setString('tts_voice_locale', voice['locale']!);
-    
+
     setState(() {
       _selectedVoiceName = voice['originalName'];
     });
 
     // Test the voice
-    await _flutterTts.setVoice({"name": voice['originalName']!, "locale": voice['locale']!});
+    await _flutterTts.setVoice({
+      "name": voice['originalName']!,
+      "locale": voice['locale']!,
+    });
     await _flutterTts.speak('This is how I sound.');
   }
 
@@ -107,22 +110,25 @@ class _TtsSettingsScreenState extends State<TtsSettingsScreen> {
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       ),
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: _isLoading 
-        ? Center(child: CircularProgressIndicator(color: AppColors.gradientEnd))
-        : ListView.builder(
-            itemCount: _voices.length,
-            itemBuilder: (context, index) {
-              final voice = _voices[index];
-              final isSelected = _selectedVoiceName == voice['originalName'];
-              return ListTile(
-                title: Text('${voice['displayName']}'),
-                subtitle: Text('Tap to select and hear a sample'),
-                trailing: isSelected ? Icon(Icons.check_circle, color: Colors.green) : null,
-                onTap: () => _selectVoice(voice),
-              );
-            },
-          ),
+      body: _isLoading
+          ? Center(
+              child: CircularProgressIndicator(color: AppColors.gradientEnd),
+            )
+          : ListView.builder(
+              itemCount: _voices.length,
+              itemBuilder: (context, index) {
+                final voice = _voices[index];
+                final isSelected = _selectedVoiceName == voice['originalName'];
+                return ListTile(
+                  title: Text('${voice['displayName']}'),
+                  subtitle: Text('Tap to select and hear a sample'),
+                  trailing: isSelected
+                      ? Icon(Icons.check_circle, color: Colors.green)
+                      : null,
+                  onTap: () => _selectVoice(voice),
+                );
+              },
+            ),
     );
   }
 }
-

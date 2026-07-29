@@ -131,10 +131,8 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (_) => EditGroupScreen(
-          group: _group,
-          chatService: _chatService,
-        ),
+        builder: (_) =>
+            EditGroupScreen(group: _group, chatService: _chatService),
       ),
     );
   }
@@ -206,8 +204,9 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
               FilledButton(
                 style: destructive
                     ? FilledButton.styleFrom(
-                        backgroundColor:
-                            Theme.of(dialogContext).colorScheme.error,
+                        backgroundColor: Theme.of(
+                          dialogContext,
+                        ).colorScheme.error,
                       )
                     : null,
                 onPressed: () => Navigator.pop(dialogContext, true),
@@ -286,11 +285,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     }
   }
 
-  Future<void> _memberAction(
-    String action,
-    String uid,
-    String name,
-  ) async {
+  Future<void> _memberAction(String action, String uid, String name) async {
     try {
       switch (action) {
         case 'transfer':
@@ -338,9 +333,9 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   String get _focusLabel {
@@ -516,10 +511,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
           else
             Card(
               child: Column(
-                children: [
-                  for (final member in _members)
-                    _memberTile(member),
-                ],
+                children: [for (final member in _members) _memberTile(member)],
               ),
             ),
           const SizedBox(height: 24),
@@ -605,12 +597,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
       ),
       title: Text(name),
       subtitle: isGroupOwner || isSelf
-          ? Text(
-              [
-                if (isGroupOwner) 'Owner',
-                if (isSelf) 'You',
-              ].join(' · '),
-            )
+          ? Text([if (isGroupOwner) 'Owner', if (isSelf) 'You'].join(' · '))
           : null,
       trailing: isSelf
           ? null

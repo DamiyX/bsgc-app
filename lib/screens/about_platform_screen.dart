@@ -30,9 +30,9 @@ class AboutPlatformScreen extends StatelessWidget {
           Text(
             'Fellowship shaped around reflection',
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 10),
           Text(

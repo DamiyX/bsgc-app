@@ -185,10 +185,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
           ? DateTimeRange(start: _startDate!, end: _endDate!)
           : null,
       builder: (context, child) {
-        return Theme(
-          data: Theme.of(context),
-          child: child!,
-        );
+        return Theme(data: Theme.of(context), child: child!);
       },
     );
     if (picked != null && mounted) {
@@ -250,10 +247,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (_) => StudyRoomScreen(
-              group: group,
-              showAddMemberPrompt: true,
-            ),
+            builder: (_) =>
+                StudyRoomScreen(group: group, showAddMemberPrompt: true),
           ),
         );
       }
@@ -272,9 +267,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: const Text('Create a study'),
-      ),
+      appBar: AppBar(title: const Text('Create a study')),
       body: _isLoading
           ? Center(
               child: CircularProgressIndicator(color: AppColors.gradientEnd),
@@ -328,8 +321,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
 
                     _buildPlanTypeCard(
                       title: 'Bible',
-                      description:
-                          'Read through one Bible book together',
+                      description: 'Read through one Bible book together',
                       icon: Icons.menu_book,
                       isSelected: _groupType == 'Bible',
                       onTap: () => setState(() => _groupType = 'Bible'),
@@ -430,7 +422,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       ),
                       leading: Icon(
                         Icons.calendar_today,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.87),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.87),
                       ),
                       title: Text(
                         _startDate == null || _endDate == null

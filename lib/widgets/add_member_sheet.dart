@@ -42,9 +42,7 @@ class _AddMemberSheetState extends State<AddMemberSheet> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = error
-            .toString()
-            .replaceFirst('Exception: ', '');
+        _errorMessage = error.toString().replaceFirst('Exception: ', '');
       });
     } finally {
       if (mounted) setState(() => _isCreating = false);
@@ -63,15 +61,15 @@ class _AddMemberSheetState extends State<AddMemberSheet> {
     if (invite == null) return;
     await Clipboard.setData(ClipboardData(text: invite.joinUrl));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Private invitation copied.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Private invitation copied.')));
   }
 
   Future<void> _shareInvite() async {
     final invite = _invite;
     if (invite == null) return;
-    await Share.share(_shareMessage(invite));
+    await SharePlus.instance.share(ShareParams(text: _shareMessage(invite)));
   }
 
   @override

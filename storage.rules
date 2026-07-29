@@ -29,7 +29,8 @@ service firebase.storage {
     }
 
     function isGroupOwner(groupId) {
-      return isGroupMember(groupId)
+      return signedIn()
+        && groupExists(groupId)
         && groupData(groupId).ownerId == request.auth.uid;
     }
 

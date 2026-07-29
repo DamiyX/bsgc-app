@@ -242,9 +242,9 @@ class _MainHallScreenState extends State<MainHallScreen> {
             children: [
               Text(
                 'Where should this reflection live?',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 6),
               Text(
@@ -262,9 +262,7 @@ class _MainHallScreenState extends State<MainHallScreen> {
                   Navigator.pop(sheetContext);
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const CreateNoteScreen(),
-                    ),
+                    MaterialPageRoute(builder: (_) => const CreateNoteScreen()),
                   );
                 },
               ),
@@ -316,12 +314,14 @@ class _MainHallScreenState extends State<MainHallScreen> {
               padding: const EdgeInsets.all(12),
               child: Text(
                 'Choose a study group',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
             ),
-            for (final group in groups.where((item) => item.lifecycle == 'active'))
+            for (final group in groups.where(
+              (item) => item.lifecycle == 'active',
+            ))
               ListTile(
                 minTileHeight: 56,
                 leading: BraidCoverImage(
@@ -380,9 +380,7 @@ class _MainHallScreenState extends State<MainHallScreen> {
                   icon: const Icon(Icons.settings_outlined),
                   onPressed: () => Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const SettingsScreen(),
-                    ),
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
                   ),
                 ),
             ],
@@ -548,8 +546,9 @@ class _MainHallScreenState extends State<MainHallScreen> {
                     ),
                     const SizedBox(height: 10),
                     FilledButton.tonal(
-                      onPressed:
-                          _enablingNotifications ? null : _enableNotifications,
+                      onPressed: _enablingNotifications
+                          ? null
+                          : _enableNotifications,
                       child: Text(
                         _enablingNotifications
                             ? 'Enabling…'
@@ -579,9 +578,9 @@ class _MainHallScreenState extends State<MainHallScreen> {
           padding: const EdgeInsets.fromLTRB(20, 22, 20, 4),
           child: Text(
             'From your study contacts',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
         ),
         const InsightsRow(embedded: true),
@@ -666,9 +665,7 @@ class _MainHallScreenState extends State<MainHallScreen> {
                   hasSearch: _journalQuery.isNotEmpty,
                   onWrite: () => Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const CreateNoteScreen(),
-                    ),
+                    MaterialPageRoute(builder: (_) => const CreateNoteScreen()),
                   ),
                 );
               }
@@ -736,9 +733,9 @@ class _MainHallScreenState extends State<MainHallScreen> {
               ? user!.displayName!.trim()
               : 'Your space',
           textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w800,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 4),
         Text(
@@ -764,9 +761,7 @@ class _MainHallScreenState extends State<MainHallScreen> {
           description: 'Review blocks, reports, and community controls.',
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (_) => const SafetyCenterScreen(),
-            ),
+            MaterialPageRoute(builder: (_) => const SafetyCenterScreen()),
           ),
         ),
         _MeDestination(
@@ -1107,9 +1102,9 @@ class _EmptyTodayCard extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               'Begin with a simple plan',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
             const Text(
@@ -1145,9 +1140,9 @@ class _EmptyGroups extends StatelessWidget {
             Text(
               'Study is better with intention',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 8),
             const Text(
@@ -1155,7 +1150,10 @@ class _EmptyGroups extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 18),
-            FilledButton(onPressed: onCreate, child: const Text('Create group')),
+            FilledButton(
+              onPressed: onCreate,
+              child: const Text('Create group'),
+            ),
           ],
         ),
       ),
@@ -1177,14 +1175,16 @@ class _EmptyJournal extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(hasSearch ? Icons.search_off_rounded : Icons.edit_note_rounded,
-                size: 50),
+            Icon(
+              hasSearch ? Icons.search_off_rounded : Icons.edit_note_rounded,
+              size: 50,
+            ),
             const SizedBox(height: 12),
             Text(
               hasSearch ? 'No matching reflections' : 'Your journal is quiet',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 8),
             Text(

@@ -3,8 +3,6 @@ name: Quality
 on:
   pull_request:
   push:
-    branches-ignore:
-      - main
   workflow_dispatch:
 
 permissions:
@@ -36,7 +34,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: functions/package-lock.json
-      - run: npm install
+      - run: npm ci
       - run: npm run check
       - run: npm test
 
@@ -50,11 +48,11 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: functions/package-lock.json
-      - run: npm install
+      - run: npm ci
       - run: npm run test:rules

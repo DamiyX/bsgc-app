@@ -23,9 +23,11 @@ void main() async {
   Object? startupError;
 
   try {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-    
+
     if (!kIsWeb) {
       // Pass all uncaught "fatal" errors from the framework to Crashlytics
       FlutterError.onError =
@@ -44,8 +46,7 @@ void main() async {
             debugPrint('Bible data initialization failed: $error'),
       ),
       DeepLinkService().init().catchError(
-        (Object error) =>
-            debugPrint('Deep-link initialization failed: $error'),
+        (Object error) => debugPrint('Deep-link initialization failed: $error'),
       ),
     ]);
   } catch (error, stackTrace) {
@@ -159,14 +160,17 @@ class _AuthWrapperState extends State<AuthWrapper> {
         if (snapshot.hasData || snapshot.data != null) {
           _hasReceivedData = true;
           _lastScreen = const UserDataWrapper();
-        } else if (snapshot.connectionState == ConnectionState.active && !snapshot.hasData) {
+        } else if (snapshot.connectionState == ConnectionState.active &&
+            !snapshot.hasData) {
           _hasReceivedData = true;
           _lastScreen = const FoyerScreen();
         }
 
         if (!_hasReceivedData) {
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator(color: AppColors.gradientEnd)),
+            body: Center(
+              child: CircularProgressIndicator(color: AppColors.gradientEnd),
+            ),
           );
         }
 
@@ -175,4 +179,3 @@ class _AuthWrapperState extends State<AuthWrapper> {
     );
   }
 }
-

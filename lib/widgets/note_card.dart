@@ -60,7 +60,9 @@ class NoteCard extends StatelessWidget {
                       padding: EdgeInsets.zero,
                       icon: Icon(
                         Icons.more_vert,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.54),
                         size: 20,
                       ),
                       onSelected: (val) {
@@ -113,7 +115,12 @@ class NoteCard extends StatelessWidget {
               if (!isGrid) SizedBox(height: 8),
               Text(
                 DateFormat('MMM d, yyyy').format(note.updatedAt),
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 12),
+                style: TextStyle(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.54),
+                  fontSize: 12,
+                ),
               ),
             ],
           ),

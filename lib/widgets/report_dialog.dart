@@ -94,7 +94,9 @@ Future<bool> showReportDialog(
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Report submitted. Thank you for helping keep Braid safe.'),
+          content: Text(
+            'Report submitted. Thank you for helping keep Braid safe.',
+          ),
         ),
       );
     }

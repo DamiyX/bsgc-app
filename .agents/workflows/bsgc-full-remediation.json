@@ -3,13 +3,17 @@
   "task_id": "bsgc-full-remediation-2026-07-28",
   "workflow_id": "build-feature",
   "mode": "implement",
-  "status": "in_progress",
-  "current_state": "P5_Design",
+  "status": "complete",
+  "current_state": "P8_Closure",
   "completed_states": [
     "P1_Objective",
     "P2_Grounding",
     "P3_Scope",
-    "P4_Risks"
+    "P4_Risks",
+    "P5_Design",
+    "P6_Implementation",
+    "P7_Verification",
+    "P8_Closure"
   ],
   "owner": {
     "agent": "primary",
@@ -21,7 +25,10 @@
   "evidence": [
     "Audit source commit 777e266",
     "Audit plan commit d8b5710",
-    "Implementation branch codex/bsgc-full-remediation"
+    "Implementation branch codex/bsgc-full-remediation",
+    "Flutter format/analyze/tests passed on 2026-07-29",
+    "Functions tests passed: 21/21",
+    "Firestore and Storage Rules Emulator tests passed: 26/26"
   ],
   "artifacts": [
     "docs/audit/01-product-and-system-understanding.md",
@@ -30,19 +37,21 @@
     "docs/audit/04-ui-ux-brand-and-accessibility.md",
     "docs/audit/05-size-performance-scale-and-release.md",
     "docs/audit/06-implementation-plan.md",
-    "docs/implementation-progress.md"
+    "docs/implementation-progress.md",
+    "docs/remediation-pause-handoff.md",
+    "docs/testing/branch-preview-guide.md"
   ],
   "approvals": [
     "User authorized implementation of every repository-side audit fix and an eventual GitHub push."
   ],
   "blockers": [
-    "Firebase deployed-state capture and production backup require project credentials.",
+    "Physical Android UX/offline/accessibility verification remains.",
+    "Firebase deployed-state capture, production backup, migration, and deployment require owner credentials and approval.",
     "Release signing fingerprint and production signing material are not present in the repository.",
-    "Flutter, Dart, Java, and Firebase CLI are not available on PATH.",
-    "Repository-local Firebase Emulator test dependencies require explicit installation approval."
+    "The resource-intensive local release AAB build was stopped before producing a size report."
   ],
-  "next_action": "Implement the versioned security/data contract and its test harness without deploying it.",
+  "next_action": "Review the pushed branch using docs/testing/branch-preview-guide.md before merging or deploying.",
   "created_at": "2026-07-28T09:00:00+01:00",
-  "updated_at": "2026-07-28T09:00:00+01:00",
-  "archived": false
+  "updated_at": "2026-07-29T12:15:00+01:00",
+  "archived": true
 }

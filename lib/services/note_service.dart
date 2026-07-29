@@ -12,8 +12,10 @@ class NoteService {
         .orderBy('updatedAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) => NoteModel.fromFirestore(doc)).toList();
-    });
+          return snapshot.docs
+              .map((doc) => NoteModel.fromFirestore(doc))
+              .toList();
+        });
   }
 
   Future<void> saveNote(NoteModel note) async {

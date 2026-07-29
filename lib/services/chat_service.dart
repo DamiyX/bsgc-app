@@ -60,7 +60,9 @@ class ChatService {
 
   Exception _callableError(Object error) {
     if (error is FirebaseFunctionsException) {
-      return Exception(error.message ?? 'The requested action could not be completed.');
+      return Exception(
+        error.message ?? 'The requested action could not be completed.',
+      );
     }
     return Exception('The requested action could not be completed.');
   }
@@ -170,7 +172,9 @@ class ChatService {
   Future<void> revokeGroupInvite(String token) async {
     _requireUser();
     try {
-      await _functions.httpsCallable('revokeGroupInvite').call({'token': token});
+      await _functions.httpsCallable('revokeGroupInvite').call({
+        'token': token,
+      });
     } catch (error) {
       throw _callableError(error);
     }
@@ -251,7 +255,7 @@ class ChatService {
         'name': name.trim(),
         'pinnedScripture': scripture.trim(),
         'description': description?.trim() ?? '',
-        if (photoUrl != null) 'photoUrl': photoUrl,
+        'photoUrl': ?photoUrl,
       });
     } catch (error) {
       throw _callableError(error);
@@ -296,15 +300,12 @@ class ChatService {
         .orderBy('timestamp', descending: true)
         .limit(limit.clamp(1, 100).toInt())
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map(MessageModel.fromFirestore)
-            .toList());
+        .map(
+          (snapshot) => snapshot.docs.map(MessageModel.fromFirestore).toList(),
+        );
   }
 
-  GroupMessagePager createMessagePager(
-    String groupId, {
-    int pageSize = 30,
-  }) {
+  GroupMessagePager createMessagePager(String groupId, {int pageSize = 30}) {
     return GroupMessagePager(
       firestore: _firestore,
       groupId: groupId,
@@ -356,29 +357,6 @@ class ChatService {
     await _firestore.collection('groups').doc(groupId).update({
       'unreadCounts.${user.uid}': 0,
     });
-  }
-
-  Future<void> toggleStarMessage(
-    String groupId,
-    String messageId,
-    bool isStarred,
-  ) async {
-    final user = _requireUser();
-    final reference = _firestore
-        .collection('users')
-        .doc(user.uid)
-        .collection('group_state')
-        .doc(groupId)
-        .collection('starred_messages')
-        .doc(messageId);
-    if (isStarred) {
-      await reference.delete();
-    } else {
-      await reference.set({
-        'messageId': messageId,
-        'starredAt': FieldValue.serverTimestamp(),
-      });
-    }
   }
 
   Future<void> deleteMessage(String groupId, String messageId) async {
@@ -478,14 +456,12 @@ class ChatService {
 
   Future<void> updateGroupStudyProgress(
     String groupId,
-    String bookName,
-    int totalChapters,
     List<int> completedChapters,
     double progress,
   ) async {
     final user = _requireUser();
     await _firestore.collection('groups').doc(groupId).update({
-          'readingProgress.${user.uid}': progress.clamp(0, 1),
+      'readingProgress.${user.uid}': progress.clamp(0, 1),
       'userCompletedChapters.${user.uid}': completedChapters,
     });
   }
@@ -532,11 +508,10 @@ class GroupMessagePager {
   final int pageSize;
   final StreamController<List<MessageModel>> _controller =
       StreamController.broadcast();
-  final Map<String, QueryDocumentSnapshot<Map<String, dynamic>>> _documents =
-      {};
+  final Map<String, DocumentSnapshot<Map<String, dynamic>>> _documents = {};
 
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _liveSubscription;
-  QueryDocumentSnapshot<Map<String, dynamic>>? _oldestCursor;
+  DocumentSnapshot<Map<String, dynamic>>? _oldestCursor;
   bool _started = false;
   bool _loadingOlder = false;
   bool hasMore = true;
@@ -564,21 +539,18 @@ class GroupMessagePager {
     _liveSubscription = _baseQuery
         .limit(pageSize)
         .snapshots(includeMetadataChanges: true)
-        .listen(
-          (snapshot) {
-            for (final change in snapshot.docChanges) {
-              if (change.type != DocumentChangeType.removed) {
-                _documents[change.doc.id] = change.doc;
-              }
+        .listen((snapshot) {
+          for (final change in snapshot.docChanges) {
+            if (change.type != DocumentChangeType.removed) {
+              _documents[change.doc.id] = change.doc;
             }
-            if (snapshot.docs.isNotEmpty) {
-              _oldestCursor ??= snapshot.docs.last;
-            }
-            if (snapshot.docs.length < pageSize) hasMore = false;
-            _emit();
-          },
-          onError: _controller.addError,
-        );
+          }
+          if (snapshot.docs.isNotEmpty) {
+            _oldestCursor ??= snapshot.docs.last;
+          }
+          if (snapshot.docs.length < pageSize) hasMore = false;
+          _emit();
+        }, onError: _controller.addError);
   }
 
   Future<void> loadOlder() async {
@@ -603,8 +575,8 @@ class GroupMessagePager {
   void _emit() {
     final documents = _documents.values.toList()
       ..sort((first, second) {
-        final firstTimestamp = first.data()['timestamp'];
-        final secondTimestamp = second.data()['timestamp'];
+        final firstTimestamp = first.data()?['timestamp'];
+        final secondTimestamp = second.data()?['timestamp'];
         final firstMillis = firstTimestamp is Timestamp
             ? firstTimestamp.millisecondsSinceEpoch
             : DateTime.now().millisecondsSinceEpoch;

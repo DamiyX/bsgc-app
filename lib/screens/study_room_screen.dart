@@ -102,8 +102,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     unawaited(_restoreDraft());
     unawaited(_reloadOutbox(autoRetry: true));
 
-    if (widget.showAddMemberPrompt &&
-        widget.group.ownerId == _uid) {
+    if (widget.showAddMemberPrompt && widget.group.ownerId == _uid) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _showAddMembers();
       });
@@ -218,10 +217,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     }
   }
 
-  Future<void> _attemptOutbox(
-    OutboxMessage entry, {
-    bool quiet = false,
-  }) async {
+  Future<void> _attemptOutbox(OutboxMessage entry, {bool quiet = false}) async {
     if (_sendingOutboxIds.contains(entry.id)) return;
     setState(() => _sendingOutboxIds.add(entry.id));
     try {
@@ -274,8 +270,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
       return;
     }
     final parts = <MessagePart>[
-      if (text.isNotEmpty)
-        MessagePart(type: MessageType.text, content: text),
+      if (text.isNotEmpty) MessagePart(type: MessageType.text, content: text),
       ..._draftParts,
     ];
     if (parts.isEmpty || parts.length > 4) {
@@ -283,8 +278,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
       return;
     }
 
-    final messageId =
-        _draftMessageId ?? _chatService.createClientMessageId();
+    final messageId = _draftMessageId ?? _chatService.createClientMessageId();
     final entry = await _outboxService.enqueue(
       id: messageId,
       userId: _uid,
@@ -408,7 +402,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
       });
       _scheduleDraftSave();
     } catch (error) {
-      _showMessage('The recording is saved locally, but could not be prepared.');
+      _showMessage(
+        'The recording is saved locally, but could not be prepared.',
+      );
     }
   }
 
@@ -682,9 +678,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
         if (group.groupType == 'Bible' && group.totalChapters > 0) ...[
           Text(
             'Your reading progress',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
           Text(
@@ -709,7 +705,8 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
               return Semantics(
                 button: true,
                 selected: selected,
-                label: 'Chapter $chapter, ${selected ? 'complete' : 'not complete'}',
+                label:
+                    'Chapter $chapter, ${selected ? 'complete' : 'not complete'}',
                 child: FilterChip(
                   selected: selected,
                   showCheckmark: false,
@@ -724,9 +721,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
         ] else ...[
           Text(
             'Your study progress',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
           Slider(
             value: _pendingTopicProgress ?? progress.toDouble(),
@@ -763,13 +760,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     updated.sort();
     final progress = updated.length / group.totalChapters;
     try {
-      await _chatService.updateGroupStudyProgress(
-        group.id,
-        group.studyBook ?? '',
-        group.totalChapters,
-        updated,
-        progress,
-      );
+      await _chatService.updateGroupStudyProgress(group.id, updated, progress);
     } catch (_) {
       _showMessage('Progress could not be updated yet.');
     }
@@ -952,10 +943,8 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                         textCapitalization: TextCapitalization.sentences,
                         decoration: InputDecoration(
                           hintText: switch (_selectedSpace) {
-                            StudySpace.reflection =>
-                              'What stood out to you?',
-                            StudySpace.prayer =>
-                              'Share a prayer or request…',
+                            StudySpace.reflection => 'What stood out to you?',
+                            StudySpace.prayer => 'Share a prayer or request…',
                             _ => 'Add to the discussion…',
                           },
                           filled: false,
@@ -1125,10 +1114,7 @@ class _StudySpaceSelector extends StatelessWidget {
   final StudySpace selected;
   final ValueChanged<StudySpace> onSelected;
 
-  const _StudySpaceSelector({
-    required this.selected,
-    required this.onSelected,
-  });
+  const _StudySpaceSelector({required this.selected, required this.onSelected});
 
   @override
   Widget build(BuildContext context) {
@@ -1625,9 +1611,7 @@ class _ReadOnlyComposer extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(
-              scheduled ? Icons.schedule_rounded : Icons.task_alt_rounded,
-            ),
+            Icon(scheduled ? Icons.schedule_rounded : Icons.task_alt_rounded),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -1663,9 +1647,9 @@ class _CompletedRecap extends StatelessWidget {
           children: [
             Text(
               'Study recap',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 10),
             Text('${group.members.length} people studied together'),

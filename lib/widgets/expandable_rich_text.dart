@@ -31,12 +31,14 @@ class _ExpandableRichTextState extends State<ExpandableRichText> {
     if (isLong && !_isExpanded) {
       // Find a natural break point instead of cutting a word
       int breakIndex = maxLength;
-      while (breakIndex > 0 && widget.text[breakIndex] != ' ' && widget.text[breakIndex] != '\n') {
+      while (breakIndex > 0 &&
+          widget.text[breakIndex] != ' ' &&
+          widget.text[breakIndex] != '\n') {
         breakIndex--;
       }
       if (breakIndex == 0) breakIndex = maxLength; // fallback
-      
-      displayText = widget.text.substring(0, breakIndex).trimRight() + '...';
+
+      displayText = '${widget.text.substring(0, breakIndex).trimRight()}...';
     }
 
     return Column(
