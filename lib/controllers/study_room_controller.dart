@@ -7,6 +7,80 @@ import '../models/group_model.dart';
 import '../models/message_model.dart';
 import '../services/chat_service.dart';
 
+class ActiveRoomReadReconciler {
+  final Future<void> Function() _acknowledge;
+  Future<void>? _inFlight;
+  bool _repeatRequested = false;
+  bool _active = true;
+
+  ActiveRoomReadReconciler(this._acknowledge);
+
+  Future<void> setActive(bool active) {
+    _active = active;
+    return active ? reconcile() : Future<void>.value();
+  }
+
+  Future<void> reconcile({bool force = false}) {
+    if (!_active && !force) return Future<void>.value();
+    final active = _inFlight;
+    if (active != null) {
+      _repeatRequested = true;
+      return active.then((_) => _inFlight ?? Future<void>.value());
+    }
+
+    final operation = _run();
+    _inFlight = operation;
+    return operation;
+  }
+
+  Future<void> _run() async {
+    try {
+      do {
+        _repeatRequested = false;
+        await _acknowledge();
+      } while (_repeatRequested);
+    } finally {
+      _inFlight = null;
+    }
+  }
+}
+
+class DraftReplyReference {
+  final String? messageId;
+  final MessageModel? message;
+
+  const DraftReplyReference({required this.messageId, required this.message});
+
+  factory DraftReplyReference.restore(
+    String? messageId,
+    Iterable<MessageModel> availableMessages,
+  ) {
+    return DraftReplyReference(
+      messageId: messageId,
+      message: _findMessage(messageId, availableMessages),
+    );
+  }
+
+  DraftReplyReference reconcile(Iterable<MessageModel> availableMessages) {
+    if (message != null || messageId == null) return this;
+    return DraftReplyReference(
+      messageId: messageId,
+      message: _findMessage(messageId, availableMessages),
+    );
+  }
+
+  static MessageModel? _findMessage(
+    String? messageId,
+    Iterable<MessageModel> messages,
+  ) {
+    if (messageId == null) return null;
+    for (final message in messages) {
+      if (message.id == messageId) return message;
+    }
+    return null;
+  }
+}
+
 class StudyRoomController extends ChangeNotifier {
   static const messageSpaces = {'reflection', 'discussion', 'prayer'};
 
@@ -30,6 +104,8 @@ class StudyRoomController extends ChangeNotifier {
   Object? _visibilityError;
   bool _loadingVisibility = true;
   bool _disposed = false;
+  late final ActiveRoomReadReconciler _readReconciler =
+      ActiveRoomReadReconciler(() => chatService.resetUnreadCount(groupId));
 
   GroupModel group;
 
@@ -59,7 +135,20 @@ class StudyRoomController extends ChangeNotifier {
   Object? messageError(String space) =>
       _visibilityError ?? _messageErrors[space];
 
+  Iterable<MessageModel> get allLoadedMessages sync* {
+    for (final messages in _messagesBySpace.values) {
+      yield* messages;
+    }
+  }
+
+  Iterable<MessageModel> visibleLoadedMessages(String userId) sync* {
+    for (final space in messageSpaces) {
+      yield* messagesFor(space, userId: userId);
+    }
+  }
+
   void initialize() {
+    unawaited(reconcileUnread());
     _groupSub = firestore.collection('groups').doc(groupId).snapshots().listen((
       snapshot,
     ) {
@@ -93,6 +182,7 @@ class StudyRoomController extends ChangeNotifier {
           _messagesBySpace[space] = messages;
           _messageErrors.remove(space);
           _loadingSpaces.remove(space);
+          unawaited(reconcileUnread());
           _notify();
         },
         onError: (Object error) {
@@ -101,6 +191,31 @@ class StudyRoomController extends ChangeNotifier {
           _notify();
         },
       );
+    }
+  }
+
+  Future<void> reconcileUnread() async {
+    try {
+      await _readReconciler.reconcile();
+    } catch (_) {
+      // Message streams and lifecycle resume provide the next retry opportunity.
+    }
+  }
+
+  Future<void> setRoomActive(bool active) => _readReconciler.setActive(active);
+
+  Future<void> retryMessages(String space) async {
+    final pager = _pagers[space];
+    if (pager == null) return;
+    _messageErrors.remove(space);
+    _loadingSpaces.add(space);
+    _notify();
+    try {
+      await pager.retry();
+    } catch (error) {
+      _messageErrors[space] = error;
+      _loadingSpaces.remove(space);
+      _notify();
     }
   }
 
@@ -175,6 +290,7 @@ class StudyRoomController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    unawaited(_readReconciler.reconcile(force: true));
     unawaited(_groupSub?.cancel());
     unawaited(_visibilitySubscription?.cancel());
     for (final subscription in _messageSubscriptions.values) {

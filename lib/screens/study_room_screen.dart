@@ -53,18 +53,25 @@ extension on StudySpace {
 class StudyRoomScreen extends StatefulWidget {
   final GroupModel group;
   final bool showAddMemberPrompt;
+  final String? initialSpace;
+  final String? targetMessageId;
+  final VoidCallback? onTargetResolved;
 
   const StudyRoomScreen({
     super.key,
     required this.group,
     this.showAddMemberPrompt = false,
+    this.initialSpace,
+    this.targetMessageId,
+    this.onTargetResolved,
   });
 
   @override
   State<StudyRoomScreen> createState() => _StudyRoomScreenState();
 }
 
-class _StudyRoomScreenState extends State<StudyRoomScreen> {
+class _StudyRoomScreenState extends State<StudyRoomScreen>
+    with WidgetsBindingObserver {
   final ChatService _chatService = ChatService();
   final DraftService _draftService = DraftService();
   final MessageOutboxService _outboxService = MessageOutboxService();
@@ -72,6 +79,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
   final FlutterTts _tts = FlutterTts();
   final TextEditingController _textController = TextEditingController();
   final ScrollController _messageScrollController = ScrollController();
+  final GlobalKey _targetMessageKey = GlobalKey();
 
   late final StudyRoomController _controller;
   StudySpace _selectedSpace = StudySpace.discussion;
@@ -87,16 +95,27 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
   bool _isRecording = false;
   int _recordingSeconds = 0;
   double? _pendingTopicProgress;
+  final Set<int> _savingChapters = {};
+  bool _isResolvingTarget = false;
+  bool _targetResolved = false;
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   @override
   void initState() {
     super.initState();
+    _selectedSpace = StudySpace.values.firstWhere(
+      (space) =>
+          space != StudySpace.plan && space.wireName == widget.initialSpace,
+      orElse: () => StudySpace.discussion,
+    );
+    WidgetsBinding.instance.addObserver(this);
     _controller = StudyRoomController(
       group: widget.group,
       chatService: _chatService,
-    )..initialize();
+    );
+    _controller.addListener(_handleControllerUpdate);
+    _controller.initialize();
     _textController.addListener(_scheduleDraftSave);
     _messageScrollController.addListener(_handleMessageScroll);
     unawaited(_restoreDraft());
@@ -111,6 +130,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _draftTimer?.cancel();
     _recordingTimer?.cancel();
     unawaited(_persistDraft());
@@ -122,8 +142,93 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
       ..dispose();
     _audioService.dispose();
     unawaited(_tts.stop());
-    _controller.dispose();
+    _controller
+      ..removeListener(_handleControllerUpdate)
+      ..dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_controller.setRoomActive(true));
+    } else {
+      unawaited(_controller.setRoomActive(false));
+    }
+  }
+
+  void _handleControllerUpdate() {
+    if (!mounted) return;
+    unawaited(_revealTargetMessage());
+    if (_replyToMessageId == null || _replyToMessage != null) return;
+    final reference = DraftReplyReference.restore(
+      _replyToMessageId,
+      _controller.visibleLoadedMessages(_uid),
+    );
+    if (reference.message == null) return;
+    setState(() => _replyToMessage = reference.message);
+  }
+
+  Future<void> _revealTargetMessage() async {
+    final targetId = widget.targetMessageId;
+    if (_targetResolved ||
+        _isResolvingTarget ||
+        targetId == null ||
+        targetId.isEmpty ||
+        (widget.initialSpace != null &&
+            _selectedSpace.wireName != widget.initialSpace) ||
+        !mounted) {
+      return;
+    }
+    _isResolvingTarget = true;
+    final space = _selectedSpace.wireName;
+    try {
+      final visibleMessages = _controller.messagesFor(space, userId: _uid);
+      if (visibleMessages.any((message) => message.id == targetId)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _targetResolved) return;
+          final context = _targetMessageKey.currentContext;
+          if (context == null) {
+            unawaited(_revealTargetMessage());
+            return;
+          }
+          _targetResolved = true;
+          Scrollable.ensureVisible(
+            context,
+            duration: const Duration(milliseconds: 300),
+            alignment: 0.5,
+          );
+          widget.onTargetResolved?.call();
+        });
+        return;
+      }
+
+      final targetWasHidden = _controller.allLoadedMessages.any(
+        (message) => message.id == targetId,
+      );
+      if (targetWasHidden || !_controller.hasMore(space)) {
+        _targetResolved = true;
+        widget.onTargetResolved?.call();
+        if (mounted) {
+          _showMessage(
+            targetWasHidden
+                ? 'That message is hidden from your room.'
+                : 'That message is no longer available.',
+          );
+        }
+        return;
+      }
+
+      await _controller.loadOlder(space);
+    } finally {
+      _isResolvingTarget = false;
+    }
+    if (mounted &&
+        !_targetResolved &&
+        _controller.messageError(space) == null) {
+      await Future<void>.delayed(Duration.zero);
+      unawaited(_revealTargetMessage());
+    }
   }
 
   void _handleMessageScroll() {
@@ -145,26 +250,22 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
       (space) => space.wireName == draft.space,
       orElse: () => StudySpace.discussion,
     );
-    MessageModel? reply;
-    if (draft.replyToMessageId != null) {
-      try {
-        reply = _controller
-            .messagesFor(restoredSpace.wireName, userId: _uid)
-            .firstWhere((message) => message.id == draft.replyToMessageId);
-      } catch (_) {
-        reply = null;
-      }
-    }
+    final replyReference = DraftReplyReference.restore(
+      draft.replyToMessageId,
+      _controller.messagesFor(restoredSpace.wireName, userId: _uid),
+    );
     _restoringDraft = true;
     setState(() {
-      _selectedSpace = restoredSpace == StudySpace.plan
-          ? StudySpace.discussion
-          : restoredSpace;
+      _selectedSpace = widget.initialSpace == null
+          ? restoredSpace == StudySpace.plan
+                ? StudySpace.discussion
+                : restoredSpace
+          : _selectedSpace;
       _textController.text = draft.text;
       _draftParts = List.of(draft.parts);
       _draftMessageId = draft.clientMessageId;
-      _replyToMessageId = reply?.id;
-      _replyToMessage = reply;
+      _replyToMessageId = replyReference.messageId;
+      _replyToMessage = replyReference.message;
     });
     _restoringDraft = false;
   }
@@ -197,6 +298,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     if (_selectedSpace == space) return;
     setState(() => _selectedSpace = space);
     _scheduleDraftSave();
+    unawaited(_revealTargetMessage());
   }
 
   Future<void> _reloadOutbox({bool autoRetry = false}) async {
@@ -340,8 +442,10 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
         );
       });
       _scheduleDraftSave();
-    } catch (error) {
-      _showMessage(error.toString());
+    } catch (_) {
+      _showMessage(
+        'That photo could not be prepared. Choose another photo and try again.',
+      );
     }
   }
 
@@ -702,17 +806,19 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
             itemBuilder: (context, index) {
               final chapter = index + 1;
               final selected = completed.contains(chapter);
+              final saving = _savingChapters.contains(chapter);
               return Semantics(
                 button: true,
                 selected: selected,
                 label:
-                    'Chapter $chapter, ${selected ? 'complete' : 'not complete'}',
+                    'Chapter $chapter, ${selected ? 'complete' : 'not complete'}'
+                    '${saving ? ', saving' : ''}',
                 child: FilterChip(
                   selected: selected,
                   showCheckmark: false,
                   label: Text('$chapter'),
-                  onSelected: group.lifecycle == 'active'
-                      ? (_) => _toggleChapter(group, completed, chapter)
+                  onSelected: group.lifecycle == 'active' && !saving
+                      ? (_) => _toggleChapter(group, chapter)
                       : null,
                 ),
               );
@@ -746,23 +852,18 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
     );
   }
 
-  Future<void> _toggleChapter(
-    GroupModel group,
-    List<int> current,
-    int chapter,
-  ) async {
-    final updated = List<int>.from(current);
-    if (updated.contains(chapter)) {
-      updated.remove(chapter);
-    } else {
-      updated.add(chapter);
-    }
-    updated.sort();
-    final progress = updated.length / group.totalChapters;
+  Future<void> _toggleChapter(GroupModel group, int chapter) async {
+    setState(() => _savingChapters.add(chapter));
     try {
-      await _chatService.updateGroupStudyProgress(group.id, updated, progress);
+      await _chatService.toggleGroupStudyChapter(
+        group.id,
+        chapter: chapter,
+        totalChapters: group.totalChapters,
+      );
     } catch (_) {
       _showMessage('Progress could not be updated yet.');
+    } finally {
+      if (mounted) setState(() => _savingChapters.remove(chapter));
     }
   }
 
@@ -797,7 +898,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
           child: _controller.loadingMessages(space) && messages.isEmpty
               ? const Center(child: CircularProgressIndicator())
               : messageError != null && messages.isEmpty
-              ? _RoomLoadError(onRetry: () => _controller.loadOlder(space))
+              ? _RoomLoadError(onRetry: () => _controller.retryMessages(space))
               : messages.isEmpty
               ? _EmptyStudySpace(
                   space: _selectedSpace,
@@ -823,7 +924,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                       );
                     }
                     final message = messages[index];
-                    return _MessageCard(
+                    final card = _MessageCard(
                       message: message,
                       isMine: message.senderId == _uid,
                       reply: _findReply(message),
@@ -836,6 +937,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                       },
                       onMore: () => _showMessageActions(message),
                     );
+                    return message.id == widget.targetMessageId
+                        ? KeyedSubtree(key: _targetMessageKey, child: card)
+                        : card;
                   },
                 ),
         ),
@@ -889,9 +993,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen> {
                   ),
                 ],
               ),
-              if (_replyToMessage != null)
+              if (_replyToMessageId != null)
                 _ReplyPreview(
-                  message: _replyToMessage!,
+                  message: _replyToMessage,
                   onClose: () {
                     setState(() {
                       _replyToMessageId = null;
@@ -1104,7 +1208,8 @@ String _lifecycleText(GroupModel group) {
     case 'scheduled':
       return group.startDate == null
           ? 'scheduled'
-          : 'starts ${DateFormat('MMM d').format(group.startDate!)}';
+          : 'starts ${DateFormat('MMM d, h:mm a').format(group.startDate!)} '
+                '${group.startDate!.timeZoneName}';
     case 'completed':
       return 'completed';
     case 'archived':
@@ -1162,8 +1267,9 @@ class _MessageCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Semantics(
-      label:
-          '${message.senderName}, ${DateFormat('MMM d, h:mm a').format(message.timestamp)}',
+      label: message.hasKnownTimestamp
+          ? '${message.senderName}, ${DateFormat('MMM d, h:mm a').format(message.timestamp)}'
+          : '${message.senderName}, time unavailable',
       child: Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: Row(
@@ -1258,7 +1364,9 @@ class _MessageCard extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            DateFormat('h:mm a').format(message.timestamp),
+                            message.hasKnownTimestamp
+                                ? DateFormat('h:mm a').format(message.timestamp)
+                                : 'Time unavailable',
                             style: Theme.of(context).textTheme.labelSmall,
                           ),
                           if (message.isPending) ...[
@@ -1322,7 +1430,7 @@ class _MessagePartView extends StatelessWidget {
           audioUrl: part.content,
           isMe: false,
           durationSeconds: part.durationSeconds ?? 1,
-          timestamp: DateTime.now(),
+          timestamp: DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
         ),
       );
     }
@@ -1418,13 +1526,14 @@ class _DraftPartPreview extends StatelessWidget {
 }
 
 class _ReplyPreview extends StatelessWidget {
-  final MessageModel message;
+  final MessageModel? message;
   final VoidCallback onClose;
 
   const _ReplyPreview({required this.message, required this.onClose});
 
   @override
   Widget build(BuildContext context) {
+    final resolvedMessage = message;
     return Container(
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
@@ -1438,7 +1547,9 @@ class _ReplyPreview extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Replying to ${message.senderName}',
+              resolvedMessage == null
+                  ? 'Replying to an unavailable original message'
+                  : 'Replying to ${resolvedMessage.senderName}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -1628,8 +1739,8 @@ class _ReadOnlyComposer extends StatelessWidget {
             Expanded(
               child: Text(
                 scheduled
-                    ? 'This study opens ${group.startDate == null ? 'on its scheduled date' : DateFormat('MMM d, yyyy').format(group.startDate!)}.'
-                    : 'This study is complete. Its reflections remain available to revisit.',
+                    ? 'This study opens ${group.startDate == null ? 'on its scheduled date' : '${DateFormat('MMM d, yyyy, h:mm a').format(group.startDate!)} ${group.startDate!.timeZoneName}'}. Posting may take up to about an hour to unlock.'
+                    : 'This study is complete. Its reflections remain available to revisit. Completion status may take up to about an hour to refresh.',
               ),
             ),
           ],

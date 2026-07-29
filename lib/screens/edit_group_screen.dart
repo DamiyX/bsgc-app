@@ -48,11 +48,19 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
           );
           Navigator.pop(context, true);
         }
-      } catch (e) {
+      } on GroupOperationFailure catch (failure) {
         if (mounted) {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(SnackBar(content: Text('Failed to update group: $e')));
+          ).showSnackBar(SnackBar(content: Text(failure.message)));
+        }
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('The study could not be updated. Try again.'),
+            ),
+          );
         }
       } finally {
         if (mounted) setState(() => _isLoading = false);

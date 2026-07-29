@@ -26,10 +26,31 @@ ViewInsightScreen buildSelectedInsightViewer(
 }
 
 class MyInsightsScreen extends StatelessWidget {
-  MyInsightsScreen({super.key});
+  MyInsightsScreen({
+    super.key,
+    MyInsightsDataSource? dataSource,
+    String? currentUserId,
+    String? currentUserDisplayName,
+    String? currentUserPhotoUrl,
+  }) : _dataSource = dataSource ?? InsightService(),
+       _currentUserId =
+           currentUserId ?? FirebaseAuth.instance.currentUser?.uid ?? '',
+       _currentUserDisplayName =
+           currentUserDisplayName ??
+           (dataSource == null
+               ? FirebaseAuth.instance.currentUser?.displayName
+               : null) ??
+           'You',
+       _currentUserPhotoUrl =
+           currentUserPhotoUrl ??
+           (dataSource == null
+               ? FirebaseAuth.instance.currentUser?.photoURL
+               : null);
 
-  final InsightService _insightService = InsightService();
-  final String _currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+  final MyInsightsDataSource _dataSource;
+  final String _currentUserId;
+  final String _currentUserDisplayName;
+  final String? _currentUserPhotoUrl;
 
   void _deleteInsight(BuildContext context, InsightModel insight) async {
     final confirm = await showDialog<bool>(
@@ -51,7 +72,18 @@ class MyInsightsScreen extends StatelessWidget {
     );
 
     if (confirm == true) {
-      await _insightService.deleteInsight(insight.id);
+      try {
+        await _dataSource.deleteInsight(insight.id);
+      } catch (_) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Couldn't delete this Insight. Try again."),
+            ),
+          );
+        }
+        return;
+      }
       if (context.mounted) {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -68,13 +100,6 @@ class MyInsightsScreen extends StatelessWidget {
             duration: const Duration(seconds: 3),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-            ),
-            action: SnackBarAction(
-              label: 'UNDO',
-              textColor: AppColors.gradientStart,
-              onPressed: () async {
-                await _insightService.createInsight(insight);
-              },
             ),
           ),
         );
@@ -108,9 +133,7 @@ class MyInsightsScreen extends StatelessWidget {
           children: [
             Expanded(
               child: StreamBuilder<List<InsightModel>>(
-                stream: _insightService.getActiveInsightsForUser(
-                  _currentUserId,
-                ),
+                stream: _dataSource.getActiveInsightsForUser(_currentUserId),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return Center(
@@ -144,7 +167,6 @@ class MyInsightsScreen extends StatelessWidget {
                         Divider(height: 1, indent: 76),
                     itemBuilder: (context, index) {
                       final insight = insights[index];
-                      final user = FirebaseAuth.instance.currentUser;
                       return ListTile(
                         contentPadding: EdgeInsets.symmetric(
                           horizontal: 16,
@@ -197,9 +219,9 @@ class MyInsightsScreen extends StatelessWidget {
                               color: Colors.white,
                             ),
                             child: BraidAvatar(
-                              identity: user?.uid ?? _currentUserId,
-                              displayName: user?.displayName ?? 'You',
-                              imageUrl: user?.photoURL,
+                              identity: _currentUserId,
+                              displayName: _currentUserDisplayName,
+                              imageUrl: _currentUserPhotoUrl,
                               radius: 22,
                             ),
                           ),

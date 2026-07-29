@@ -12,33 +12,44 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../firebase_options.dart';
+import 'notification_destination_store.dart';
+
+export 'notification_destination_store.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 }
 
-class NotificationDestination {
-  final String type;
-  final String? groupId;
-  final String? messageId;
-  final String? insightId;
+enum DeviceNotificationPermission {
+  notDetermined,
+  denied,
+  authorized,
+  provisional,
+}
 
-  const NotificationDestination({
-    required this.type,
-    this.groupId,
-    this.messageId,
-    this.insightId,
+class NotificationPreferenceDecision {
+  final bool enabled;
+  final bool shouldOpenSystemSettings;
+
+  const NotificationPreferenceDecision({
+    required this.enabled,
+    required this.shouldOpenSystemSettings,
   });
+}
 
-  factory NotificationDestination.fromData(Map<String, dynamic> data) {
-    return NotificationDestination(
-      type: data['type']?.toString() ?? '',
-      groupId: data['groupId']?.toString(),
-      messageId: data['messageId']?.toString(),
-      insightId: data['insightId']?.toString(),
-    );
-  }
+NotificationPreferenceDecision resolveNotificationPreference({
+  required bool requestedEnabled,
+  required DeviceNotificationPermission permission,
+}) {
+  final permissionGranted =
+      permission == DeviceNotificationPermission.authorized ||
+      permission == DeviceNotificationPermission.provisional;
+  return NotificationPreferenceDecision(
+    enabled: requestedEnabled && permissionGranted,
+    shouldOpenSystemSettings:
+        requestedEnabled && permission == DeviceNotificationPermission.denied,
+  );
 }
 
 class NotificationService {
@@ -62,13 +73,13 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
   final AudioPlayer _audioPlayer = AudioPlayer();
-  final ValueNotifier<NotificationDestination?> destination = ValueNotifier(
-    null,
-  );
+  final NotificationDestinationStore destination =
+      NotificationDestinationStore();
 
   bool _pluginInitialized = false;
 
   Future<void> init() async {
+    await destination.restore();
     if (!_pluginInitialized) {
       await _initializePluginAndListeners();
       _pluginInitialized = true;
@@ -95,19 +106,10 @@ class NotificationService {
       onDidReceiveNotificationResponse: (response) {
         final payload = response.payload;
         if (payload == null || payload.isEmpty) return;
-        final segments = payload.split('|');
-        destination.value = NotificationDestination(
-          type: segments.first,
-          groupId: segments.length > 1 && segments[1].isNotEmpty
-              ? segments[1]
-              : null,
-          messageId: segments.length > 2 && segments[2].isNotEmpty
-              ? segments[2]
-              : null,
-          insightId: segments.length > 3 && segments[3].isNotEmpty
-              ? segments[3]
-              : null,
-        );
+        final parsedDestination = _destinationFromLocalPayload(payload);
+        if (parsedDestination != null) {
+          unawaited(destination.setPending(parsedDestination));
+        }
       },
     );
 
@@ -140,10 +142,37 @@ class NotificationService {
     _messaging.onTokenRefresh.listen(_writeDeviceToken);
   }
 
-  Future<void> registerCurrentDevice({bool requestPermission = false}) async {
+  Future<DeviceNotificationPermission> registerCurrentDevice({
+    bool requestPermission = false,
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (user == null) return DeviceNotificationPermission.denied;
 
+    final permission = await _readDevicePermission(
+      requestPermission: requestPermission,
+    );
+    final decision = resolveNotificationPreference(
+      requestedEnabled: true,
+      permission: permission,
+    );
+    if (!decision.enabled) {
+      await _persistEnabledPreference(false);
+      await unregisterCurrentDevice();
+      return permission;
+    }
+
+    final token = await _messaging.getToken();
+    if (token != null && token.isNotEmpty) await _writeDeviceToken(token);
+    return permission;
+  }
+
+  Future<DeviceNotificationPermission> getDevicePermission() {
+    return _readDevicePermission(requestPermission: false);
+  }
+
+  Future<DeviceNotificationPermission> _readDevicePermission({
+    required bool requestPermission,
+  }) async {
     final settings = requestPermission
         ? await _messaging.requestPermission(
             alert: true,
@@ -152,13 +181,14 @@ class NotificationService {
             provisional: false,
           )
         : await _messaging.getNotificationSettings();
-    final enabled =
-        settings.authorizationStatus == AuthorizationStatus.authorized ||
-        settings.authorizationStatus == AuthorizationStatus.provisional;
-    if (!enabled) return;
-
-    final token = await _messaging.getToken();
-    if (token != null && token.isNotEmpty) await _writeDeviceToken(token);
+    return switch (settings.authorizationStatus) {
+      AuthorizationStatus.authorized => DeviceNotificationPermission.authorized,
+      AuthorizationStatus.provisional =>
+        DeviceNotificationPermission.provisional,
+      AuthorizationStatus.denied => DeviceNotificationPermission.denied,
+      AuthorizationStatus.notDetermined =>
+        DeviceNotificationPermission.notDetermined,
+    };
   }
 
   Future<Map<String, bool>> loadPreferences() async {
@@ -186,40 +216,55 @@ class NotificationService {
     await preferences.setBool(_permissionOfferDismissedKey, true);
   }
 
-  Future<void> updatePreferences({
+  Future<NotificationPreferenceDecision> updatePreferences({
     required bool enabled,
     required bool messages,
     required bool insights,
     required bool previewContent,
   }) async {
+    final permission = enabled
+        ? await _readDevicePermission(requestPermission: true)
+        : await _readDevicePermission(requestPermission: false);
+    final decision = resolveNotificationPreference(
+      requestedEnabled: enabled,
+      permission: permission,
+    );
     final preferences = await SharedPreferences.getInstance();
     await Future.wait([
-      preferences.setBool(_enabledKey, enabled),
+      preferences.setBool(_enabledKey, decision.enabled),
       preferences.setBool(_messagesEnabledKey, messages),
       preferences.setBool(_insightsEnabledKey, insights),
       preferences.setBool(_previewContentKey, previewContent),
     ]);
-    if (!enabled) {
+    if (!decision.enabled) {
       await unregisterCurrentDevice();
-      return;
+      return decision;
     }
-    await registerCurrentDevice(requestPermission: true);
+
+    final token = await _messaging.getToken();
+    if (token != null && token.isNotEmpty) await _writeDeviceToken(token);
     final user = FirebaseAuth.instance.currentUser;
     final deviceId = preferences.getString(_deviceIdKey);
-    if (user == null || deviceId == null) return;
+    if (user == null || deviceId == null) return decision;
     final deviceReference = _firestore
         .collection('users')
         .doc(user.uid)
         .collection('devices')
         .doc(deviceId);
-    if (!(await deviceReference.get()).exists) return;
+    if (!(await deviceReference.get()).exists) return decision;
     await deviceReference.update({
-      'notificationsEnabled': enabled,
+      'notificationsEnabled': decision.enabled,
       'messageNotifications': messages,
       'insightNotifications': insights,
       'previewContent': previewContent,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+    return decision;
+  }
+
+  Future<void> _persistEnabledPreference(bool enabled) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(_enabledKey, enabled);
   }
 
   Future<void> _writeDeviceToken(String token) async {
@@ -319,14 +364,30 @@ class NotificationService {
         ),
         iOS: const DarwinNotificationDetails(),
       ),
-      payload:
-          '${data['type'] ?? ''}|${data['groupId'] ?? ''}|'
-          '${data['messageId'] ?? ''}|${data['insightId'] ?? ''}',
+      payload: NotificationDestination.fromData(data).toPayload(),
     );
   }
 
   void _routeRemoteMessage(RemoteMessage message) {
-    destination.value = NotificationDestination.fromData(message.data);
+    final parsedDestination = NotificationDestination.fromData(message.data);
+    if (parsedDestination.isValid) {
+      unawaited(destination.setPending(parsedDestination));
+    }
+  }
+
+  NotificationDestination? _destinationFromLocalPayload(String payload) {
+    final jsonDestination = NotificationDestination.fromPayload(payload);
+    if (jsonDestination != null) return jsonDestination;
+
+    final segments = payload.split('|');
+    if (segments.isEmpty) return null;
+    final legacyDestination = NotificationDestination.fromData({
+      'type': segments.first,
+      if (segments.length > 1) 'groupId': segments[1],
+      if (segments.length > 2) 'messageId': segments[2],
+      if (segments.length > 3) 'insightId': segments[3],
+    });
+    return legacyDestination.isValid ? legacyDestination : null;
   }
 
   Future<void> playActionSound() async {

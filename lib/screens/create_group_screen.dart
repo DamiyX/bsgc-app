@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+
+import '../models/group_model.dart';
 import '../services/chat_service.dart';
 import 'study_room_screen.dart';
 import '../theme.dart';
@@ -24,6 +26,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
 
   DateTime? _startDate;
   DateTime? _endDate;
+  String? _dateError;
 
   bool _isLoading = false;
 
@@ -175,33 +178,56 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     'Revelation': 22,
   };
 
-  void _selectDateRange() async {
+  Future<void> _selectDateRange() async {
     final today = DateUtils.dateOnly(DateTime.now());
-    final picked = await showDateRangePicker(
+    final start = await showDatePicker(
       context: context,
       firstDate: today,
       lastDate: today.add(const Duration(days: 365 * 5)),
-      initialDateRange: _startDate != null && _endDate != null
-          ? DateTimeRange(start: _startDate!, end: _endDate!)
-          : null,
+      initialDate: _startDate ?? today,
+      helpText: 'Choose the start date',
       builder: (context, child) {
         return Theme(data: Theme.of(context), child: child!);
       },
     );
-    if (picked != null && mounted) {
-      setState(() {
-        _startDate = picked.start;
-        _endDate = picked.end;
-      });
-    }
+    if (start == null || !mounted) return;
+    final earliestEnd = start.add(const Duration(days: 1));
+    final latestEnd = start.add(StudyDateRangePolicy.maxDuration);
+    final end = await showDatePicker(
+      context: context,
+      firstDate: earliestEnd,
+      lastDate: latestEnd,
+      initialDate:
+          _endDate != null &&
+              !_endDate!.isBefore(earliestEnd) &&
+              !_endDate!.isAfter(latestEnd)
+          ? _endDate!
+          : earliestEnd,
+      helpText: 'Choose the end date',
+      builder: (context, child) {
+        return Theme(data: Theme.of(context), child: child!);
+      },
+    );
+    if (end == null || !mounted) return;
+    setState(() {
+      _startDate = start;
+      _endDate = end;
+      _dateError = null;
+    });
   }
 
   void _createGroup() async {
     if (!_formKey.currentState!.validate()) return;
     if (_startDate == null || _endDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select start and end dates.')),
-      );
+      setState(() => _dateError = 'Select both a start and an end date.');
+      return;
+    }
+    final dateError = StudyDateRangePolicy.validationMessage(
+      _startDate!,
+      _endDate!,
+    );
+    if (dateError != null) {
+      setState(() => _dateError = dateError);
       return;
     }
 
@@ -252,11 +278,19 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
           ),
         );
       }
-    } catch (e) {
+    } on GroupOperationFailure catch (failure) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ).showSnackBar(SnackBar(content: Text(failure.message)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('The study could not be created. Try again.'),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -434,6 +468,23 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       ),
                       onTap: _selectDateRange,
                     ),
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Studies must span 1–365 days. Start and completion '
+                        'status can take up to about an hour to refresh.',
+                      ),
+                    ),
+                    if (_dateError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8, left: 12),
+                        child: Text(
+                          _dateError!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ),
 
                     SizedBox(height: 40),
                     SizedBox(

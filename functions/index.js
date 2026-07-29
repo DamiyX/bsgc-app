@@ -15,6 +15,7 @@ const {
   createInviteToken,
   hashInviteToken,
   isInvalidMessagingTokenError,
+  messageNotificationData,
   messagePreview,
   normalizeInsightInput,
   normalizeReportInput,
@@ -26,6 +27,10 @@ const {
 const {
   commitLifecycleUpdates,
 } = require("./lib/lifecycle");
+const {
+  groupSummaryFromMessage,
+  shouldReconcileGroupSummary,
+} = require("./lib/group_summary");
 
 admin.initializeApp();
 
@@ -513,19 +518,31 @@ exports.redeemGroupInvite = onCall(callableOptions, async (request) => {
       const inviterConnectionRef = db.doc(
         `users/${inviterUid}/connections/${uid}`,
       );
+      const inviteeBlockRef = db.doc(`users/${uid}/blocks/${inviterUid}`);
+      const inviterBlockRef = db.doc(`users/${inviterUid}/blocks/${uid}`);
       const inviteePrivateRef = db.doc(`users_private/${uid}`);
       const inviterPrivateRef = db.doc(`users_private/${inviterUid}`);
       const [
         inviteeConnectionSnapshot,
         inviterConnectionSnapshot,
+        inviteeBlockSnapshot,
+        inviterBlockSnapshot,
         inviteePrivateSnapshot,
         inviterPrivateSnapshot,
       ] = await Promise.all([
         transaction.get(inviteeConnectionRef),
         transaction.get(inviterConnectionRef),
+        transaction.get(inviteeBlockRef),
+        transaction.get(inviterBlockRef),
         transaction.get(inviteePrivateRef),
         transaction.get(inviterPrivateRef),
       ]);
+      if (inviteeBlockSnapshot.exists || inviterBlockSnapshot.exists) {
+        throw new HttpsError(
+          "failed-precondition",
+          "This invitation cannot be redeemed.",
+        );
+      }
       if (!inviteePrivateSnapshot.exists || !inviterPrivateSnapshot.exists) {
         throw new HttpsError(
           "failed-precondition",
@@ -1434,10 +1451,12 @@ exports.sendPushNotification = onDocumentCreated(
         unreadUpdates[`unreadCounts.${recipientId}`] = FieldValue.increment(1);
       }
       transaction.update(db.doc(`groups/${groupId}`), {
-        lastMessageTime: messageData.timestamp ?? Timestamp.now(),
-        lastMessageText: messagePreview(messageData.parts),
-        lastMessageSenderName: senderName,
-        lastMessageSenderId: senderId,
+        ...groupSummaryFromMessage({
+          messageId,
+          message: messageData,
+          canonicalSenderName: senderName,
+          fallbackTimestamp: Timestamp.now(),
+        }),
         ...unreadUpdates,
       });
       transaction.create(eventRef, {
@@ -1501,11 +1520,15 @@ exports.sendPushNotification = onDocumentCreated(
           title: `${senderName} in ${groupName}`,
           body,
         },
-        data: {
-          type: "group_message",
+        data: messageNotificationData({
           groupId,
           messageId,
-        },
+          space: ["reflection", "discussion", "prayer"].includes(
+            messageData.space,
+          )
+            ? messageData.space
+            : "discussion",
+        }),
         android: {
           collapseKey: `group-${groupId}`,
           notification: {
@@ -1550,6 +1573,67 @@ exports.sendPushNotification = onDocumentCreated(
       successCount,
       failureCount,
       removedInvalidTokenCount: cleanup.length,
+    });
+  },
+);
+
+exports.reconcileGroupMessageSummary = onDocumentWritten(
+  {
+    document: "groups/{groupId}/messages/{messageId}",
+    region: "us-central1",
+  },
+  async (event) => {
+    if (!event.data?.before.exists || event.data.after.exists &&
+        event.data.before.data()?.isDeleted ===
+          event.data.after.data()?.isDeleted &&
+        JSON.stringify(event.data.before.data()?.parts ?? []) ===
+          JSON.stringify(event.data.after.data()?.parts ?? [])) {
+      return;
+    }
+
+    const { groupId, messageId } = event.params;
+    const groupRef = db.doc(`groups/${groupId}`);
+    const latestQuery = db
+      .collection(`groups/${groupId}/messages`)
+      .where("isDeleted", "==", false)
+      .orderBy("timestamp", "desc")
+      .limit(1);
+    await db.runTransaction(async (transaction) => {
+      const groupSnapshot = await transaction.get(groupRef);
+      if (!groupSnapshot.exists) return;
+      const latestSnapshot = await transaction.get(latestQuery);
+      const latest = latestSnapshot.docs[0];
+      if (!shouldReconcileGroupSummary({
+        lastMessageId: groupSnapshot.data().lastMessageId,
+        changedMessageId: messageId,
+        latestMessageId: latest?.id,
+      })) return;
+
+      if (latestSnapshot.empty) {
+        transaction.update(groupRef, {
+          lastMessageId: FieldValue.delete(),
+          lastMessageTime: FieldValue.delete(),
+          lastMessageText: FieldValue.delete(),
+          lastMessageSenderName: FieldValue.delete(),
+          lastMessageSenderId: FieldValue.delete(),
+        });
+        return;
+      }
+
+      const latestData = latest.data();
+      const senderSnapshot = await transaction.get(
+        db.doc(`users_public/${latestData.senderId}`),
+      );
+      const canonicalName = senderSnapshot.exists &&
+          typeof senderSnapshot.data().displayName === "string"
+        ? senderSnapshot.data().displayName.slice(0, 80)
+        : "A group member";
+      transaction.update(groupRef, groupSummaryFromMessage({
+        messageId: latest.id,
+        message: latestData,
+        canonicalSenderName: canonicalName,
+        fallbackTimestamp: Timestamp.now(),
+      }));
     });
   },
 );

@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
 import '../models/insight_model.dart';
+import '../services/insight_action_controller.dart';
 import '../services/insight_service.dart';
 import '../services/notification_service.dart';
 import '../widgets/clickable_scripture_text.dart';
@@ -309,12 +310,25 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _commentController = TextEditingController();
   final InsightService _insightService = InsightService();
+  late final ReversibleToggleController _likeController;
+  late final ReversibleToggleController _saveController;
+  final Map<String, bool> _commentReactionOverrides = {};
+  final Set<String> _pendingCommentReactionIds = {};
   InsightCommentModel? _replyingTo;
-  bool _isLiked = false;
-  bool _isSaved = false;
-  bool _isSavePending = false;
+  bool _isCommentPending = false;
+  List<InsightCommentModel> _comments = const [];
+  InsightCommentCursor? _commentCursor;
+  bool _hasMoreComments = false;
+  bool _isLoadingComments = false;
+  int? _commentCount;
+  StreamSubscription<List<InsightCommentModel>>? _newestCommentsSubscription;
+  Set<String> _newestCommentIds = const {};
   double _dismissOffset = 0.0;
   bool _commentsVisible = false;
+
+  bool get _isLiked => _likeController.value;
+  bool get _isSaved => _saveController.value;
+  bool get _isSavePending => _saveController.isPending;
 
   late AnimationController _commentsAnimController;
   late Animation<double> _scaleAnimation;
@@ -325,10 +339,16 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
     super.initState();
 
     final user = FirebaseAuth.instance.currentUser;
-    _isLiked = user != null && widget.insight.likedBy.contains(user.uid);
+    _likeController = ReversibleToggleController(
+      initialValue: user != null && widget.insight.likedBy.contains(user.uid),
+    )..addListener(_refreshActionState);
+    _saveController = ReversibleToggleController(initialValue: false)
+      ..addListener(_refreshActionState);
     _loadReactionStatus();
 
     _checkSavedStatus();
+    _loadComments(reset: true);
+    _watchNewestComments();
 
     _commentsAnimController = AnimationController(
       vsync: this,
@@ -348,17 +368,30 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
     );
   }
 
-  void _checkSavedStatus() async {
+  void _refreshActionState() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _checkSavedStatus() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      final isSaved = await _insightService.isInsightSaved(
-        user.uid,
-        widget.insight.id,
-      );
-      if (mounted) {
-        setState(() {
-          _isSaved = isSaved;
-        });
+      try {
+        final isSaved = await _insightService.isInsightSaved(
+          user.uid,
+          widget.insight.id,
+        );
+        if (mounted) _saveController.replaceValue(isSaved);
+      } catch (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text("Couldn't check saved status."),
+            action: SnackBarAction(
+              label: 'RETRY',
+              onPressed: _checkSavedStatus,
+            ),
+          ),
+        );
       }
     }
   }
@@ -368,27 +401,24 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
       final isReacted = await _insightService.hasInsightReaction(
         widget.insight.id,
       );
-      if (mounted) setState(() => _isLiked = isReacted);
+      if (mounted) _likeController.replaceValue(isReacted);
     } catch (_) {
       // Legacy array state remains a read-only fallback during migration.
     }
   }
 
   Future<void> _toggleSavedInsight() async {
-    if (_isSavePending) return;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
     final wasSaved = _isSaved;
-    setState(() => _isSavePending = true);
-    try {
-      if (wasSaved) {
-        await _insightService.unsaveInsight(user.uid, widget.insight.id);
-      } else {
-        await _insightService.saveInsight(user.uid, widget.insight);
-      }
-      if (!mounted) return;
-      setState(() => _isSaved = !wasSaved);
+    final succeeded = await _saveController.toggle((isSaving) {
+      return isSaving
+          ? _insightService.saveInsight(user.uid, widget.insight)
+          : _insightService.unsaveInsight(user.uid, widget.insight.id);
+    });
+    if (!mounted) return;
+    if (succeeded) {
       if (!wasSaved) {
         NotificationService().playActionSound();
         ScaffoldMessenger.of(context).clearSnackBars();
@@ -410,8 +440,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
           ),
         );
       }
-    } catch (_) {
-      if (!mounted) return;
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -421,8 +450,29 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
           ),
         ),
       );
-    } finally {
-      if (mounted) setState(() => _isSavePending = false);
+    }
+  }
+
+  Future<void> _toggleInsightLike() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final wasLiked = _isLiked;
+    final succeeded = await _likeController.toggle(
+      (nextValue) => _insightService.toggleInsightLike(
+        widget.insight.id,
+        user.uid,
+        nextValue,
+      ),
+    );
+    if (!mounted) return;
+    if (succeeded && !wasLiked) {
+      NotificationService().playActionSound();
+    } else if (!succeeded) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Couldn't update this reaction. Try again."),
+        ),
+      );
     }
   }
 
@@ -442,12 +492,15 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.insight.id != widget.insight.id) {
       final user = FirebaseAuth.instance.currentUser;
-      setState(() {
-        _isLiked = user != null && widget.insight.likedBy.contains(user.uid);
-        _isSaved = false;
-      });
+      _likeController.replaceValue(
+        user != null && widget.insight.likedBy.contains(user.uid),
+      );
+      _saveController.replaceValue(false);
       _loadReactionStatus();
       _checkSavedStatus();
+      _loadComments(reset: true);
+      _newestCommentIds = const {};
+      _watchNewestComments();
     }
   }
 
@@ -456,6 +509,9 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
     _commentsAnimController.dispose();
     _scrollController.dispose();
     _commentController.dispose();
+    _newestCommentsSubscription?.cancel();
+    _likeController.dispose();
+    _saveController.dispose();
     super.dispose();
   }
 
@@ -528,7 +584,85 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
     }
   }
 
-  void _submitDirectComment() async {
+  Future<void> _loadComments({required bool reset}) async {
+    if (_isLoadingComments) return;
+    setState(() => _isLoadingComments = true);
+    try {
+      final page = await _insightService.getCommentPage(
+        widget.insight.id,
+        after: reset ? null : _commentCursor,
+      );
+      final count = await _insightService.getCommentCount(widget.insight.id);
+      if (!mounted) return;
+      setState(() {
+        _comments = reset
+            ? page.comments
+            : mergeCommentPages(_comments, page.comments);
+        _commentCursor = page.cursor;
+        _hasMoreComments = page.hasMore;
+        _commentCount = count;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text("Couldn't load comments."),
+          action: SnackBarAction(
+            label: 'RETRY',
+            onPressed: () => _loadComments(reset: reset),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoadingComments = false);
+    }
+  }
+
+  void _watchNewestComments() {
+    _newestCommentsSubscription?.cancel();
+    _newestCommentsSubscription = _insightService
+        .watchNewestComments(widget.insight.id)
+        .listen(
+          (newestComments) async {
+            if (!mounted) return;
+            final retainedOlderComments = _comments.where(
+              (comment) => !_newestCommentIds.contains(comment.id),
+            );
+            setState(() {
+              _comments = mergeCommentPages(
+                retainedOlderComments,
+                newestComments,
+              );
+              _newestCommentIds = newestComments
+                  .map((comment) => comment.id)
+                  .toSet();
+            });
+            try {
+              final count = await _insightService.getCommentCount(
+                widget.insight.id,
+              );
+              if (mounted) setState(() => _commentCount = count);
+            } catch (_) {
+              // Keep the last authoritative count and retry on the next update.
+            }
+          },
+          onError: (_) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text("Couldn't refresh new comments."),
+                action: SnackBarAction(
+                  label: 'RETRY',
+                  onPressed: _watchNewestComments,
+                ),
+              ),
+            );
+          },
+        );
+  }
+
+  Future<void> _submitDirectComment() async {
+    if (_isCommentPending) return;
     final text = _commentController.text.trim();
     if (text.isEmpty) return;
 
@@ -552,13 +686,65 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
       createdAt: DateTime.now(),
     );
 
-    _commentController.clear();
-    setState(() => _replyingTo = null);
+    setState(() => _isCommentPending = true);
+    try {
+      final succeeded = await persistCommentText(
+        _commentController,
+        (_) => _insightService.addComment(widget.insight.id, comment),
+      );
+      if (!mounted) return;
+      if (!succeeded) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              "Couldn't post this comment. Your text is still here. Try again.",
+            ),
+          ),
+        );
+        return;
+      }
+      setState(() => _replyingTo = null);
+      await _loadComments(reset: true);
+      _scrollToBottom();
+    } finally {
+      if (mounted) setState(() => _isCommentPending = false);
+    }
+  }
 
-    await _insightService.addComment(widget.insight.id, comment);
-
-    _scrollToBottom();
-    Future.delayed(const Duration(milliseconds: 500), _scrollToBottom);
+  Future<void> _toggleCommentReaction(
+    String commentId,
+    String userId,
+    bool wasReacted,
+  ) async {
+    if (userId.isEmpty || _pendingCommentReactionIds.contains(commentId)) {
+      return;
+    }
+    final nextValue = !wasReacted;
+    setState(() {
+      _pendingCommentReactionIds.add(commentId);
+      _commentReactionOverrides[commentId] = nextValue;
+    });
+    try {
+      await _insightService.toggleCommentLike(
+        widget.insight.id,
+        commentId,
+        userId,
+        nextValue,
+      );
+      if (nextValue) NotificationService().playActionSound();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _commentReactionOverrides[commentId] = wasReacted);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Couldn't update this reaction. Try again."),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _pendingCommentReactionIds.remove(commentId));
+      }
+    }
   }
 
   Widget _buildInsightBody() {
@@ -602,7 +788,6 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
   }
 
   Widget _buildFloatingBottomBar() {
-    final countStream = _insightService.getComments(widget.insight.id);
     return Container(
       padding: EdgeInsets.only(left: 16, right: 16, bottom: 8, top: 32),
       decoration: BoxDecoration(
@@ -662,24 +847,9 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                               ? Theme.of(context).colorScheme.onSurface
                               : Theme.of(context).colorScheme.onSurface,
                         ),
-                        onPressed: () async {
-                          final user = FirebaseAuth.instance.currentUser;
-                          if (user == null) return;
-
-                          if (!_isLiked) {
-                            NotificationService().playActionSound();
-                          }
-
-                          setState(() {
-                            _isLiked = !_isLiked;
-                          });
-
-                          await _insightService.toggleInsightLike(
-                            widget.insight.id,
-                            user.uid,
-                            _isLiked,
-                          );
-                        },
+                        onPressed: _likeController.isPending
+                            ? null
+                            : _toggleInsightLike,
                         padding: EdgeInsets.all(4),
                         constraints: const BoxConstraints(),
                       ),
@@ -705,41 +875,35 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
               ),
             ],
           ),
-          StreamBuilder<List<InsightCommentModel>>(
-            stream: countStream,
-            builder: (context, snapshot) {
-              final count = snapshot.hasData ? snapshot.data!.length : 0;
-              return GestureDetector(
-                onTap: _toggleComments,
-                child: Container(
-                  padding: EdgeInsets.only(top: 8, bottom: 4),
-                  color: Colors.transparent,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.keyboard_arrow_up,
+          GestureDetector(
+            onTap: _toggleComments,
+            child: Container(
+              padding: EdgeInsets.only(top: 8, bottom: 4),
+              color: Colors.transparent,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.keyboard_arrow_up,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.45),
+                    size: 20,
+                  ),
+                  if ((_commentCount ?? 0) > 0)
+                    Text(
+                      '${_commentCount!} comments',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 10,
                         color: Theme.of(
                           context,
                         ).colorScheme.onSurface.withValues(alpha: 0.45),
-                        size: 20,
                       ),
-                      if (count > 0)
-                        Text(
-                          '$count comments',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 10,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withValues(alpha: 0.45),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              );
-            },
+                    ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -853,30 +1017,38 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                             ),
                             initialData: isLiked,
                             builder: (context, reactionSnapshot) {
-                              final reacted = reactionSnapshot.data ?? false;
+                              final reacted =
+                                  _commentReactionOverrides[comment.id] ??
+                                  reactionSnapshot.data ??
+                                  false;
+                              final isPending = _pendingCommentReactionIds
+                                  .contains(comment.id);
                               return GestureDetector(
-                                onTap: () {
-                                  if (!reacted) {
-                                    NotificationService().playActionSound();
-                                  }
-                                  _insightService.toggleCommentLike(
-                                    widget.insight.id,
-                                    comment.id,
-                                    currentUserId,
-                                    !reacted,
-                                  );
-                                },
-                                child: Icon(
-                                  reacted
-                                      ? Icons.thumb_up
-                                      : Icons.thumb_up_alt_outlined,
-                                  size: 14,
-                                  color: reacted
-                                      ? AppColors.primary
-                                      : Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
-                                ),
+                                onTap: isPending
+                                    ? null
+                                    : () => _toggleCommentReaction(
+                                        comment.id,
+                                        currentUserId,
+                                        reacted,
+                                      ),
+                                child: isPending
+                                    ? const SizedBox.square(
+                                        dimension: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 1.5,
+                                        ),
+                                      )
+                                    : Icon(
+                                        reacted
+                                            ? Icons.thumb_up
+                                            : Icons.thumb_up_alt_outlined,
+                                        size: 14,
+                                        color: reacted
+                                            ? AppColors.primary
+                                            : Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                      ),
                               );
                             },
                           ),
@@ -965,6 +1137,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
               Expanded(
                 child: TextField(
                   controller: _commentController,
+                  enabled: !_isCommentPending,
                   textInputAction: TextInputAction.send,
                   textCapitalization: TextCapitalization.sentences,
                   onSubmitted: (_) => _submitDirectComment(),
@@ -997,8 +1170,13 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
               ),
               SizedBox(width: 8),
               GestureDetector(
-                onTap: _submitDirectComment,
-                child: Icon(Icons.send, color: AppColors.gradientEnd),
+                onTap: _isCommentPending ? null : _submitDirectComment,
+                child: _isCommentPending
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(Icons.send, color: AppColors.gradientEnd),
               ),
             ],
           ),
@@ -1008,7 +1186,6 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
   }
 
   Widget _buildCommentsSheet() {
-    final countStream = _insightService.getComments(widget.insight.id);
     return GestureDetector(
       onVerticalDragUpdate: _handleDragUpdate,
       onVerticalDragEnd: _handleDragEnd,
@@ -1043,69 +1220,70 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                     ),
                   ),
                   SizedBox(width: 8),
-                  StreamBuilder<List<InsightCommentModel>>(
-                    stream: countStream,
-                    builder: (context, snapshot) {
-                      final count = snapshot.hasData
-                          ? snapshot.data!.length
-                          : 0;
-                      return Text(
-                        '$count',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withValues(alpha: 0.54),
-                        ),
-                      );
-                    },
+                  Text(
+                    '${_commentCount ?? 0}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.54),
+                    ),
                   ),
                 ],
               ),
             ),
             Divider(height: 1, color: Theme.of(context).dividerColor),
-            Expanded(
-              child: StreamBuilder<List<InsightCommentModel>>(
-                stream: _insightService.getComments(widget.insight.id),
-                builder: (context, snapshot) {
-                  final comments = snapshot.data ?? [];
-                  if (comments.isEmpty) {
-                    return Center(
-                      child: Text(
-                        'No comments yet.',
-                        style: TextStyle(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withValues(alpha: 0.54),
-                        ),
-                      ),
-                    );
-                  }
-
-                  // Group comments by replyToId for nested rendering
-                  final topLevelComments = comments
-                      .where((c) => c.replyToId == null)
-                      .toList();
-
-                  return ListView.builder(
-                    controller: _scrollController,
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                    itemCount: topLevelComments.length,
-                    itemBuilder: (context, index) {
-                      return _buildFacebookStyleComment(
-                        topLevelComments[index],
-                        comments,
-                        0,
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
+            Expanded(child: _buildPaginatedCommentList()),
             _buildCommentInputArea(),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildPaginatedCommentList() {
+    if (_comments.isEmpty) {
+      if (_isLoadingComments) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return Center(
+        child: Text(
+          'No comments yet.',
+          style: TextStyle(
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.54),
+          ),
+        ),
+      );
+    }
+    final topLevelComments = commentThreadRoots(_comments);
+    return ListView.builder(
+      controller: _scrollController,
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      itemCount: topLevelComments.length + (_hasMoreComments ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index == topLevelComments.length) {
+          return Center(
+            child: TextButton(
+              onPressed: _isLoadingComments
+                  ? null
+                  : () => _loadComments(reset: false),
+              child: _isLoadingComments
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Load older comments'),
+            ),
+          );
+        }
+        return _buildFacebookStyleComment(
+          topLevelComments[index],
+          _comments,
+          0,
+        );
+      },
     );
   }
 

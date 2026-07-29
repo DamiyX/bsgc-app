@@ -40,7 +40,7 @@ class _MainHallScreenState extends State<MainHallScreen> {
   final TextEditingController _journalSearchController =
       TextEditingController();
 
-  late final Stream<List<GroupModel>> _groupsStream;
+  late final GroupStreamRetryController _groupStreams;
   List<GroupModel>? _cachedGroups;
   int _selectedIndex = 0;
   bool _isRedeemingInvite = false;
@@ -51,7 +51,7 @@ class _MainHallScreenState extends State<MainHallScreen> {
   @override
   void initState() {
     super.initState();
-    _groupsStream = _chatService.getUserGroups();
+    _groupStreams = GroupStreamRetryController(_chatService.getUserGroups);
     unawaited(_initializeNotifications());
     _deepLinkService.pendingInviteToken.addListener(_onPendingInviteChanged);
     _notificationService.destination.addListener(
@@ -77,13 +77,21 @@ class _MainHallScreenState extends State<MainHallScreen> {
     if (_enablingNotifications) return;
     setState(() => _enablingNotifications = true);
     try {
-      await _notificationService.updatePreferences(
+      final decision = await _notificationService.updatePreferences(
         enabled: true,
         messages: true,
         insights: true,
         previewContent: false,
       );
-      if (mounted) setState(() => _showNotificationOffer = false);
+      if (!mounted) return;
+      setState(() => _showNotificationOffer = false);
+      if (!decision.enabled) {
+        _showMessage(
+          decision.shouldOpenSystemSettings
+              ? 'Notifications remain off. Enable Braid in device settings.'
+              : 'Notification permission was not enabled.',
+        );
+      }
     } catch (_) {
       if (mounted) {
         _showMessage(
@@ -131,7 +139,6 @@ class _MainHallScreenState extends State<MainHallScreen> {
         (insightId == null || insightId.isEmpty)) {
       return;
     }
-    _notificationService.destination.value = null;
 
     try {
       if (groupId != null && groupId.isNotEmpty) {
@@ -139,14 +146,31 @@ class _MainHallScreenState extends State<MainHallScreen> {
             .collection('groups')
             .doc(groupId)
             .get();
-        if (!snapshot.exists || !mounted) return;
-        await _openGroup(GroupModel.fromFirestore(snapshot));
+        if (!snapshot.exists) {
+          await _notificationService.destination.complete(destination!);
+          if (mounted) {
+            _showMessage('That study update is no longer available.');
+          }
+          return;
+        }
+        if (!mounted) return;
+        await _openGroup(
+          GroupModel.fromFirestore(snapshot),
+          destination: destination,
+        );
       } else if (insightId != null && insightId.isNotEmpty) {
         final snapshot = await FirebaseFirestore.instance
             .collection('insights')
             .doc(insightId)
             .get();
-        if (!snapshot.exists || !mounted) return;
+        if (!snapshot.exists) {
+          await _notificationService.destination.complete(destination!);
+          if (mounted) {
+            _showMessage('That reflection is no longer available.');
+          }
+          return;
+        }
+        if (!mounted) return;
         final insight = InsightModel.fromFirestore(snapshot);
         await Navigator.push(
           context,
@@ -160,10 +184,49 @@ class _MainHallScreenState extends State<MainHallScreen> {
           ),
         );
       }
-    } catch (_) {
+      await _notificationService.destination.complete(destination!);
+    } on FirebaseException catch (error) {
       if (!mounted) return;
-      _showMessage('That study update is not available right now.');
+      if (_isRetryableDestinationError(error)) {
+        _showDestinationRetry();
+      } else {
+        await _notificationService.destination.complete(destination!);
+        if (mounted) {
+          _showMessage('That study update is no longer available to you.');
+        }
+      }
+    } catch (_) {
+      if (mounted) _showDestinationRetry();
     }
+  }
+
+  bool _isRetryableDestinationError(FirebaseException error) {
+    return const {
+      'aborted',
+      'cancelled',
+      'deadline-exceeded',
+      'internal',
+      'network-request-failed',
+      'resource-exhausted',
+      'unavailable',
+      'unknown',
+    }.contains(error.code);
+  }
+
+  void _showDestinationRetry() {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: const Text(
+            'That update could not be opened yet. It will remain available to retry.',
+          ),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: _openNotificationDestination,
+          ),
+        ),
+      );
   }
 
   Future<void> _redeemPendingInvite() async {
@@ -176,30 +239,56 @@ class _MainHallScreenState extends State<MainHallScreen> {
       final redemption = await _chatService.redeemGroupInvite(token);
       await _deepLinkService.clearPendingInviteToken(token);
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
       _showMessage(
         redemption.alreadyMember
             ? 'You are already in this study group.'
             : 'You joined the study group.',
       );
       setState(() => _selectedIndex = 1);
-    } catch (_) {
+    } on ChatServiceException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: const Text(
-              'We could not use that invite. Check your connection or ask for a new link.',
-            ),
-            action: SnackBarAction(
-              label: 'Retry',
-              onPressed: _redeemPendingInvite,
-            ),
-          ),
-        );
+      final disposition = classifyInviteFailure(error.code);
+      if (disposition == InviteFailureDisposition.terminal) {
+        await _deepLinkService.clearPendingInviteToken(token);
+        if (mounted) _showMessage(error.message);
+      } else {
+        _showRetryableInviteFailure(token);
+      }
+    } catch (_) {
+      if (mounted) _showRetryableInviteFailure(token);
     } finally {
       if (mounted) setState(() => _isRedeemingInvite = false);
     }
+  }
+
+  void _showRetryableInviteFailure(String token) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentMaterialBanner()
+      ..showMaterialBanner(
+        MaterialBanner(
+          content: const Text(
+            'This invite could not be checked yet. Retry when you are connected, or dismiss the invite.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                messenger.hideCurrentMaterialBanner();
+                unawaited(_redeemPendingInvite());
+              },
+              child: const Text('Retry'),
+            ),
+            TextButton(
+              onPressed: () {
+                messenger.hideCurrentMaterialBanner();
+                unawaited(_deepLinkService.clearPendingInviteToken(token));
+              },
+              child: const Text('Dismiss'),
+            ),
+          ],
+        ),
+      );
   }
 
   void _showMessage(String message) {
@@ -208,11 +297,29 @@ class _MainHallScreenState extends State<MainHallScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _openGroup(GroupModel group) async {
+  void _retryGroups() {
+    setState(_groupStreams.retry);
+  }
+
+  Future<void> _openGroup(
+    GroupModel group, {
+    NotificationDestination? destination,
+  }) async {
     unawaited(_chatService.resetUnreadCount(group.id));
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => StudyRoomScreen(group: group)),
+      MaterialPageRoute(
+        builder: (_) => StudyRoomScreen(
+          group: group,
+          initialSpace: destination?.space,
+          targetMessageId: destination?.messageId,
+          onTargetResolved: destination == null
+              ? null
+              : () => unawaited(
+                  _notificationService.destination.complete(destination),
+                ),
+        ),
+      ),
     );
   }
 
@@ -347,7 +454,7 @@ class _MainHallScreenState extends State<MainHallScreen> {
   Widget build(BuildContext context) {
     final titles = ['Today', 'Groups', 'Journal', 'Me'];
     return StreamBuilder<List<GroupModel>>(
-      stream: _groupsStream,
+      stream: _groupStreams.stream,
       builder: (context, snapshot) {
         if (snapshot.hasData) _cachedGroups = snapshot.data;
         final groups = _cachedGroups ?? const <GroupModel>[];
@@ -390,7 +497,7 @@ class _MainHallScreenState extends State<MainHallScreen> {
             child: firstLoad
                 ? const Center(child: CircularProgressIndicator())
                 : firstError
-                ? _LoadError(onRetry: () => setState(() {}))
+                ? _LoadError(onRetry: _retryGroups)
                 : IndexedStack(
                     index: _selectedIndex,
                     children: [

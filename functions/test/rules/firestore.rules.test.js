@@ -94,6 +94,21 @@ async function seedFirestore() {
         createdAt: now(),
         updatedAt: now(),
       }),
+      setDoc(doc(db, "users_public/member"), {
+        schemaVersion: 2,
+        uid: "member",
+        displayName: "Member",
+        photoUrl: "https://example.com/member.jpg",
+        createdAt: now(),
+        updatedAt: now(),
+      }),
+      setDoc(doc(db, "users_public/contact"), {
+        schemaVersion: 2,
+        uid: "contact",
+        displayName: "Contact",
+        createdAt: now(),
+        updatedAt: now(),
+      }),
       setDoc(doc(db, "groups/group-a"), groupData()),
       setDoc(doc(db, "groups/group-a/members/owner"), {
         uid: "owner",
@@ -318,7 +333,9 @@ describe("messages", () => {
       space: "reflection",
       senderId: "member",
       senderName: "Member",
+      senderPhotoUrl: "https://example.com/member.jpg",
       parts: [{ type: "text", content: "Hello" }],
+      clientCreatedAt: now(),
       timestamp: serverTimestamp(),
       isEdited: false,
       isDeleted: false,
@@ -331,6 +348,18 @@ describe("messages", () => {
       setDoc(doc(db, "groups/group-a/messages/spoofed"), {
         ...validMessage,
         senderId: "owner",
+      }),
+    );
+    await assertFails(
+      setDoc(doc(db, "groups/group-a/messages/spoofed-name"), {
+        ...validMessage,
+        senderName: "Owner",
+      }),
+    );
+    await assertFails(
+      setDoc(doc(db, "groups/group-a/messages/spoofed-photo"), {
+        ...validMessage,
+        senderPhotoUrl: "https://example.com/owner.jpg",
       }),
     );
     await assertFails(
@@ -465,6 +494,12 @@ describe("contacts-only insights and safety controls", () => {
       setDoc(doc(db, "insights/insight-a/comments/spoofed"), {
         ...validComment,
         authorUid: "author",
+      }),
+    );
+    await assertFails(
+      setDoc(doc(db, "insights/insight-a/comments/spoofed-name"), {
+        ...validComment,
+        authorName: "Author",
       }),
     );
   });

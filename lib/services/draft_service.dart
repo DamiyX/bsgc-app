@@ -5,6 +5,33 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/message_model.dart';
 
+enum ComposerDraftAudience { private, contacts }
+
+class ComposerDraft {
+  final String title;
+  final String body;
+  final ComposerDraftAudience audience;
+
+  const ComposerDraft({
+    required this.title,
+    required this.body,
+    required this.audience,
+  });
+
+  bool get isEmpty => title.trim().isEmpty && body.trim().isEmpty;
+
+  @override
+  bool operator ==(Object other) {
+    return other is ComposerDraft &&
+        other.title == title &&
+        other.body == body &&
+        other.audience == audience;
+  }
+
+  @override
+  int get hashCode => Object.hash(title, body, audience);
+}
+
 class GroupDraft {
   final String text;
   final List<MessagePart> parts;
@@ -24,6 +51,10 @@ class GroupDraft {
 }
 
 class DraftService {
+  DraftService({this.draftRootProvider});
+
+  final Future<Directory> Function(String userId)? draftRootProvider;
+
   Future<GroupDraft?> load({
     required String userId,
     required String groupId,
@@ -109,6 +140,57 @@ class DraftService {
     if (await root.exists()) await root.delete(recursive: true);
   }
 
+  Future<ComposerDraft?> loadComposerDraft({
+    required String userId,
+    required ComposerDraftAudience audience,
+  }) async {
+    final file = await _composerDraftFile(userId, audience);
+    if (!await file.exists()) return null;
+    try {
+      final data = jsonDecode(await file.readAsString());
+      if (data is! Map<String, dynamic>) return null;
+      return ComposerDraft(
+        title: data['title']?.toString() ?? '',
+        body: data['body']?.toString() ?? '',
+        audience: audience,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveComposerDraft({
+    required String userId,
+    required ComposerDraft draft,
+  }) async {
+    final file = await _composerDraftFile(userId, draft.audience);
+    if (draft.isEmpty) {
+      if (await file.exists()) await file.delete();
+      return;
+    }
+    await file.parent.create(recursive: true);
+    final temporary = File('${file.path}.tmp');
+    await temporary.writeAsString(
+      jsonEncode({
+        'schemaVersion': 1,
+        'title': draft.title,
+        'body': draft.body,
+        'audience': draft.audience.name,
+        'updatedAt': DateTime.now().toUtc().toIso8601String(),
+      }),
+      flush: true,
+    );
+    await _replaceAtomically(file, temporary);
+  }
+
+  Future<void> clearComposerDraft({
+    required String userId,
+    required ComposerDraftAudience audience,
+  }) async {
+    final file = await _composerDraftFile(userId, audience);
+    if (await file.exists()) await file.delete();
+  }
+
   Future<File> _draftFile(String userId, String groupId) async {
     final safeGroupId = _safeId(groupId);
     final root = await _draftRoot(userId);
@@ -116,11 +198,39 @@ class DraftService {
   }
 
   Future<Directory> _draftRoot(String userId) async {
+    if (draftRootProvider != null) {
+      return draftRootProvider!(userId);
+    }
     final support = await getApplicationSupportDirectory();
     return Directory(
       '${support.path}${Platform.pathSeparator}drafts'
       '${Platform.pathSeparator}${_safeId(userId)}',
     );
+  }
+
+  Future<File> _composerDraftFile(
+    String userId,
+    ComposerDraftAudience audience,
+  ) async {
+    final root = await _draftRoot(userId);
+    return File(
+      '${root.path}${Platform.pathSeparator}composer-${audience.name}.json',
+    );
+  }
+
+  Future<void> _replaceAtomically(File file, File temporary) async {
+    final backup = File('${file.path}.bak');
+    if (await backup.exists()) await backup.delete();
+    if (await file.exists()) await file.rename(backup.path);
+    try {
+      await temporary.rename(file.path);
+      if (await backup.exists()) await backup.delete();
+    } catch (_) {
+      if (await backup.exists() && !await file.exists()) {
+        await backup.rename(file.path);
+      }
+      rethrow;
+    }
   }
 
   String _safeId(String value) {

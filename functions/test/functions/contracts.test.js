@@ -5,6 +5,7 @@ const {
   createInviteToken,
   hashInviteToken,
   isInvalidMessagingTokenError,
+  messageNotificationData,
   messagePreview,
   normalizeInsightInput,
   normalizeReportInput,
@@ -67,6 +68,31 @@ describe("invite security", () => {
 });
 
 describe("notification safety", () => {
+  test("routes group notifications to the exact message space", () => {
+    assert.deepEqual(
+      messageNotificationData({
+        groupId: "group-a",
+        messageId: "message-9",
+        space: "prayer",
+      }),
+      {
+        version: "1",
+        type: "group_message",
+        groupId: "group-a",
+        messageId: "message-9",
+        space: "prayer",
+      },
+    );
+    assert.throws(
+      () => messageNotificationData({
+        groupId: "group-a",
+        messageId: "message-9",
+        space: "plan",
+      }),
+      RangeError,
+    );
+  });
+
   test("creates a bounded single-line preview", () => {
     assert.equal(
       messagePreview([{ type: "text", content: "Hello\nthere" }]),

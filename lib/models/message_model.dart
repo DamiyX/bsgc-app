@@ -1,9 +1,28 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-DateTime _messageDate(dynamic value) {
+DateTime? _messageDate(dynamic value) {
   if (value is Timestamp) return value.toDate();
   if (value is DateTime) return value;
-  return DateTime.now();
+  return null;
+}
+
+class MessageTimestamp {
+  final DateTime value;
+  final bool isKnown;
+
+  const MessageTimestamp({required this.value, required this.isKnown});
+}
+
+MessageTimestamp resolveMessageTimestamp({
+  required dynamic serverTimestamp,
+  required dynamic clientCreatedAt,
+}) {
+  final resolved =
+      _messageDate(serverTimestamp) ?? _messageDate(clientCreatedAt);
+  return MessageTimestamp(
+    value: resolved ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+    isKnown: resolved != null,
+  );
 }
 
 enum MessageType { text, voice, hybrid, image, video, document }
@@ -59,6 +78,7 @@ class MessageModel {
   final String? replyToMessageId;
   final List<MessagePart> parts;
   final DateTime timestamp;
+  final bool hasKnownTimestamp;
   final List<String> deletedFor;
   final bool isDeleted;
   final bool isEdited;
@@ -76,6 +96,7 @@ class MessageModel {
     this.replyToMessageId,
     required this.parts,
     required this.timestamp,
+    this.hasKnownTimestamp = true,
     this.deletedFor = const [],
     this.isDeleted = false,
     this.isEdited = false,
@@ -108,6 +129,11 @@ class MessageModel {
       ];
     }
 
+    final resolvedTimestamp = resolveMessageTimestamp(
+      serverTimestamp: data['timestamp'],
+      clientCreatedAt: data['clientCreatedAt'],
+    );
+
     return MessageModel(
       id: doc.id,
       schemaVersion: data['schemaVersion'] is int ? data['schemaVersion'] : 1,
@@ -122,7 +148,8 @@ class MessageModel {
       senderPhotoUrl: data['senderPhotoUrl']?.toString(),
       replyToMessageId: data['replyToMessageId']?.toString(),
       parts: parsedParts,
-      timestamp: _messageDate(data['timestamp']),
+      timestamp: resolvedTimestamp.value,
+      hasKnownTimestamp: resolvedTimestamp.isKnown,
       deletedFor: data['deletedFor'] is List
           ? (data['deletedFor'] as List).whereType<String>().toList()
           : const [],

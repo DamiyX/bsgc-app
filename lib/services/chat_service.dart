@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/group_model.dart';
 import '../models/message_model.dart';
+import 'canonical_identity_service.dart';
 
 class GroupInvite {
   final String token;
@@ -32,21 +33,131 @@ class InviteRedemption {
   });
 }
 
+class ChatServiceException implements Exception {
+  final String code;
+  final String message;
+
+  const ChatServiceException({required this.code, required this.message});
+
+  @override
+  String toString() => message;
+}
+
+class GroupOperationFailure implements Exception {
+  final String code;
+  final String message;
+
+  const GroupOperationFailure({required this.code, required this.message});
+
+  @override
+  String toString() => message;
+}
+
+GroupOperationFailure groupOperationFailureForCode(String? code) {
+  return switch (code) {
+    'invalid-argument' => const GroupOperationFailure(
+      code: 'invalid-argument',
+      message: 'Check the study details and try again.',
+    ),
+    'unauthenticated' => const GroupOperationFailure(
+      code: 'unauthenticated',
+      message: 'Sign in again to save this study.',
+    ),
+    'permission-denied' => const GroupOperationFailure(
+      code: 'permission-denied',
+      message: 'You do not have permission to change this study.',
+    ),
+    'unavailable' || 'deadline-exceeded' => GroupOperationFailure(
+      code: code!,
+      message: 'Check your connection and try again.',
+    ),
+    _ => const GroupOperationFailure(
+      code: 'unknown',
+      message: 'The study could not be saved right now. Try again.',
+    ),
+  };
+}
+
+class ChapterProgressMutation {
+  final List<int> completedChapters;
+  final double progress;
+
+  const ChapterProgressMutation({
+    required this.completedChapters,
+    required this.progress,
+  });
+
+  factory ChapterProgressMutation.toggle({
+    required Iterable<int> current,
+    required int chapter,
+    required int totalChapters,
+  }) {
+    if (totalChapters <= 0 || chapter < 1 || chapter > totalChapters) {
+      throw ArgumentError.value(chapter, 'chapter', 'Unknown chapter.');
+    }
+    final updated = current
+        .where((value) => value >= 1 && value <= totalChapters)
+        .toSet();
+    if (!updated.add(chapter)) updated.remove(chapter);
+    final sorted = updated.toList()..sort();
+    return ChapterProgressMutation(
+      completedChapters: sorted,
+      progress: sorted.length / totalChapters,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! ChapterProgressMutation ||
+        progress != other.progress ||
+        completedChapters.length != other.completedChapters.length) {
+      return false;
+    }
+    for (var index = 0; index < completedChapters.length; index++) {
+      if (completedChapters[index] != other.completedChapters[index]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hash(progress, Object.hashAll(completedChapters));
+}
+
+class GroupStreamRetryController {
+  final Stream<List<GroupModel>> Function() _createStream;
+  late Stream<List<GroupModel>> stream = _createStream();
+
+  GroupStreamRetryController(this._createStream);
+
+  void retry() {
+    stream = _createStream();
+  }
+}
+
 class ChatService {
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
   final FirebaseFunctions _functions;
   final Uuid _uuid;
+  final CanonicalIdentitySource _identitySource;
 
   ChatService({
     FirebaseFirestore? firestore,
     FirebaseAuth? auth,
     FirebaseFunctions? functions,
     Uuid? uuid,
+    CanonicalIdentitySource? identitySource,
   }) : _firestore = firestore ?? FirebaseFirestore.instance,
        _auth = auth ?? FirebaseAuth.instance,
        _functions = functions ?? FirebaseFunctions.instance,
-       _uuid = uuid ?? const Uuid();
+       _uuid = uuid ?? const Uuid(),
+       _identitySource =
+           identitySource ??
+           FirestoreCanonicalIdentitySource(
+             firestore ?? FirebaseFirestore.instance,
+           );
 
   User _requireUser() {
     final user = _auth.currentUser;
@@ -58,13 +169,18 @@ class ChatService {
 
   String createClientMessageId() => _uuid.v4();
 
-  Exception _callableError(Object error) {
+  ChatServiceException _callableError(Object error) {
     if (error is FirebaseFunctionsException) {
-      return Exception(
-        error.message ?? 'The requested action could not be completed.',
+      return ChatServiceException(
+        code: error.code,
+        message:
+            error.message ?? 'The requested action could not be completed.',
       );
     }
-    return Exception('The requested action could not be completed.');
+    return const ChatServiceException(
+      code: 'unknown',
+      message: 'The requested action could not be completed.',
+    );
   }
 
   Stream<List<GroupModel>> getUserGroups() {
@@ -123,7 +239,9 @@ class ChatService {
       }
       return GroupModel.fromFirestore(snapshot);
     } catch (error) {
-      throw _callableError(error);
+      throw groupOperationFailureForCode(
+        error is FirebaseFunctionsException ? error.code : null,
+      );
     }
   }
 
@@ -258,7 +376,9 @@ class ChatService {
         'photoUrl': ?photoUrl,
       });
     } catch (error) {
-      throw _callableError(error);
+      throw groupOperationFailureForCode(
+        error is FirebaseFunctionsException ? error.code : null,
+      );
     }
   }
 
@@ -392,6 +512,7 @@ class ChatService {
       throw ArgumentError('A message must contain between one and four parts.');
     }
     _validateMessageParts(parts);
+    final identity = await _identitySource.load(user.uid);
 
     final stableId = clientMessageId ?? _uuid.v4();
     if (!const {'reflection', 'discussion', 'prayer'}.contains(space)) {
@@ -407,11 +528,12 @@ class ChatService {
       'clientMessageId': stableId,
       'space': space,
       'senderId': user.uid,
-      'senderName': (user.displayName ?? 'Believer').trim(),
-      if (user.photoURL?.isNotEmpty == true) 'senderPhotoUrl': user.photoURL,
+      'senderName': identity.displayName,
+      if (identity.photoUrl != null) 'senderPhotoUrl': identity.photoUrl,
       if (replyToMessageId?.isNotEmpty == true)
         'replyToMessageId': replyToMessageId,
       'parts': parts.map((part) => part.toMap()).toList(),
+      'clientCreatedAt': Timestamp.now(),
       'timestamp': FieldValue.serverTimestamp(),
       'isEdited': false,
       'isDeleted': false,
@@ -521,15 +643,30 @@ class ChatService {
         });
   }
 
-  Future<void> updateGroupStudyProgress(
-    String groupId,
-    List<int> completedChapters,
-    double progress,
-  ) async {
+  Future<ChapterProgressMutation> toggleGroupStudyChapter(
+    String groupId, {
+    required int chapter,
+    required int totalChapters,
+  }) async {
     final user = _requireUser();
-    await _firestore.collection('groups').doc(groupId).update({
-      'readingProgress.${user.uid}': progress.clamp(0, 1),
-      'userCompletedChapters.${user.uid}': completedChapters,
+    final reference = _firestore.collection('groups').doc(groupId);
+    return _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(reference);
+      final rawByUser = snapshot.data()?['userCompletedChapters'];
+      final rawCurrent = rawByUser is Map ? rawByUser[user.uid] : null;
+      final current = rawCurrent is List
+          ? rawCurrent.whereType<num>().map((value) => value.toInt())
+          : const <int>[];
+      final mutation = ChapterProgressMutation.toggle(
+        current: current,
+        chapter: chapter,
+        totalChapters: totalChapters,
+      );
+      transaction.update(reference, {
+        'readingProgress.${user.uid}': mutation.progress,
+        'userCompletedChapters.${user.uid}': mutation.completedChapters,
+      });
+      return mutation;
     });
   }
 
@@ -663,12 +800,16 @@ class FirestoreGroupMessagePageSource implements GroupMessagePageSource {
   GroupMessagePageItem _pageItem(
     DocumentSnapshot<Map<String, dynamic>> document,
   ) {
-    final timestamp = document.data()?['timestamp'];
+    final data = document.data();
+    final timestamp = data?['timestamp'];
+    final clientCreatedAt = data?['clientCreatedAt'];
     return GroupMessagePageItem(
       message: MessageModel.fromFirestore(document),
       sortMillis: timestamp is Timestamp
           ? timestamp.millisecondsSinceEpoch
-          : 0x7FFFFFFFFFFFFFFF,
+          : clientCreatedAt is Timestamp
+          ? clientCreatedAt.millisecondsSinceEpoch
+          : 0,
     );
   }
 }
@@ -730,6 +871,13 @@ class GroupMessagePager {
           if (!page.hasMore) hasMore = false;
           _emit();
         }, onError: _controller.addError);
+  }
+
+  Future<void> retry() async {
+    await _liveSubscription?.cancel();
+    _liveSubscription = null;
+    _started = false;
+    _start();
   }
 
   Future<void> loadOlder() async {

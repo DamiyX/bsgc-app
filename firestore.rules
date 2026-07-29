@@ -58,6 +58,30 @@ service cloud.firestore {
         || (data[key] is string && data[key].size() <= maxLength);
     }
 
+    function matchesCanonicalPublicIdentity(
+      uid,
+      data,
+      nameField,
+      photoField
+    ) {
+      let profilePath =
+        /databases/$(database)/documents/users_public/$(uid);
+      let profile = get(profilePath).data;
+      return exists(profilePath)
+        && data[nameField] == profile.displayName
+        && (
+          (
+            profile.keys().hasAny(['photoUrl'])
+            && data.keys().hasAny([photoField])
+            && data[photoField] == profile.photoUrl
+          )
+          || (
+            !profile.keys().hasAny(['photoUrl'])
+            && !data.keys().hasAny([photoField])
+          )
+        );
+    }
+
     function validPublicUser(uid, data) {
       return data.keys().hasAll([
           'schemaVersion',
@@ -289,17 +313,15 @@ service cloud.firestore {
         && part.content.size() >= 1
         && part.content.size() <= 8000
         && (part.type == 'text' || part.content.matches('https://.+'))
-        && (part.type != 'voice'
-          || (part.keys().hasAny(['durationSeconds'])
+        && (
+          (part.type == 'voice'
+            && part.keys().hasAny(['durationSeconds'])
             && part.durationSeconds is int
             && part.durationSeconds >= 1
-            && part.durationSeconds <= 300))
-        && (part.type == 'voice'
-          || !part.keys().hasAny(['durationSeconds']))
-        && (!part.keys().hasAny(['durationSeconds'])
-          || (part.durationSeconds is int
-            && part.durationSeconds >= 1
-            && part.durationSeconds <= 300))
+            && part.durationSeconds <= 300)
+          || (part.type != 'voice'
+            && !part.keys().hasAny(['durationSeconds']))
+        )
         && validOptionalString(part, 'fileName', 180)
         && (!part.keys().hasAny(['sizeBytes'])
           || (part.sizeBytes is int
@@ -324,6 +346,7 @@ service cloud.firestore {
           'senderPhotoUrl',
           'replyToMessageId',
           'parts',
+          'clientCreatedAt',
           'timestamp',
           'isEdited',
           'isDeleted'
@@ -336,8 +359,17 @@ service cloud.firestore {
         && data.senderName.size() >= 1
         && data.senderName.size() <= 80
         && validOptionalString(data, 'senderPhotoUrl', 2048)
+        && matchesCanonicalPublicIdentity(
+          data.senderId,
+          data,
+          'senderName',
+          'senderPhotoUrl'
+        )
         && validOptionalString(data, 'replyToMessageId', 128)
         && validOptionalString(data, 'clientMessageId', 128)
+        && (!data.keys().hasAny(['clientCreatedAt'])
+          || (data.clientCreatedAt is timestamp
+            && data.clientCreatedAt <= request.time))
         && data.parts is list
         && data.parts.size() >= 1
         && data.parts.size() <= 4
@@ -883,7 +915,6 @@ service cloud.firestore {
             'authorPhotoUrl',
             'body',
             'replyToId',
-            'replyToName',
             'createdAt',
             'updatedAt'
           ])
@@ -893,6 +924,12 @@ service cloud.firestore {
           && request.resource.data.authorName is string
           && request.resource.data.authorName.size() >= 1
           && request.resource.data.authorName.size() <= 80
+          && matchesCanonicalPublicIdentity(
+            request.resource.data.authorUid,
+            request.resource.data,
+            'authorName',
+            'authorPhotoUrl'
+          )
           && validOptionalString(
             request.resource.data,
             'authorPhotoUrl',
@@ -902,7 +939,6 @@ service cloud.firestore {
           && request.resource.data.body.size() >= 1
           && request.resource.data.body.size() <= 4000
           && validOptionalString(request.resource.data, 'replyToId', 128)
-          && validOptionalString(request.resource.data, 'replyToName', 80)
           && request.resource.data.createdAt == request.time;
         allow update: if canReadParentInsight(insightId)
           && resource.data.authorUid == request.auth.uid

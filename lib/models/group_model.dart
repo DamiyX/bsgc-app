@@ -6,6 +6,23 @@ DateTime? _groupDate(dynamic value) {
   return null;
 }
 
+class StudyDateRangePolicy {
+  static const maxDuration = Duration(days: 365);
+
+  static String? validationMessage(DateTime start, DateTime end) {
+    final normalizedStart = DateTime(start.year, start.month, start.day);
+    final normalizedEnd = DateTime(end.year, end.month, end.day);
+    final duration = normalizedEnd.difference(normalizedStart);
+    if (duration <= Duration.zero) {
+      return 'Choose an end date after the start date.';
+    }
+    if (duration > maxDuration) {
+      return 'A study can run for at most 365 days.';
+    }
+    return null;
+  }
+}
+
 class GroupModel {
   final String id;
   final int schemaVersion;
@@ -119,7 +136,9 @@ class GroupModel {
       pinnedScripture: data['pinnedScripture']?.toString() ?? '',
       description: data['description']?.toString() ?? '',
       photoUrl: data['photoUrl']?.toString(),
-      createdAt: _groupDate(data['createdAt']) ?? DateTime.now(),
+      createdAt:
+          _groupDate(data['createdAt']) ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
       studyBook: data['studyBook']?.toString(),
       totalChapters: data['totalChapters'] is num
           ? (data['totalChapters'] as num).toInt()

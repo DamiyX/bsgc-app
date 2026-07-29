@@ -4,6 +4,19 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+enum InviteFailureDisposition { terminal, retryable }
+
+InviteFailureDisposition classifyInviteFailure(String code) {
+  return switch (code) {
+    'not-found' ||
+    'deadline-exceeded' ||
+    'failed-precondition' ||
+    'resource-exhausted' ||
+    'permission-denied' => InviteFailureDisposition.terminal,
+    _ => InviteFailureDisposition.retryable,
+  };
+}
+
 /// Accepts only Braid's canonical, opaque group-invite links.
 ///
 /// The token is persisted so a link survives authentication, onboarding, an

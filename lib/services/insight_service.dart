@@ -3,24 +3,87 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/insight_model.dart';
+import 'canonical_identity_service.dart';
 
 bool shouldRemoveUnavailableSavedInsight(Object error) {
   return error is FirebaseException &&
       (error.code == 'permission-denied' || error.code == 'not-found');
 }
 
-class InsightService {
+class InsightCommentCursor {
+  final String documentId;
+  final int createdAtMicros;
+
+  const InsightCommentCursor({
+    required this.documentId,
+    required this.createdAtMicros,
+  });
+}
+
+class InsightCommentPage {
+  final List<InsightCommentModel> comments;
+  final bool hasMore;
+  final InsightCommentCursor? cursor;
+
+  const InsightCommentPage({
+    required this.comments,
+    required this.hasMore,
+    required this.cursor,
+  });
+}
+
+List<InsightCommentModel> mergeCommentPages(
+  Iterable<InsightCommentModel> first,
+  Iterable<InsightCommentModel> second,
+) {
+  final byId = <String, InsightCommentModel>{
+    for (final comment in first) comment.id: comment,
+    for (final comment in second) comment.id: comment,
+  };
+  final merged = byId.values.toList();
+  merged.sort((a, b) {
+    final timeOrder = a.createdAt.compareTo(b.createdAt);
+    return timeOrder != 0 ? timeOrder : a.id.compareTo(b.id);
+  });
+  return merged;
+}
+
+List<InsightCommentModel> commentThreadRoots(
+  List<InsightCommentModel> comments,
+) {
+  final ids = comments.map((comment) => comment.id).toSet();
+  return comments
+      .where(
+        (comment) =>
+            comment.replyToId == null || !ids.contains(comment.replyToId),
+      )
+      .toList(growable: false);
+}
+
+abstract interface class MyInsightsDataSource {
+  Stream<List<InsightModel>> getActiveInsightsForUser(String userId);
+  Future<void> deleteInsight(String insightId);
+}
+
+class InsightService implements MyInsightsDataSource {
   final FirebaseFirestore _firestore;
   final FirebaseFunctions _functions;
   final FirebaseAuth _auth;
+  final CanonicalIdentitySource _identitySource;
 
   InsightService({
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
     FirebaseAuth? auth,
+    CanonicalIdentitySource? identitySource,
   }) : _firestore = firestore ?? FirebaseFirestore.instance,
        _functions = functions ?? FirebaseFunctions.instance,
-       _auth = auth ?? FirebaseAuth.instance;
+       _auth = auth ?? FirebaseAuth.instance,
+       _identitySource =
+           identitySource ??
+           FirestoreCanonicalIdentitySource(
+             firestore ?? FirebaseFirestore.instance,
+           );
 
   String _requireUserId() {
     final uid = _auth.currentUser?.uid;
@@ -67,6 +130,7 @@ class InsightService {
         });
   }
 
+  @override
   Stream<List<InsightModel>> getActiveInsightsForUser(
     String userId, {
     int limit = 50,
@@ -107,6 +171,7 @@ class InsightService {
     });
   }
 
+  @override
   Future<void> deleteInsight(String insightId) async {
     await _firestore.collection('insights').doc(insightId).update({
       'status': 'deleted',
@@ -162,11 +227,128 @@ class InsightService {
         );
   }
 
+  Future<InsightCommentPage> getCommentPage(
+    String insightId, {
+    InsightCommentCursor? after,
+    int pageSize = 50,
+  }) async {
+    final boundedPageSize = pageSize.clamp(1, 100).toInt();
+    Query<Map<String, dynamic>> query = _firestore
+        .collection('insights')
+        .doc(insightId)
+        .collection('comments')
+        .orderBy('createdAt', descending: true)
+        .orderBy(FieldPath.documentId, descending: true);
+    if (after != null) {
+      query = query.startAfter([
+        Timestamp.fromMicrosecondsSinceEpoch(after.createdAtMicros),
+        after.documentId,
+      ]);
+    }
+
+    final snapshot = await query.limit(boundedPageSize + 1).get();
+    final pageDocuments = snapshot.docs.take(boundedPageSize).toList();
+    final pageComments = pageDocuments
+        .map(InsightCommentModel.fromFirestore)
+        .toList(growable: false);
+    final commentsWithParents = await _includeMissingCommentParents(
+      insightId,
+      pageComments,
+    );
+    final lastDocument = pageDocuments.lastOrNull;
+    final lastCreatedAt = lastDocument?.data()['createdAt'];
+    return InsightCommentPage(
+      comments: mergeCommentPages(commentsWithParents, const []),
+      hasMore: snapshot.docs.length > boundedPageSize,
+      cursor: lastDocument == null
+          ? null
+          : InsightCommentCursor(
+              documentId: lastDocument.id,
+              createdAtMicros: lastCreatedAt is Timestamp
+                  ? lastCreatedAt.microsecondsSinceEpoch
+                  : 0,
+            ),
+    );
+  }
+
+  Stream<List<InsightCommentModel>> watchNewestComments(
+    String insightId, {
+    int limit = 50,
+  }) {
+    final boundedLimit = limit.clamp(1, 100).toInt();
+    return _firestore
+        .collection('insights')
+        .doc(insightId)
+        .collection('comments')
+        .orderBy('createdAt', descending: true)
+        .orderBy(FieldPath.documentId, descending: true)
+        .limit(boundedLimit)
+        .snapshots()
+        .asyncMap((snapshot) async {
+          final comments = snapshot.docs
+              .map(InsightCommentModel.fromFirestore)
+              .toList(growable: false);
+          return mergeCommentPages(
+            await _includeMissingCommentParents(insightId, comments),
+            const [],
+          );
+        });
+  }
+
+  Future<int> getCommentCount(String insightId) async {
+    final result = await _firestore
+        .collection('insights')
+        .doc(insightId)
+        .collection('comments')
+        .count()
+        .get();
+    return result.count ?? 0;
+  }
+
+  Future<List<InsightCommentModel>> _includeMissingCommentParents(
+    String insightId,
+    List<InsightCommentModel> comments,
+  ) async {
+    final byId = {for (final comment in comments) comment.id: comment};
+    var missingParentIds = comments
+        .map((comment) => comment.replyToId)
+        .whereType<String>()
+        .where((id) => !byId.containsKey(id))
+        .toSet();
+    while (missingParentIds.isNotEmpty) {
+      final parentSnapshots = await Future.wait(
+        missingParentIds.map(
+          (parentId) => _firestore
+              .collection('insights')
+              .doc(insightId)
+              .collection('comments')
+              .doc(parentId)
+              .get(),
+        ),
+      );
+      final foundParents = parentSnapshots
+          .where((document) => document.exists)
+          .map(InsightCommentModel.fromFirestore)
+          .toList(growable: false);
+      if (foundParents.isEmpty) break;
+      for (final parent in foundParents) {
+        byId[parent.id] = parent;
+      }
+      missingParentIds = foundParents
+          .map((comment) => comment.replyToId)
+          .whereType<String>()
+          .where((id) => !byId.containsKey(id))
+          .toSet();
+    }
+    return byId.values.toList(growable: false);
+  }
+
   Future<void> addComment(String insightId, InsightCommentModel comment) async {
     final uid = _requireUserId();
     if (comment.authorUid != uid) {
       throw StateError('You can publish only your own comment.');
     }
+    final identity = await _identitySource.load(uid);
     await _firestore
         .collection('insights')
         .doc(insightId)
@@ -176,14 +358,11 @@ class InsightService {
           'schemaVersion': 2,
           'insightId': insightId,
           'authorUid': uid,
-          'authorName': comment.authorName.trim(),
-          if (comment.authorPhotoUrl?.isNotEmpty == true)
-            'authorPhotoUrl': comment.authorPhotoUrl,
+          'authorName': identity.displayName,
+          if (identity.photoUrl != null) 'authorPhotoUrl': identity.photoUrl,
           'body': comment.body.trim(),
           if (comment.replyToId?.isNotEmpty == true)
             'replyToId': comment.replyToId,
-          if (comment.replyToName?.isNotEmpty == true)
-            'replyToName': comment.replyToName,
           'createdAt': FieldValue.serverTimestamp(),
         });
   }

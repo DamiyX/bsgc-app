@@ -80,6 +80,21 @@ function messagePreview(parts) {
   return `${singleLine.slice(0, MAX_MESSAGE_PREVIEW_LENGTH - 1)}…`;
 }
 
+function messageNotificationData({ groupId, messageId, space }) {
+  const normalizedGroupId = requireString(groupId, "groupId", 160);
+  const normalizedMessageId = requireString(messageId, "messageId", 160);
+  if (!["reflection", "discussion", "prayer"].includes(space)) {
+    throw new RangeError("space is not supported");
+  }
+  return {
+    version: "1",
+    type: "group_message",
+    groupId: normalizedGroupId,
+    messageId: normalizedMessageId,
+    space,
+  };
+}
+
 function isInvalidMessagingTokenError(errorCode) {
   return [
     "messaging/invalid-registration-token",
@@ -143,6 +158,7 @@ module.exports = {
   createInviteToken,
   hashInviteToken,
   isInvalidMessagingTokenError,
+  messageNotificationData,
   messagePreview,
   normalizeInsightInput,
   normalizeReportInput,

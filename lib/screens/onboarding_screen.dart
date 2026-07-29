@@ -103,8 +103,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     try {
       await ChatService().redeemGroupInvite(token);
       await deepLinks.clearPendingInviteToken(token);
+    } on ChatServiceException catch (error) {
+      if (classifyInviteFailure(error.code) ==
+          InviteFailureDisposition.terminal) {
+        await deepLinks.clearPendingInviteToken(token);
+      }
+      // Retryable failures remain pending for Main Hall's retry/dismiss flow.
     } catch (_) {
-      // Keep the token for an automatic retry after connectivity returns.
+      // Unknown failures remain pending for Main Hall's retry/dismiss flow.
     }
   }
 

@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/theme_provider.dart';
 import '../services/account_service.dart';
 import '../services/auth_service.dart';
+import '../services/device_settings_service.dart';
 import '../services/notification_service.dart';
 import '../theme.dart';
 import 'about_platform_screen.dart';
@@ -23,19 +25,36 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen>
+    with WidgetsBindingObserver {
   String _appVersion = '';
   bool _muteAppSounds = false;
   bool _notificationsEnabled = false;
   bool _messageNotifications = true;
   bool _insightNotifications = true;
   bool _previewNotificationContent = false;
+  bool _notificationPermissionDenied = false;
+  bool _isSavingNotifications = false;
   bool _isDeletingAccount = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadSettings();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadSettings();
+    }
   }
 
   Future<void> _loadSettings() async {
@@ -43,37 +62,103 @@ class _SettingsScreenState extends State<SettingsScreen> {
       SharedPreferences.getInstance(),
       PackageInfo.fromPlatform(),
       NotificationService().loadPreferences(),
+      NotificationService().getDevicePermission(),
     ]);
     if (!mounted) return;
     final preferences = results[0] as SharedPreferences;
     final package = results[1] as PackageInfo;
     final notificationPreferences = results[2] as Map<String, bool>;
+    final permission = results[3] as DeviceNotificationPermission;
+    final notificationDecision = resolveNotificationPreference(
+      requestedEnabled: notificationPreferences['enabled'] ?? false,
+      permission: permission,
+    );
     setState(() {
       _muteAppSounds = preferences.getBool('mute_app_sounds') ?? false;
       _appVersion = '${package.version} (${package.buildNumber})';
-      _notificationsEnabled = notificationPreferences['enabled'] ?? true;
+      _notificationsEnabled = notificationDecision.enabled;
+      _notificationPermissionDenied =
+          notificationDecision.shouldOpenSystemSettings;
       _messageNotifications = notificationPreferences['messages'] ?? true;
       _insightNotifications = notificationPreferences['insights'] ?? true;
       _previewNotificationContent = notificationPreferences['preview'] ?? false;
     });
   }
 
-  Future<void> _saveNotificationPreferences() async {
+  Future<void> _updateNotificationPreferences({
+    bool? enabled,
+    bool? messages,
+    bool? insights,
+    bool? previewContent,
+  }) async {
+    if (_isSavingNotifications) return;
+    final previous = (
+      enabled: _notificationsEnabled,
+      messages: _messageNotifications,
+      insights: _insightNotifications,
+      preview: _previewNotificationContent,
+      permissionDenied: _notificationPermissionDenied,
+    );
+    setState(() {
+      _isSavingNotifications = true;
+      _notificationsEnabled = enabled ?? _notificationsEnabled;
+      _messageNotifications = messages ?? _messageNotifications;
+      _insightNotifications = insights ?? _insightNotifications;
+      _previewNotificationContent =
+          previewContent ?? _previewNotificationContent;
+    });
     try {
-      await NotificationService().updatePreferences(
+      final decision = await NotificationService().updatePreferences(
         enabled: _notificationsEnabled,
         messages: _messageNotifications,
         insights: _insightNotifications,
         previewContent: _previewNotificationContent,
       );
-    } catch (_) {
-      if (mounted) {
+      if (!mounted) return;
+      setState(() {
+        _notificationsEnabled = decision.enabled;
+        _notificationPermissionDenied = decision.shouldOpenSystemSettings;
+      });
+      if (!decision.enabled && enabled == true) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Notification settings could not be saved.'),
+          SnackBar(
+            content: Text(
+              decision.shouldOpenSystemSettings
+                  ? 'Notifications are blocked by device settings and remain off.'
+                  : 'Notification permission was not enabled.',
+            ),
           ),
         );
       }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _notificationsEnabled = previous.enabled;
+        _messageNotifications = previous.messages;
+        _insightNotifications = previous.insights;
+        _previewNotificationContent = previous.preview;
+        _notificationPermissionDenied = previous.permissionDenied;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Notification settings could not be saved.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSavingNotifications = false);
+    }
+  }
+
+  Future<void> _openNotificationSettings() async {
+    try {
+      await DeviceSettingsService().openNotificationSettings();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Device notification settings could not be opened.'),
+        ),
+      );
     }
   }
 
@@ -199,35 +284,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SwitchListTile(
             secondary: const Icon(Icons.notifications_outlined),
             title: const Text('Notifications on this device'),
-            subtitle: const Text(
-              'The system permission can also be changed in device settings',
+            subtitle: Text(
+              _notificationPermissionDenied
+                  ? 'Blocked by device settings. Enable Braid there before trying again.'
+                  : 'The system permission can also be changed in device settings',
             ),
             value: _notificationsEnabled,
-            onChanged: (value) {
-              setState(() => _notificationsEnabled = value);
-              _saveNotificationPreferences();
-            },
+            onChanged: _isSavingNotifications
+                ? null
+                : (value) => _updateNotificationPreferences(enabled: value),
           ),
+          if (_notificationPermissionDenied &&
+              defaultTargetPlatform == TargetPlatform.android)
+            ListTile(
+              leading: const Icon(Icons.settings_outlined),
+              title: const Text('Open notification settings'),
+              subtitle: const Text(
+                'Allow Braid notifications, then return to this screen.',
+              ),
+              trailing: const Icon(Icons.open_in_new),
+              onTap: _openNotificationSettings,
+            ),
           SwitchListTile(
             secondary: const Icon(Icons.forum_outlined),
             title: const Text('Study group messages'),
             value: _messageNotifications,
-            onChanged: _notificationsEnabled
-                ? (value) {
-                    setState(() => _messageNotifications = value);
-                    _saveNotificationPreferences();
-                  }
+            onChanged: _notificationsEnabled && !_isSavingNotifications
+                ? (value) => _updateNotificationPreferences(messages: value)
                 : null,
           ),
           SwitchListTile(
             secondary: const Icon(Icons.lightbulb_outline_rounded),
             title: const Text('Contacts’ Insights'),
             value: _insightNotifications,
-            onChanged: _notificationsEnabled
-                ? (value) {
-                    setState(() => _insightNotifications = value);
-                    _saveNotificationPreferences();
-                  }
+            onChanged: _notificationsEnabled && !_isSavingNotifications
+                ? (value) => _updateNotificationPreferences(insights: value)
                 : null,
           ),
           SwitchListTile(
@@ -237,11 +328,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'Off hides message and reflection text in notifications',
             ),
             value: _previewNotificationContent,
-            onChanged: _notificationsEnabled
-                ? (value) {
-                    setState(() => _previewNotificationContent = value);
-                    _saveNotificationPreferences();
-                  }
+            onChanged: _notificationsEnabled && !_isSavingNotifications
+                ? (value) =>
+                      _updateNotificationPreferences(previewContent: value)
                 : null,
           ),
           ListTile(

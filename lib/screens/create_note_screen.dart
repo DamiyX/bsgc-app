@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/note_model.dart';
+import '../services/draft_service.dart';
 import '../services/note_service.dart';
 import '../theme.dart';
 import 'view_note_screen.dart';
@@ -19,7 +22,107 @@ class _CreateNoteScreenState extends State<CreateNoteScreen> {
   final _titleController = TextEditingController();
   final _bodyController = TextEditingController();
   final NoteService _noteService = NoteService();
+  final DraftService _draftService = DraftService();
+  Timer? _draftTimer;
+  String? _draftUserId;
+  bool _isRestoringDraft = false;
+  bool _hasUserEdited = false;
+  bool _isDraftFinalized = false;
   bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController.addListener(_scheduleDraftSave);
+    _bodyController.addListener(_scheduleDraftSave);
+    _restoreDraft();
+  }
+
+  Future<void> _restoreDraft() async {
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) return;
+    _draftUserId = userId;
+    final draft = await _draftService.loadComposerDraft(
+      userId: userId,
+      audience: ComposerDraftAudience.private,
+    );
+    if (!mounted || draft == null || _hasUserEdited) return;
+    _isRestoringDraft = true;
+    _titleController.text = draft.title;
+    _bodyController.text = draft.body;
+    _isRestoringDraft = false;
+  }
+
+  void _scheduleDraftSave() {
+    if (_isRestoringDraft) return;
+    _hasUserEdited = true;
+    _draftTimer?.cancel();
+    _draftTimer = Timer(const Duration(milliseconds: 500), _saveDraftNow);
+  }
+
+  Future<void> _saveDraftNow({bool showError = true}) async {
+    if (_isDraftFinalized) return;
+    final userId = _draftUserId ?? FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) return;
+    try {
+      await _draftService.saveComposerDraft(
+        userId: userId,
+        draft: ComposerDraft(
+          title: _titleController.text,
+          body: _bodyController.text,
+          audience: ComposerDraftAudience.private,
+        ),
+      );
+    } catch (_) {
+      if (showError && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              "Couldn't save this local draft. Keep this screen open.",
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _discardDraft() async {
+    final hasText =
+        _titleController.text.trim().isNotEmpty ||
+        _bodyController.text.trim().isNotEmpty;
+    if (hasText) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Discard draft?'),
+          content: const Text(
+            'Your unsaved private reflection will be removed.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Keep editing'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Discard'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+    _draftTimer?.cancel();
+    final userId = _draftUserId ?? FirebaseAuth.instance.currentUser?.uid;
+    if (userId != null) {
+      await _draftService.clearComposerDraft(
+        userId: userId,
+        audience: ComposerDraftAudience.private,
+      );
+    }
+    _titleController.clear();
+    _bodyController.clear();
+  }
 
   Future<void> _saveNote() async {
     if (_isSaving || !_formKey.currentState!.validate()) return;
@@ -44,6 +147,17 @@ class _CreateNoteScreenState extends State<CreateNoteScreen> {
     );
     try {
       await _noteService.saveNote(note);
+      _draftTimer?.cancel();
+      _isDraftFinalized = true;
+      try {
+        await _draftService.clearComposerDraft(
+          userId: user.uid,
+          audience: ComposerDraftAudience.private,
+        );
+      } catch (_) {
+        // The note is already durable remotely; never turn a local cleanup
+        // failure into a misleading save failure.
+      }
       if (mounted) {
         Navigator.pushReplacement(
           context,
@@ -74,6 +188,11 @@ class _CreateNoteScreenState extends State<CreateNoteScreen> {
       appBar: AppBar(
         title: const Text('Private note'),
         actions: [
+          IconButton(
+            tooltip: 'Discard draft',
+            onPressed: _isSaving ? null : _discardDraft,
+            icon: const Icon(Icons.delete_outline),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: TextButton(
@@ -147,6 +266,8 @@ class _CreateNoteScreenState extends State<CreateNoteScreen> {
 
   @override
   void dispose() {
+    _draftTimer?.cancel();
+    unawaited(_saveDraftNow(showError: false));
     _titleController.dispose();
     _bodyController.dispose();
     super.dispose();
