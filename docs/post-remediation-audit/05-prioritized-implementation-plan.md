@@ -346,6 +346,34 @@ still internal preview/development only; native Firestore acknowledgement,
 Storage cleanup, device accessibility/offline behavior, deployed parity,
 release artifacts, and owner/product gates remain open.
 
+## Implementation status — continuation wave 19 source-closure slice
+
+The detailed handoffs are `docs/testing/wave-19-mutation-inventory.md` and
+`docs/testing/wave-19-offline-media.md`. This wave closes two more bounded
+source gaps and then pauses for a remaining-work checkpoint:
+
+- `UX-010`: Study Room personal-state mutations for hiding one message,
+  clearing the personal view, and resetting the unread count now wait for the
+  same Firestore document's server acknowledgement. Fire-and-forget callers
+  have safe error boundaries, and the existing optimistic visibility paths can
+  report a retry instead of treating a local enqueue as durable.
+- `SEC-006` / `PERF-004`: account-scoped voice-cache finalization, cache-hit
+  metadata refresh, and pruning now share a short per-account filesystem
+  barrier with sign-out cleanup. Generation checks before and after the
+  barrier prevent an ended session from receiving a successful entry, while
+  unrelated accounts remain independent. This does not change Firestore's
+  native cache or prove device process-death behavior.
+
+Wave 19 evidence: pinned Dart formatting is clean, `flutter analyze` reports
+no issues, 109 Flutter tests pass, the combined Study Room/voice-cache focused
+run passes 29 tests, the Functions syntax check passes, and the full Functions
+suite passes 78 tests. Rules were not changed in this wave, so the integrated
+31-test Rules Emulator baseline remains the applicable source check. The
+branch remains internal preview/development only. No Wave 20 is opened until
+the source-vs-external remaining-work handoff is reviewed; device/offline
+acceptance, native cache isolation, deployed parity, release artifacts, and
+owner/product gates remain open.
+
 ---
 
 ## Non-negotiable execution contract

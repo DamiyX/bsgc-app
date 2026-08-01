@@ -134,6 +134,27 @@ void main() {
     },
   );
 
+  test('personal room state writes wait for server acknowledgement', () async {
+    final acknowledgement = Completer<void>();
+    var writes = 0;
+    var completed = false;
+    final mutation = persistAcknowledgedChatStateWrite(
+      write: () async {
+        writes++;
+      },
+      awaitAcknowledgement: () => acknowledgement.future,
+    );
+    unawaited(mutation.then((_) => completed = true));
+
+    await Future<void>.delayed(Duration.zero);
+    expect(writes, 1);
+    expect(completed, isFalse);
+
+    acknowledgement.complete();
+    await mutation;
+    expect(completed, isTrue);
+  });
+
   test(
     'room read reconciliation pauses while the room is not visible',
     () async {

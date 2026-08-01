@@ -128,7 +128,7 @@ Expected result:
 
 - formatting check succeeds;
 - analyzer reports no issues;
-- 107 Flutter tests pass at the Wave 18 checkpoint (record the command output and commit; the count may increase with later test-only additions).
+- 109 Flutter tests pass at the Wave 19 checkpoint (record the command output and commit; the count may increase with later test-only additions).
 
 Optional backend/security verification:
 

@@ -93,6 +93,10 @@ class VoiceDownloadResponse {
   });
 }
 
+enum VoiceCacheWriteStage { afterMediaRename }
+
+typedef VoiceCacheWriteHook = Future<void> Function(VoiceCacheWriteStage stage);
+
 class VoiceCacheEntry {
   final File file;
   final int byteLength;
@@ -130,6 +134,7 @@ class VoiceCacheService implements VoiceCacheRepository {
     DateTime Function()? now,
     this.cacheRootProvider,
     VoiceDownload? download,
+    this.writeHook,
   }) : _now = now ?? DateTime.now,
        _download = download ?? _downloadWithHttpClient;
 
@@ -138,8 +143,10 @@ class VoiceCacheService implements VoiceCacheRepository {
   final DateTime Function() _now;
   final VoiceCacheRootProvider? cacheRootProvider;
   final VoiceDownload _download;
+  final VoiceCacheWriteHook? writeHook;
   final Map<String, Future<VoiceCacheEntry>> _inFlight = {};
   final Map<String, int> _accountGenerations = {};
+  final Map<String, Future<void>> _accountFileLocks = {};
 
   static const _supportedExtensions = {
     'aac',
@@ -161,28 +168,30 @@ class VoiceCacheService implements VoiceCacheRepository {
     required String sourceUrl,
   }) async {
     final location = await _location(accountId, sourceUrl);
-    final metadata = await _readMetadata(location.metadataFile);
-    if (metadata == null ||
-        metadata.sourceFingerprint != location.fingerprint ||
-        !await location.mediaFile.exists()) {
-      await _removeLocation(location);
-      return null;
-    }
-    final actualLength = await location.mediaFile.length();
-    if (actualLength != metadata.byteLength ||
-        !metadata.expiresAt.isAfter(_now().toUtc())) {
-      await _removeLocation(location);
-      return null;
-    }
-    await _writeMetadata(
-      location.metadataFile,
-      metadata.copyWith(lastAccessed: _now().toUtc()),
-    );
-    return VoiceCacheEntry(
-      file: location.mediaFile,
-      byteLength: actualLength,
-      wasCached: true,
-    );
+    return _withAccountFileLock(accountId, () async {
+      final metadata = await _readMetadata(location.metadataFile);
+      if (metadata == null ||
+          metadata.sourceFingerprint != location.fingerprint ||
+          !await location.mediaFile.exists()) {
+        await _removeLocation(location);
+        return null;
+      }
+      final actualLength = await location.mediaFile.length();
+      if (actualLength != metadata.byteLength ||
+          !metadata.expiresAt.isAfter(_now().toUtc())) {
+        await _removeLocation(location);
+        return null;
+      }
+      await _writeMetadata(
+        location.metadataFile,
+        metadata.copyWith(lastAccessed: _now().toUtc()),
+      );
+      return VoiceCacheEntry(
+        file: location.mediaFile,
+        byteLength: actualLength,
+        wasCached: true,
+      );
+    });
   }
 
   @override
@@ -220,6 +229,7 @@ class VoiceCacheService implements VoiceCacheRepository {
   }) async {
     final cached = await lookup(accountId: accountId, sourceUrl: sourceUrl);
     if (cached != null) {
+      _requireCurrentGeneration(accountId, generation);
       onProgress?.call(
         VoiceCacheProgress(
           receivedBytes: cached.byteLength,
@@ -304,18 +314,32 @@ class VoiceCacheService implements VoiceCacheRepository {
         );
       }
       _requireCurrentGeneration(accountId, generation);
-      await temporary.rename(location.mediaFile.path);
-      final now = _now().toUtc();
-      await _writeMetadata(
-        location.metadataFile,
-        _VoiceCacheMetadata(
-          sourceFingerprint: location.fingerprint,
-          byteLength: receivedBytes,
-          lastAccessed: now,
-          expiresAt: now.add(expiry),
-        ),
-      );
+      await _withAccountFileLock(accountId, () async {
+        // Sign-out increments the generation before waiting on this lock. If
+        // it wins the race before the commit begins, abort without moving the
+        // downloaded file into the account cache. If the commit already owns
+        // the lock, clearAllForUser waits and removes the committed files
+        // immediately after this block completes.
+        _requireCurrentGeneration(accountId, generation);
+        await temporary.rename(location.mediaFile.path);
+        await writeHook?.call(VoiceCacheWriteStage.afterMediaRename);
+        final now = _now().toUtc();
+        await _writeMetadata(
+          location.metadataFile,
+          _VoiceCacheMetadata(
+            sourceFingerprint: location.fingerprint,
+            byteLength: receivedBytes,
+            lastAccessed: now,
+            expiresAt: now.add(expiry),
+          ),
+        );
+      });
+      // A sign-out may have requested a clear while the commit held the
+      // account lock. The clear runs immediately after the lock releases;
+      // do not report a successful cache entry to the ended session.
+      _requireCurrentGeneration(accountId, generation);
       await prune(accountId, protectedFingerprint: location.fingerprint);
+      _requireCurrentGeneration(accountId, generation);
       return VoiceCacheEntry(
         file: location.mediaFile,
         byteLength: receivedBytes,
@@ -331,6 +355,17 @@ class VoiceCacheService implements VoiceCacheRepository {
   }
 
   Future<void> prune(String accountId, {String? protectedFingerprint}) async {
+    await _withAccountFileLock(
+      accountId,
+      () =>
+          _pruneUnlocked(accountId, protectedFingerprint: protectedFingerprint),
+    );
+  }
+
+  Future<void> _pruneUnlocked(
+    String accountId, {
+    String? protectedFingerprint,
+  }) async {
     final root = await _root(accountId);
     if (!await root.exists()) return;
     final entries = <(_VoiceCacheLocation, _VoiceCacheMetadata)>[];
@@ -371,8 +406,33 @@ class VoiceCacheService implements VoiceCacheRepository {
 
   Future<void> clearAllForUser(String accountId) async {
     _accountGenerations[accountId] = (_accountGenerations[accountId] ?? 0) + 1;
-    final root = await _root(accountId);
-    if (await root.exists()) await root.delete(recursive: true);
+    await _withAccountFileLock(accountId, () async {
+      final root = await _root(accountId);
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+  }
+
+  /// Serializes only the short filesystem commit/cleanup sections for one
+  /// account. Downloads for other accounts remain independent, and a clear
+  /// never waits for an in-flight network transfer that has not reached this
+  /// section yet.
+  Future<T> _withAccountFileLock<T>(
+    String accountId,
+    Future<T> Function() action,
+  ) async {
+    final previous = _accountFileLocks[accountId] ?? Future<void>.value();
+    final completed = Completer<void>();
+    final current = previous.then((_) => completed.future);
+    _accountFileLocks[accountId] = current;
+    await previous;
+    try {
+      return await action();
+    } finally {
+      completed.complete();
+      if (identical(_accountFileLocks[accountId], current)) {
+        _accountFileLocks.remove(accountId);
+      }
+    }
   }
 
   void _requireCurrentGeneration(String accountId, int generation) {

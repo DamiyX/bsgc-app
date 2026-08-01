@@ -312,12 +312,20 @@ class _MainHallScreenState extends State<MainHallScreen> {
     setState(_groupStreams.retry);
   }
 
+  Future<void> _resetUnreadCountSafely(String groupId) async {
+    try {
+      await _chatService.resetUnreadCount(groupId);
+    } catch (_) {
+      // Study Room reconciliation retries when the room becomes active.
+    }
+  }
+
   Future<void> _openGroup(
     GroupModel group, {
     NotificationDestination? destination,
     String? initialSpace,
   }) async {
-    unawaited(_chatService.resetUnreadCount(group.id));
+    unawaited(_resetUnreadCountSafely(group.id));
     await Navigator.push(
       context,
       MaterialPageRoute(

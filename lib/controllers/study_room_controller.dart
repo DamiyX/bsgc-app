@@ -202,6 +202,14 @@ class StudyRoomController extends ChangeNotifier {
     }
   }
 
+  Future<void> _reconcileUnreadBeforeDispose() async {
+    try {
+      await _readReconciler.reconcile(force: true);
+    } catch (_) {
+      // Disposal has no surface for retry; avoid leaking an unhandled timeout.
+    }
+  }
+
   Future<void> setRoomActive(bool active) => _readReconciler.setActive(active);
 
   Future<void> retryMessages(String space) async {
@@ -290,7 +298,7 @@ class StudyRoomController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    unawaited(_readReconciler.reconcile(force: true));
+    unawaited(_reconcileUnreadBeforeDispose());
     unawaited(_groupSub?.cancel());
     unawaited(_visibilitySubscription?.cancel());
     for (final subscription in _messageSubscriptions.values) {

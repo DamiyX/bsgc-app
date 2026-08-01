@@ -429,3 +429,29 @@ check. This remains source evidence only: deployed Storage/Functions parity,
 native Firestore offline acknowledgement, physical-device media and
 accessibility review, cache isolation, App Check, release artifacts,
 operations, legal, and product approval remain open.
+
+## Continuation verification — Wave 19 source closure
+
+Wave 19 reviewed two additional source-controlled gaps and then paused for a
+remaining-work checkpoint. The detailed evidence is
+`docs/testing/wave-19-mutation-inventory.md` and
+`docs/testing/wave-19-offline-media.md`.
+
+- `UX-010`: personal Study Room state writes for hidden messages, clear-for-me,
+  and unread reset now wait for Firestore server acknowledgement. The Main
+  Hall fire-and-forget reset and controller-disposal reconciliation have safe
+  error boundaries, so an offline timeout does not become an unhandled future.
+- `SEC-006` / `PERF-004`: VoiceCacheService now serializes per-account final
+  media commit, cache-hit metadata refresh, pruning, and sign-out deletion.
+  Generation checks abort or invalidate an ended session, and the regression
+  test proves cleanup waits for a deliberately paused finalization and leaves
+  no account directory.
+
+Wave 19 source evidence is 109 passing Flutter tests, 29 focused Study
+Room/voice-cache tests, 78 passing Functions tests, clean `flutter analyze`,
+clean pinned formatting, and a passing Functions syntax check. No Rules files
+changed, so the integrated 31-test Rules Emulator baseline remains the
+applicable source check. This remains source evidence only: device/offline
+and process-death review, Firestore native-cache isolation, deployed parity,
+App Check, release artifacts, operations, legal, and product approval remain
+open. No further continuation wave is being opened in this checkpoint.

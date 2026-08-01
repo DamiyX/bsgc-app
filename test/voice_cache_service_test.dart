@@ -149,6 +149,54 @@ void main() {
     );
   });
 
+  test('clear waits for final cache commit and removes its result', () async {
+    late VoiceCacheService service;
+    final commitPaused = Completer<void>();
+    final releaseCommit = Completer<void>();
+    Future<void>? clearing;
+    var clearCompleted = false;
+    service = VoiceCacheService(
+      cacheRootProvider: (accountId) async =>
+          Directory('${root.path}${Platform.pathSeparator}$accountId'),
+      download: (uri) async =>
+          VoiceDownloadResponse(contentLength: 2, bytes: Stream.value([1, 2])),
+      writeHook: (stage) async {
+        if (stage != VoiceCacheWriteStage.afterMediaRename) return;
+        clearing = service.clearAllForUser('account-a');
+        clearing!.whenComplete(() => clearCompleted = true);
+        commitPaused.complete();
+        await releaseCommit.future;
+      },
+    );
+
+    final preparation = service.prepare(
+      accountId: 'account-a',
+      sourceUrl: 'https://media.example/private.m4a',
+    );
+    await commitPaused.future;
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(clearCompleted, isFalse);
+    releaseCommit.complete();
+
+    await expectLater(
+      preparation,
+      throwsA(
+        isA<VoiceCacheException>().having(
+          (error) => error.kind,
+          'kind',
+          VoiceCacheFailureKind.authorization,
+        ),
+      ),
+    );
+    await clearing;
+    expect(
+      await Directory(
+        '${root.path}${Platform.pathSeparator}account-a',
+      ).exists(),
+      isFalse,
+    );
+  });
+
   test('evicts expired entries and least-recently-used bytes', () async {
     var now = DateTime.utc(2026, 7, 29);
     final payloads = <String, List<int>>{

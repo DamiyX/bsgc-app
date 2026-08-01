@@ -58,6 +58,20 @@ class GroupOperationFailure implements Exception {
   String toString() => message;
 }
 
+/// Runs a chat-state write and waits for Firestore's server acknowledgement
+/// before the caller treats the mutation as durable.
+///
+/// Firestore resolves writes from its local cache while offline. Keeping the
+/// write and acknowledgement as one explicit operation prevents personal room
+/// actions from presenting a confirmed result after only a local enqueue.
+Future<void> persistAcknowledgedChatStateWrite({
+  required Future<void> Function() write,
+  required Future<void> Function() awaitAcknowledgement,
+}) async {
+  await write();
+  await awaitAcknowledgement();
+}
+
 GroupOperationFailure groupOperationFailureForCode(
   String? code, {
   Object? details,
@@ -658,9 +672,11 @@ class ChatService {
 
   Future<void> resetUnreadCount(String groupId) async {
     final user = _requireUser();
-    await _firestore.collection('groups').doc(groupId).update({
-      'unreadCounts.${user.uid}': 0,
-    });
+    final reference = _firestore.collection('groups').doc(groupId);
+    await persistAcknowledgedChatStateWrite(
+      write: () => reference.update({'unreadCounts.${user.uid}': 0}),
+      awaitAcknowledgement: () => waitForDocumentCommit(reference),
+    );
   }
 
   Future<void> deleteMessage(String groupId, String messageId) async {
@@ -676,31 +692,37 @@ class ChatService {
 
   Future<void> deleteMessageForMe(String groupId, String messageId) async {
     final user = _requireUser();
-    await _firestore
+    final reference = _firestore
         .collection('users')
         .doc(user.uid)
         .collection('group_state')
         .doc(groupId)
         .collection('hidden_messages')
-        .doc(messageId)
-        .set({
-          'messageId': messageId,
-          'hiddenAt': FieldValue.serverTimestamp(),
-        });
+        .doc(messageId);
+    await persistAcknowledgedChatStateWrite(
+      write: () => reference.set({
+        'messageId': messageId,
+        'hiddenAt': FieldValue.serverTimestamp(),
+      }),
+      awaitAcknowledgement: () => waitForDocumentCommit(reference),
+    );
   }
 
   Future<void> clearChatForMe(String groupId) async {
     final user = _requireUser();
-    await _firestore
+    final reference = _firestore
         .collection('users')
         .doc(user.uid)
         .collection('group_state')
-        .doc(groupId)
-        .set({
-          'groupId': groupId,
-          'clearedBefore': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        .doc(groupId);
+    await persistAcknowledgedChatStateWrite(
+      write: () => reference.set({
+        'groupId': groupId,
+        'clearedBefore': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true)),
+      awaitAcknowledgement: () => waitForDocumentCommit(reference),
+    );
   }
 
   Future<void> setGroupMuted(String groupId, bool muted) async {
