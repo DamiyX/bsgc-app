@@ -1,5 +1,7 @@
 # Copy this file to android/key.properties and fill it from a secure secret
 # store. Never commit the real file or keystore.
+# `storeFile` is relative to the android/ project directory, or may be an
+# absolute path outside the repository.
 storePassword=
 keyPassword=
 keyAlias=

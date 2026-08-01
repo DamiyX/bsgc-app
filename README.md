@@ -87,7 +87,7 @@ The release workflow requires these repository secrets:
 
 Before enabling external invites:
 
-1. replace the release-certificate placeholder in `web_deployment/public/.well-known/assetlinks.json`;
+1. replace the Play App Signing certificate placeholder in `web_deployment/public/.well-known/assetlinks.json` (the upload certificate is a separate key);
 2. replace the Apple Team ID placeholder in `apple-app-site-association`;
 3. deploy the files to `braidapp.com` over HTTPS without redirects;
 4. verify both association endpoints from a physical device;

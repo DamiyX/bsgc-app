@@ -1,7 +1,7 @@
 {
   "workflow": "Braid full audit remediation",
   "branch": "codex/bsgc-full-remediation",
-  "current_phase": "Post-remediation implementation wave 10 scale slice verified locally",
+  "current_phase": "Post-remediation implementation wave 11 release configuration slice verified locally; Android build evidence pending CI",
   "repository_implementation": "in progress against docs/post-remediation-audit/05-prioritized-implementation-plan.md",
   "automated_verification": {
     "flutter_format": "pass",
@@ -11,17 +11,22 @@
     "firebase_rules_tests": "31 passed",
     "functions_check": "pass",
     "migration_rehearsal": "pass",
-    "git_diff_check": "pass"
+    "git_diff_check": "pass",
+    "firebase_hosting_json_parse": "pass",
+    "android_local_debug_compile": "inconclusive: 120s and 300s bounded attempts timed out without APK; Gradle stopped",
+    "android_ci_debug_compile": "pending GitHub run",
+    "signed_aab_size_evidence": "pending protected release workflow and owner secrets"
   },
   "open_gates": [
     "Android emulator and physical-device visual/offline/accessibility review",
     "official firebase_app_check dependency and provider activation (requires owner approval)",
     "successful signed release AAB and size analysis",
+    "quality workflow Android debug compile on this branch",
     "production backup and migration dry-run review",
     "staged Firebase backend deployment",
     "production signing and App/Universal Link verification",
     "legal, store, monitoring, and operational approval"
   ],
-  "next_action": "Commit the verified Milestone 10 scale slice locally, then continue Milestones 11-12; keep device performance traces, legacy snapshot backfill, App Check, and release configuration as explicit gates.",
-  "updated_at": "2026-08-01T10:10:00+01:00"
+  "next_action": "Commit the verified Milestone 11 release/configuration slice locally, then complete Milestone 12 final regression audit; keep CI Android compile, signed AAB/size evidence, Play App Signing links, device QA, legacy snapshot backfill, and App Check as explicit gates.",
+  "updated_at": "2026-08-01T11:10:00+01:00"
 }

@@ -7,8 +7,9 @@
 - [ ] Firestore and Storage Emulator tests pass.
 - [ ] Signed release AAB builds with R8/resource shrinking.
 - [ ] `--analyze-size` report reviewed; Play device-specific download recorded.
+- [ ] The `android-release` GitHub environment has required reviewers and the signing secrets are restricted to that environment.
 - [ ] Production signing secrets are outside Git; debug signing absent.
-- [ ] `assetlinks.json` has the release certificate SHA-256 and verifies.
+- [ ] `assetlinks.json` has the Play App Signing certificate SHA-256 and verifies (list the upload certificate separately only when direct sideloads need to be supported).
 - [ ] Apple association file has the real Team ID before iOS claims support.
 - [ ] Canonical `/join/{token}` tested through install/sign-in/onboarding.
 - [ ] Production backend exported; migration dry-run reviewed; rollback owner named.
@@ -21,4 +22,4 @@
 
 ## Distribution
 
-Use Play internal testing first, then closed testing. Do not serve repository APKs from the invite website. Promote only the exact reviewed AAB and retain its commit, version, mapping/symbol files, test evidence, and signer fingerprint.
+Use Play internal testing first, then closed testing. Do not serve repository APKs from the invite website. Promote only the exact reviewed AAB and retain its commit, version, mapping/symbol files, test evidence, Play app-signing fingerprint, and upload-key provenance.

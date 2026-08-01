@@ -11,16 +11,23 @@ permissions:
 jobs:
   flutter:
     runs-on: ubuntu-latest
+    env:
+      # CI runners have more headroom than a contributor laptop; keep the
+      # local Gradle profile conservative while allowing release smoke builds
+      # to use the runner's capacity.
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx6G"
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: '3.44.8'
           cache: true
       - run: flutter pub get
       - run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter analyze
       - run: flutter test
+      - name: Android debug compile smoke
+        run: flutter build apk --debug --target-platform android-arm64 --split-per-abi --no-pub
 
   functions:
     runs-on: ubuntu-latest

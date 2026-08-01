@@ -51,7 +51,9 @@ android {
             create("release") {
                 keyAlias = signingProperty("keyAlias")
                 keyPassword = signingProperty("keyPassword")
-                storeFile = file(signingProperty("storeFile"))
+                // Resolve relative paths from the Android project root so the
+                // CI workflow and local key.properties use the same contract.
+                storeFile = rootProject.file(signingProperty("storeFile"))
                 storePassword = signingProperty("storePassword")
             }
         }

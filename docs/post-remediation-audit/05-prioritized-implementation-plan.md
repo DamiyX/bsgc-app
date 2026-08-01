@@ -141,6 +141,42 @@ scale. Device traces for time-to-first-content, reads per open, room frame
 time, memory, and cache bytes are still required before claiming production
 performance budgets.
 
+## Implementation status — wave 11 release configuration and measured app-size slice
+
+This bounded release slice addresses the source-controlled portion of
+SIZE-001–004, BUILD-001–003, and RELENG-001–004:
+
+- local Android Gradle memory is reduced to a 3 GB heap, 1 GB metaspace, two
+  workers, and no parallel project execution; quality/release CI can override
+  the heap for its larger runner;
+- normal quality CI now pins Flutter 3.44.8 and performs an arm64 debug APK
+  compile smoke after tests;
+- the manual signed workflow pins the same Flutter toolchain, declares an
+  `android-release` environment and serialized concurrency, captures commit,
+  ref, version, Java/Gradle/Flutter evidence, builds a signed AAB plus an
+  arm64 split APK with `--analyze-size`, and uploads checksums, size reports,
+  mapping/symbol outputs, and the artifacts;
+- signing paths now use an explicit Android-root-relative contract, and the
+  Hosting ignore list no longer drops the `.well-known` association files;
+- `docs/release/asset-manifest.md` records the intentional offline Bible
+  payloads, launcher/splash inputs, draft logo sources, and the measured-size
+  procedure without deleting unapproved design assets.
+
+The local arm64 debug compile was attempted twice with the reduced profile. It
+exceeded bounded 120-second and 300-second windows without producing an APK;
+the Gradle daemon was stopped after each attempt. This is recorded as an
+unproven local compile, not a pass or a compiler failure. The clean CI smoke
+run and the protected signed workflow remain the authoritative Android build
+evidence.
+
+Still required before Milestone 11 acceptance: configure the GitHub
+`android-release` environment and signing secrets, obtain the real Play App
+Signing fingerprint, run the workflow on the reviewed commit, review the AAB
+and device-specific size reports, record Play Console arm64 download/install
+estimates, deploy and curl-test the association files, and complete the
+Play-installed invite test. No source change can prove those owner- and
+console-controlled gates.
+
 ---
 
 ## Non-negotiable execution contract
