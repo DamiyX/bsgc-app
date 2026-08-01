@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:bsgc_app/services/voice_cache_service.dart';
@@ -15,6 +16,16 @@ void main() {
   tearDown(() async {
     if (await root.exists()) await root.delete(recursive: true);
   });
+
+  Future<File> metadataFile() async {
+    final accountRoot = Directory(
+      '${root.path}${Platform.pathSeparator}account-a',
+    );
+    await for (final entity in accountRoot.list(followLinks: false)) {
+      if (entity is File && entity.path.endsWith('.json')) return entity;
+    }
+    throw StateError('Expected one voice-cache metadata file.');
+  }
 
   test(
     'first preparation reports progress and becomes an offline cache hit',
@@ -195,6 +206,147 @@ void main() {
       ).exists(),
       isFalse,
     );
+  });
+
+  test('recovers valid metadata from a backup sidecar', () async {
+    final service = VoiceCacheService(
+      cacheRootProvider: (accountId) async =>
+          Directory('${root.path}${Platform.pathSeparator}$accountId'),
+      download: (uri) async =>
+          VoiceDownloadResponse(contentLength: 2, bytes: Stream.value([1, 2])),
+    );
+    await service.prepare(
+      accountId: 'account-a',
+      sourceUrl: 'https://media.example/recover.m4a',
+    );
+    final metadata = await metadataFile();
+    await metadata.rename('${metadata.path}.bak');
+
+    final restored = await service.lookup(
+      accountId: 'account-a',
+      sourceUrl: 'https://media.example/recover.m4a',
+    );
+
+    expect(restored?.wasCached, isTrue);
+    expect(await metadata.exists(), isTrue);
+    expect(await File('${metadata.path}.bak').exists(), isFalse);
+  });
+
+  test('recovers a valid newer metadata temp sidecar', () async {
+    final service = VoiceCacheService(
+      cacheRootProvider: (accountId) async =>
+          Directory('${root.path}${Platform.pathSeparator}$accountId'),
+      download: (uri) async =>
+          VoiceDownloadResponse(contentLength: 2, bytes: Stream.value([1, 2])),
+    );
+    await service.prepare(
+      accountId: 'account-a',
+      sourceUrl: 'https://media.example/recover-temp.m4a',
+    );
+    final metadata = await metadataFile();
+    final decoded = jsonDecode(await metadata.readAsString())
+        as Map<String, dynamic>;
+    decoded['lastAccessed'] = '2030-01-01T00:00:00.000Z';
+    decoded['expiresAt'] = '2030-02-01T00:00:00.000Z';
+    await File('${metadata.path}.tmp').writeAsString(
+      jsonEncode(decoded),
+      flush: true,
+    );
+
+    final restored = await service.lookup(
+      accountId: 'account-a',
+      sourceUrl: 'https://media.example/recover-temp.m4a',
+    );
+
+    expect(restored?.wasCached, isTrue);
+    expect(await File('${metadata.path}.tmp').exists(), isFalse);
+    final canonical = jsonDecode(await metadata.readAsString())
+        as Map<String, dynamic>;
+    expect(canonical['lastAccessed'], isNot('2030-01-01T00:00:00.000Z'));
+  });
+
+  test('metadata replacement keeps a recoverable sidecar after interruption',
+      () async {
+    final stable = VoiceCacheService(
+      cacheRootProvider: (accountId) async =>
+          Directory('${root.path}${Platform.pathSeparator}$accountId'),
+      download: (uri) async =>
+          VoiceDownloadResponse(contentLength: 2, bytes: Stream.value([1, 2])),
+    );
+    await stable.prepare(
+      accountId: 'account-a',
+      sourceUrl: 'https://media.example/metadata-interrupt.m4a',
+    );
+    final interrupted = VoiceCacheService(
+      cacheRootProvider: (accountId) async =>
+          Directory('${root.path}${Platform.pathSeparator}$accountId'),
+      download: (uri) async =>
+          VoiceDownloadResponse(contentLength: 2, bytes: Stream.value([1, 2])),
+      writeHook: (stage) async {
+        if (stage == VoiceCacheWriteStage.metadataBackupReady) {
+          throw StateError('simulated metadata process death');
+        }
+      },
+    );
+
+    await expectLater(
+      interrupted.lookup(
+        accountId: 'account-a',
+        sourceUrl: 'https://media.example/metadata-interrupt.m4a',
+      ),
+      throwsStateError,
+    );
+    final recovered = await stable.lookup(
+      accountId: 'account-a',
+      sourceUrl: 'https://media.example/metadata-interrupt.m4a',
+    );
+    expect(recovered?.wasCached, isTrue);
+    final metadata = await metadataFile();
+    expect(await File('${metadata.path}.bak').exists(), isFalse);
+    expect(await File('${metadata.path}.tmp').exists(), isFalse);
+  });
+
+  test('clear invalidates the old same-account in-flight future', () async {
+    final firstResponse = Completer<VoiceDownloadResponse>();
+    final secondResponse = Completer<VoiceDownloadResponse>();
+    final firstStarted = Completer<void>();
+    var downloads = 0;
+    final service = VoiceCacheService(
+      cacheRootProvider: (accountId) async =>
+          Directory('${root.path}${Platform.pathSeparator}$accountId'),
+      download: (uri) {
+        downloads++;
+        if (downloads == 1) {
+          firstStarted.complete();
+          return firstResponse.future;
+        }
+        return secondResponse.future;
+      },
+    );
+
+    final first = service.prepare(
+      accountId: 'account-a',
+      sourceUrl: 'https://media.example/restart.m4a',
+    );
+    await firstStarted.future;
+    final clearing = service.clearAllForUser('account-a');
+    final second = service.prepare(
+      accountId: 'account-a',
+      sourceUrl: 'https://media.example/restart.m4a',
+    );
+    expect(identical(first, second), isFalse);
+    await clearing;
+    secondResponse.complete(
+      VoiceDownloadResponse(contentLength: 1, bytes: Stream.value([2])),
+    );
+    final replacement = await second;
+    firstResponse.complete(
+      VoiceDownloadResponse(contentLength: 1, bytes: Stream.value([1])),
+    );
+
+    await expectLater(first, throwsA(isA<VoiceCacheException>()));
+    expect(downloads, 2);
+    expect(await replacement.file.readAsBytes(), [2]);
   });
 
   test('evicts expired entries and least-recently-used bytes', () async {

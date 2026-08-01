@@ -39,6 +39,14 @@ for the explicitly durable local drafts and message outbox below.
 > failure uses truthful discard/re-record copy; the move-to-draft process-death
 > boundary still requires the device matrix above.
 
+> Execution Wave 2 source clarification: DraftService now serializes writes
+> per account root, validates provider paths, and recovers valid canonical,
+> temporary, or backup candidates. Voice-cache metadata uses the same
+> backup-preserving recovery boundary; downloads use unique temporary files,
+> and account clearing invalidates stale in-flight work. These changes add
+> deterministic source seams but do not replace the device process-death,
+> codec, radio-transition, or native Firestore-cache checks below.
+
 ## Required airplane-mode verification
 
 Run this matrix on an Android emulator and at least one physical device:

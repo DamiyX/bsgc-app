@@ -37,7 +37,7 @@ const {
   collectGroupCoverReference,
   collectMessageAssetReferences,
   collectProfilePhotoReference,
-  deleteUnregisteredMessageAsset,
+  deleteUnregisteredManagedAsset,
   reconcileExpiredManagedAsset,
   reconcileManagedReferences,
   registerManagedAsset,
@@ -2482,11 +2482,11 @@ exports.trackManagedMedia = onObjectFinalized(
       ?? buildGroupCoverAssetRecord(object)
       ?? buildProfilePhotoAssetRecord(object);
     if (!record) {
-      if (await deleteUnregisteredMessageAsset({
+      if (await deleteUnregisteredManagedAsset({
         storage: admin.storage(),
         object,
       })) {
-        logger.warn("Removed an unregistered managed message asset.");
+        logger.warn("Removed an unregistered managed media object.");
       }
       return;
     }

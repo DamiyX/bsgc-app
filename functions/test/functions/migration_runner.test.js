@@ -112,6 +112,55 @@ const phases = [{
 }];
 
 describe("resumable migration runner", () => {
+  test("uses the injected clock for lease acquire and renewal", async () => {
+    const leaseEvents = [];
+    const adapter = {
+      async acquireLease(runId, owner, expiresAtMillis) {
+        leaseEvents.push({ method: "acquire", runId, owner, expiresAtMillis });
+      },
+      async renewLease(runId, owner, expiresAtMillis) {
+        leaseEvents.push({ method: "renew", runId, owner, expiresAtMillis });
+      },
+      async releaseLease() {},
+      async loadRun() {
+        return null;
+      },
+      async saveRun() {},
+      async fetchPage(_phase, afterId) {
+        return afterId
+          ? []
+          : [{ id: "a", path: "legacy/a", data: { value: "A" } }];
+      },
+    };
+
+    await runMigration({
+      adapter,
+      phases,
+      runId: "run-clock",
+      apply: false,
+      pageSize: 1,
+      batchSize: 1,
+      concurrency: 1,
+      nowMillis: 10_000,
+      leaseNowMillis: () => 10_000,
+      leaseDurationMillis: 500,
+      leaseOwner: "clock-owner",
+    });
+
+    assert.deepEqual(
+      leaseEvents.map(({ method, expiresAtMillis }) => ({
+        method,
+        expiresAtMillis,
+      })),
+      [
+        { method: "acquire", expiresAtMillis: 10_500 },
+        { method: "renew", expiresAtMillis: 10_500 },
+        { method: "renew", expiresAtMillis: 10_500 },
+        { method: "renew", expiresAtMillis: 10_500 },
+      ],
+    );
+  });
+
   test("uses deterministic cursors, bounded batches, and resumes safely", async () => {
     const adapter = fakeAdapter({
       "legacy/c": { value: "C" },

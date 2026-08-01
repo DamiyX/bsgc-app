@@ -93,7 +93,12 @@ class VoiceDownloadResponse {
   });
 }
 
-enum VoiceCacheWriteStage { afterMediaRename }
+enum VoiceCacheWriteStage {
+  afterMediaRename,
+  metadataTempFlushed,
+  metadataBackupReady,
+  metadataCommitted,
+}
 
 typedef VoiceCacheWriteHook = Future<void> Function(VoiceCacheWriteStage stage);
 
@@ -147,6 +152,8 @@ class VoiceCacheService implements VoiceCacheRepository {
   final Map<String, Future<VoiceCacheEntry>> _inFlight = {};
   final Map<String, int> _accountGenerations = {};
   final Map<String, Future<void>> _accountFileLocks = {};
+  final Set<String> _activeTemporaryPaths = {};
+  var _temporarySequence = 0;
 
   static const _supportedExtensions = {
     'aac',
@@ -239,11 +246,13 @@ class VoiceCacheService implements VoiceCacheRepository {
       return cached;
     }
 
+    _requireCurrentGeneration(accountId, generation);
     final location = await _location(accountId, sourceUrl);
     await location.mediaFile.parent.create(recursive: true);
-    final temporary = File('${location.mediaFile.path}.tmp');
-    if (await temporary.exists()) await temporary.delete();
+    final temporary = _temporaryFile(location);
+    _activeTemporaryPaths.add(_normalizedPath(temporary.path));
     IOSink? sink;
+    var committedMedia = false;
     try {
       int receivedBytes;
       int? expectedBytes;
@@ -322,6 +331,7 @@ class VoiceCacheService implements VoiceCacheRepository {
         // immediately after this block completes.
         _requireCurrentGeneration(accountId, generation);
         await temporary.rename(location.mediaFile.path);
+        committedMedia = true;
         await writeHook?.call(VoiceCacheWriteStage.afterMediaRename);
         final now = _now().toUtc();
         await _writeMetadata(
@@ -348,9 +358,24 @@ class VoiceCacheService implements VoiceCacheRepository {
     } catch (error) {
       await sink?.close();
       if (await temporary.exists()) await temporary.delete();
+      // A canceled operation may finish after a newer post-clear operation
+      // has committed the same source fingerprint. Only tear down the final
+      // cache location when this operation actually moved its own media into
+      // place; otherwise deleting it would erase the replacement's result.
+      if (committedMedia) {
+        await _withAccountFileLock(accountId, () async {
+          // A clear or account switch may have handed this fingerprint to a
+          // newer session. In that case the newer session owns the location;
+          // only the generation that committed this media may clean it up.
+          if ((_accountGenerations[accountId] ?? 0) != generation) return;
+          await _removeLocation(location, includeMedia: true);
+        });
+      }
       if (error is VoiceCacheException) rethrow;
       final kind = classifyVoiceCacheFailure(error, hasCachedFile: false);
       throw VoiceCacheException(kind, _failureMessage(kind), cause: error);
+    } finally {
+      _activeTemporaryPaths.remove(_normalizedPath(temporary.path));
     }
   }
 
@@ -368,8 +393,32 @@ class VoiceCacheService implements VoiceCacheRepository {
   }) async {
     final root = await _root(accountId);
     if (!await root.exists()) return;
+    final metadataFiles = <String>{};
+    final temporaryFiles = <File>[];
+    await for (final entity in root.list(followLinks: false)) {
+      if (entity is! File) continue;
+      if (entity.path.endsWith('.json')) {
+        metadataFiles.add(entity.path);
+      } else if (entity.path.endsWith('.json.tmp') ||
+          entity.path.endsWith('.json.bak')) {
+        metadataFiles.add(
+          entity.path.substring(0, entity.path.length - 4),
+        );
+      } else if (entity.path.endsWith('.tmp')) {
+        temporaryFiles.add(entity);
+      }
+    }
+    for (final metadataPath in metadataFiles) {
+      await _readMetadata(File(metadataPath));
+    }
+    for (final temporary in temporaryFiles) {
+      if (!_activeTemporaryPaths.contains(_normalizedPath(temporary.path)) &&
+          await temporary.exists()) {
+        await temporary.delete();
+      }
+    }
     final entries = <(_VoiceCacheLocation, _VoiceCacheMetadata)>[];
-    await for (final entity in root.list()) {
+    await for (final entity in root.list(followLinks: false)) {
       if (entity is! File || !entity.path.endsWith('.json')) continue;
       final metadata = await _readMetadata(entity);
       if (metadata == null) {
@@ -405,7 +454,14 @@ class VoiceCacheService implements VoiceCacheRepository {
   }
 
   Future<void> clearAllForUser(String accountId) async {
+    _validateAccountId(accountId);
     _accountGenerations[accountId] = (_accountGenerations[accountId] ?? 0) + 1;
+    final prefix = '$accountId\u0000';
+    for (final key in _inFlight.keys
+        .where((key) => key.startsWith(prefix))
+        .toList()) {
+      _inFlight.remove(key);
+    }
     await _withAccountFileLock(accountId, () async {
       final root = await _root(accountId);
       if (await root.exists()) await root.delete(recursive: true);
@@ -481,6 +537,13 @@ class VoiceCacheService implements VoiceCacheRepository {
     );
   }
 
+  File _temporaryFile(_VoiceCacheLocation location) {
+    final sequence = _temporarySequence++;
+    return File(
+      '${location.mediaFile.path}.${_now().microsecondsSinceEpoch}-$sequence.tmp',
+    );
+  }
+
   bool _isCanonicalManagedPath(Uri uri) {
     if (uri.host.isNotEmpty || uri.hasQuery || uri.hasFragment) return false;
     final path = uri.path.startsWith('/') ? uri.path.substring(1) : uri.path;
@@ -505,29 +568,123 @@ class VoiceCacheService implements VoiceCacheRepository {
     }
   }
 
-  Future<_VoiceCacheMetadata?> _readMetadata(File file) async {
-    if (!await file.exists()) return null;
-    try {
-      final decoded = jsonDecode(await file.readAsString());
-      if (decoded is! Map<String, dynamic>) return null;
-      return _VoiceCacheMetadata.fromJson(decoded);
-    } catch (_) {
-      return null;
-    }
+  String _normalizedPath(String path) {
+    final absolute = File(path).absolute.path;
+    return absolute.replaceFirst(RegExp(r'[\\/]+$'), '');
   }
 
-  Future<void> _writeMetadata(File file, _VoiceCacheMetadata metadata) async {
+  Future<_VoiceCacheMetadata?> _readMetadata(File file) async {
+    final candidates = <_VoiceMetadataCandidate>[];
+    final files = <File>[
+      file,
+      File('${file.path}.tmp'),
+      File('${file.path}.bak'),
+    ];
+    for (var index = 0; index < files.length; index++) {
+      final candidateFile = files[index];
+      if (!await candidateFile.exists()) continue;
+      try {
+        final decoded = jsonDecode(await candidateFile.readAsString());
+        if (decoded is! Map) continue;
+        final metadata = _VoiceCacheMetadata.fromJson(
+          Map<String, dynamic>.from(decoded),
+        );
+        candidates.add(
+          _VoiceMetadataCandidate(
+            file: candidateFile,
+            metadata: metadata,
+            modifiedAt: await candidateFile.lastModified(),
+            priority: files.length - index,
+          ),
+        );
+      } catch (_) {
+        // A torn metadata write is ignored while another valid candidate can
+        // still restore the cache entry.
+      }
+    }
+    if (candidates.isEmpty) return null;
+    candidates.sort((first, second) {
+      final logical = second.metadata.lastAccessed.compareTo(
+        first.metadata.lastAccessed,
+      );
+      if (logical != 0) return logical;
+      final modified = second.modifiedAt.compareTo(first.modifiedAt);
+      return modified != 0
+          ? modified
+          : second.priority.compareTo(first.priority);
+    });
+    final selected = candidates.first;
+    if (selected.file.path != file.path) {
+      // Restore through the same backup-preserving transaction. Hooks are
+      // skipped while recovering so a torn write cannot prevent cleanup.
+      await _writeMetadata(file, selected.metadata, invokeHook: false);
+    }
+    for (final stale in files.skip(1)) {
+      if (await stale.exists()) await stale.delete();
+    }
+    return selected.metadata;
+  }
+
+  Future<void> _writeMetadata(
+    File file,
+    _VoiceCacheMetadata metadata, {
+    bool invokeHook = true,
+  }) async {
     await file.parent.create(recursive: true);
     final temporary = File('${file.path}.tmp');
     await temporary.writeAsString(jsonEncode(metadata.toJson()), flush: true);
-    if (await file.exists()) await file.delete();
-    await temporary.rename(file.path);
+    if (invokeHook) {
+      await writeHook?.call(VoiceCacheWriteStage.metadataTempFlushed);
+    }
+    final backup = File('${file.path}.bak');
+    if (await file.exists()) {
+      if (await backup.exists()) await backup.delete();
+      await file.rename(backup.path);
+      if (invokeHook) {
+        await writeHook?.call(VoiceCacheWriteStage.metadataBackupReady);
+      }
+    }
+    try {
+      await temporary.rename(file.path);
+      if (invokeHook) {
+        await writeHook?.call(VoiceCacheWriteStage.metadataCommitted);
+      }
+      if (await backup.exists()) await backup.delete();
+    } catch (_) {
+      if (await backup.exists() && !await file.exists()) {
+        await backup.rename(file.path);
+      }
+      rethrow;
+    }
   }
 
-  Future<void> _removeLocation(_VoiceCacheLocation location) async {
-    if (await location.mediaFile.exists()) await location.mediaFile.delete();
-    if (await location.metadataFile.exists()) {
-      await location.metadataFile.delete();
+  Future<void> _removeLocation(
+    _VoiceCacheLocation location, {
+    bool includeMedia = true,
+  }) async {
+    if (includeMedia && await location.mediaFile.exists()) {
+      await location.mediaFile.delete();
+    }
+    for (final candidate in [
+      location.metadataFile,
+      File('${location.metadataFile.path}.tmp'),
+      File('${location.metadataFile.path}.bak'),
+    ]) {
+      if (await candidate.exists()) await candidate.delete();
+    }
+    final prefix = '${location.mediaFile.path}.';
+    if (await location.mediaFile.parent.exists()) {
+      await for (final entity in location.mediaFile.parent.list(
+        followLinks: false,
+      )) {
+        if (entity is! File ||
+            !entity.path.startsWith(prefix) ||
+            !entity.path.endsWith('.tmp') ||
+            _activeTemporaryPaths.contains(_normalizedPath(entity.path))) {
+          continue;
+        }
+        await entity.delete();
+      }
     }
   }
 
@@ -602,6 +759,20 @@ class _VoiceCacheLocation {
     required this.fingerprint,
     required this.mediaFile,
     required this.metadataFile,
+  });
+}
+
+class _VoiceMetadataCandidate {
+  final File file;
+  final _VoiceCacheMetadata metadata;
+  final DateTime modifiedAt;
+  final int priority;
+
+  const _VoiceMetadataCandidate({
+    required this.file,
+    required this.metadata,
+    required this.modifiedAt,
+    required this.priority,
   });
 }
 

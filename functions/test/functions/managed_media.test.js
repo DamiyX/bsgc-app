@@ -4,7 +4,9 @@ const {
   buildGroupCoverAssetRecord,
   buildMessageAssetRecord,
   collectMessageAssetReferences,
+  deleteUnregisteredManagedAsset,
   deleteUnregisteredMessageAsset,
+  isCanonicalManagedAssetPath,
   isCanonicalMessageAssetPath,
   managedAssetIdForPath,
   nextManagedAssetStatus,
@@ -115,7 +117,26 @@ describe("managed message media contracts", () => {
     );
   });
 
-  test("deletes invalid canonical message objects but ignores other paths", async () => {
+  test("recognizes canonical profile, group-cover, and message paths", () => {
+    assert.equal(
+      isCanonicalManagedAssetPath("users/owner/profile/avatar.jpg"),
+      true,
+    );
+    assert.equal(
+      isCanonicalManagedAssetPath("groups/group-a/covers/cover.jpg"),
+      true,
+    );
+    assert.equal(
+      isCanonicalManagedAssetPath(
+        "groups/group-a/messages/message-a/attachment.jpg",
+      ),
+      true,
+    );
+    assert.equal(isCanonicalManagedAssetPath("users/owner/avatar.jpg"), false);
+    assert.equal(isCanonicalManagedAssetPath("tmp/attachment.jpg"), false);
+  });
+
+  test("deletes invalid canonical managed objects but ignores other paths", async () => {
     const deleted = [];
     const storage = {
       bucket: (bucketName) => ({
@@ -140,12 +161,71 @@ describe("managed message media contracts", () => {
         bucket: "bucket-a",
         name: "groups/group-a/covers/cover.jpg",
       },
+    }), true);
+    assert.equal(await deleteUnregisteredMessageAsset({
+      storage,
+      object: {
+        bucket: "bucket-a",
+        name: "users/owner/avatar.jpg",
+      },
     }), false);
-    assert.deepEqual(deleted, [{
-      bucketName: "bucket-a",
-      storagePath: "groups/group-a/messages/message-a/attachment.jpg",
-      options: { ignoreNotFound: true },
-    }]);
+    assert.deepEqual(deleted, [
+      {
+        bucketName: "bucket-a",
+        storagePath: "groups/group-a/messages/message-a/attachment.jpg",
+        options: { ignoreNotFound: true },
+      },
+      {
+        bucketName: "bucket-a",
+        storagePath: "groups/group-a/covers/cover.jpg",
+        options: { ignoreNotFound: true },
+      },
+    ]);
+  });
+
+  test("deletes invalid canonical profile and group-cover objects", async () => {
+    const deleted = [];
+    const storage = {
+      bucket: (bucketName) => ({
+        file: (storagePath) => ({
+          delete: async (options) => {
+            deleted.push({ bucketName, storagePath, options });
+          },
+        }),
+      }),
+    };
+
+    for (const name of [
+      "users/owner/profile/avatar.jpg",
+      "groups/group-a/covers/cover.jpg",
+      "groups/group-a/messages/message-a/attachment.jpg",
+    ]) {
+      assert.equal(await deleteUnregisteredManagedAsset({
+        storage,
+        object: { bucket: "bucket-a", name },
+      }), true);
+    }
+    assert.equal(await deleteUnregisteredManagedAsset({
+      storage,
+      object: { bucket: "bucket-a", name: "users/owner/avatar.jpg" },
+    }), false);
+    assert.deepEqual(deleted, [
+      {
+        bucketName: "bucket-a",
+        storagePath: "users/owner/profile/avatar.jpg",
+        options: { ignoreNotFound: true },
+      },
+      {
+        bucketName: "bucket-a",
+        storagePath: "groups/group-a/covers/cover.jpg",
+        options: { ignoreNotFound: true },
+      },
+      {
+        bucketName: "bucket-a",
+        storagePath: "groups/group-a/messages/message-a/attachment.jpg",
+        options: { ignoreNotFound: true },
+      },
+    ]);
   });
 
   test("collects only canonical managed references, never HTTPS URLs", () => {

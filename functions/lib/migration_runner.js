@@ -95,6 +95,7 @@ async function runMigration({
   batchSize = 200,
   concurrency = 4,
   nowMillis = Date.now(),
+  leaseNowMillis = Date.now,
   leaseOwner = crypto.randomUUID(),
   leaseDurationMillis = 5 * 60_000,
 }) {
@@ -105,12 +106,17 @@ async function runMigration({
   if (!Array.isArray(phases) || phases.length === 0) {
     throw new TypeError("at least one migration phase is required");
   }
+  if (typeof leaseNowMillis !== "function") {
+    throw new TypeError("leaseNowMillis must be a function");
+  }
+
+  const leaseExpiryMillis = () => leaseNowMillis() + leaseDurationMillis;
 
   if (typeof adapter.acquireLease === "function") {
     await adapter.acquireLease(
       runId,
       leaseOwner,
-      Date.now() + leaseDurationMillis,
+      leaseExpiryMillis(),
     );
   }
   let state = await adapter.loadRun(runId);
@@ -148,7 +154,7 @@ async function runMigration({
           await adapter.renewLease(
             runId,
             leaseOwner,
-            Date.now() + leaseDurationMillis,
+            leaseExpiryMillis(),
           );
         }
         const page = await adapter.fetchPage(phase.name, cursor, pageSize);
@@ -231,7 +237,7 @@ async function runMigration({
             await adapter.renewLease(
               runId,
               leaseOwner,
-              Date.now() + leaseDurationMillis,
+              leaseExpiryMillis(),
             );
           }
         }

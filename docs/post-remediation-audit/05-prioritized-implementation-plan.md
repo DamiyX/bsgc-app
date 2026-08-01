@@ -525,6 +525,32 @@ before-upload design, device/offline behavior, deployed parity, CI/release,
 App Check, migration, operations, legal, and product acceptance remain
 external gates.
 
+## Implementation status — execution Wave 2 offline/media source closure
+
+The next bounded execution slice is recorded in
+`docs/testing/execution-wave-2-offline-media.md`. It was opened only after a
+fresh source trace identified concrete reliability gaps inside the Milestone
+5/6 contracts; it is not a general re-audit or an automatic continuation of
+the historical Wave 20–23 labels.
+
+Track A hardens local drafts and the account-scoped voice cache. Draft and
+composer files now use per-account-root serialization, validated identifiers,
+backup-preserving replacement, and recovery from valid `.tmp`/`.bak`
+candidates. Voice metadata uses the same recovery contract, downloads use
+unique temporary paths, stale sidecars are pruned, and account clearing
+invalidates old in-flight work without allowing it to remove a newer
+replacement.
+
+Track B generalizes finalized managed-media cleanup to canonical profile,
+group-cover, and message paths, and makes migration lease renewal use a live
+injectable clock instead of a fixed startup timestamp. The added Functions
+regressions pass 90 tests; the Rules Emulator remains green at 32 tests.
+
+The Flutter/Dart executables were unavailable in the current shell, so the
+new client regressions and the full Flutter suite remain explicitly pending
+in a Flutter-equipped checkout. No subsequent execution wave opens until
+that verification, review, and commit are complete.
+
 ---
 
 ## Non-negotiable execution contract

@@ -576,3 +576,24 @@ clean diff check. These are corrections within normalized Wave 4, not a new
 Wave 5. Reservation-before-upload design and device, deployed, CI/release,
 App Check, migration, operations, legal, and product acceptance remain open
 gates.
+
+## Execution Wave 2 — offline/media source closure
+
+The bounded source follow-up is detailed in
+`docs/testing/execution-wave-2-offline-media.md`. It addresses concrete
+Milestone 5/6 gaps found after the normalized Wave 4 checkpoint, rather than
+creating an unbounded sequence of re-audits.
+
+The client track adds per-account draft serialization and identifier/path
+validation, valid `.tmp`/`.bak` recovery, backup-preserving draft replacement,
+voice metadata recovery, unique download temporary files, stale-sidecar
+cleanup, and generation-safe account clearing. The backend track generalizes
+unregistered-object cleanup across canonical profile, cover, and message
+media, and separates deterministic migration timestamps from the live lease
+renewal clock.
+
+Functions syntax/tests and Rules Emulator tests are green at **90** and **32**
+respectively. Dart/Flutter could not be executed in this shell because the
+executables are unavailable; the new client tests and the full Flutter suite
+remain unverified until a Flutter-equipped checkout runs them. This report
+therefore does not claim release readiness or open another execution wave.

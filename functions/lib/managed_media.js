@@ -36,10 +36,17 @@ function isCanonicalMessageAssetPath(storagePath) {
   return parseMessageAssetPath(storagePath) !== null;
 }
 
-async function deleteUnregisteredMessageAsset({ storage, object }) {
+function isCanonicalManagedAssetPath(storagePath) {
+  return isCanonicalMessageAssetPath(storagePath)
+    || parseGroupCoverPath(storagePath) !== null
+    || parseProfilePhotoPath(storagePath) !== null;
+}
+
+async function deleteUnregisteredManagedAsset({ storage, object }) {
   if (
-    !isCanonicalMessageAssetPath(object?.name)
+    !isCanonicalManagedAssetPath(object?.name)
     || typeof object?.bucket !== "string"
+    || object.bucket.length === 0
   ) {
     return false;
   }
@@ -48,6 +55,10 @@ async function deleteUnregisteredMessageAsset({ storage, object }) {
   });
   return true;
 }
+
+// Kept as a compatibility alias for callers that predate generalized managed
+// media cleanup. The path guard now covers every canonical managed asset.
+const deleteUnregisteredMessageAsset = deleteUnregisteredManagedAsset;
 
 function buildProfilePhotoAssetRecord(object) {
   const identity = parseProfilePhotoPath(object?.name);
@@ -442,7 +453,9 @@ module.exports = {
   collectGroupCoverReference,
   collectMessageAssetReferences,
   collectProfilePhotoReference,
+  deleteUnregisteredManagedAsset,
   deleteUnregisteredMessageAsset,
+  isCanonicalManagedAssetPath,
   isCanonicalMessageAssetPath,
   managedAssetIdForPath,
   nextManagedAssetStatus,
