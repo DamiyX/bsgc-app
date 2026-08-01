@@ -5,6 +5,10 @@ message-media URL ingestion
 
 **Review date:** 2026-08-01
 
+**Starting SHA:** `646cb17` (`Document Wave 19 remaining work checkpoint`)
+
+**Ending source SHA:** `68d544c` (`Close Wave 20 media and notification reliability gaps`)
+
 **Status:** local source fix and focused Flutter tests pass; deployed Storage
 authorization, bearer-token expiry/revocation, and device evidence remain open
 

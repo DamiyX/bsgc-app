@@ -5,6 +5,8 @@ mutation reliability
 
 **Starting SHA:** `646cb17` (`Document Wave 19 remaining work checkpoint`)
 
+**Ending source SHA:** `68d544c` (`Close Wave 20 media and notification reliability gaps`)
+
 **Status:** source change and focused tests pass; no commit or push was made by
 this track
 
