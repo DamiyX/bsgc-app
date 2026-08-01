@@ -134,6 +134,13 @@ function normalizeReportInput(data) {
   }
   const targetId = requireString(data?.targetId, "targetId", 256);
   const groupId = optionalString(data?.groupId, "groupId", 160);
+  const insightId = optionalString(data?.insightId, "insightId", 160);
+  if (targetType === "comment" && !insightId) {
+    throw new RangeError("insightId is required for comment reports");
+  }
+  if (targetType !== "comment" && insightId) {
+    throw new RangeError("insightId is only supported for comment reports");
+  }
   const reason = requireString(data?.reason, "reason", 40);
   if (![
     "spam",
@@ -148,7 +155,7 @@ function normalizeReportInput(data) {
     throw new RangeError("reason is not supported");
   }
   const details = optionalString(data?.details, "details", 2000);
-  return { targetType, targetId, groupId, reason, details };
+  return { targetType, targetId, groupId, insightId, reason, details };
 }
 
 module.exports = {

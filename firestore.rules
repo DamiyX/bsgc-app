@@ -10,7 +10,13 @@ service cloud.firestore {
     }
 
     function isModerator() {
-      return signedIn() && request.auth.token.moderator == true;
+      let operatorPath =
+        /databases/$(database)/documents/moderation_operators/$(request.auth.uid);
+      let operator = get(operatorPath).data;
+      return signedIn()
+        && exists(operatorPath)
+        && operator.status == 'active'
+        && operator.role in ['support', 'moderator', 'trust_safety_admin'];
     }
 
     function groupExists(groupId) {
@@ -121,6 +127,9 @@ service cloud.firestore {
           'referredBy',
           'onboardingComplete',
           'deletionState',
+          'accountStatus',
+          'moderationAuditId',
+          'moderationUpdatedAt',
           'notificationPreferences',
           'storagePreferences',
           'createdAt',
@@ -143,6 +152,15 @@ service cloud.firestore {
           || data.onboardingComplete is bool)
         && validOptionalString(data, 'referredBy', 128)
         && validOptionalString(data, 'deletionState', 32)
+        && (!data.keys().hasAny(['accountStatus'])
+          || data.accountStatus in [
+            'active',
+            'restricted',
+            'suspended'
+          ])
+        && validOptionalString(data, 'moderationAuditId', 160)
+        && (!data.keys().hasAny(['moderationUpdatedAt'])
+          || data.moderationUpdatedAt is timestamp)
         && data.updatedAt is timestamp;
     }
 
@@ -296,189 +314,6 @@ service cloud.firestore {
           .affectedKeys()
           .hasOnly([request.auth.uid])
         && validGroupDocument(request.resource.data);
-    }
-
-    function managedMessageAsset(part, groupId, messageId, senderId) {
-      let asset = get(
-        /databases/$(database)/documents/managed_assets/$(part.assetId)
-      ).data;
-      return part.keys().hasAny(['assetId'])
-        && part.assetId is string
-        && part.assetId.size() >= 1
-        && part.assetId.size() <= 768
-        && part.content.matches(
-          'groups/' + groupId + '/messages/' + messageId
-            + '/[A-Za-z0-9_.-]{1,160}'
-        )
-        && asset.assetId == part.assetId
-        && asset.storagePath == part.content
-        && asset.ownerUid == senderId
-        && asset.entityType == 'message'
-        && asset.entityId == messageId
-        && asset.groupId == groupId
-        && asset.status in ['pending', 'committed']
-        && (
-          (part.type == 'image'
-            && asset.mimeType.matches('image/(jpeg|png|webp)')
-            && asset.sizeBytes <= 10 * 1024 * 1024)
-          || (part.type == 'voice'
-            && asset.mimeType.matches(
-              'audio/(aac|m4a|mp4|mpeg|ogg|wav|webm)'
-            )
-            && asset.sizeBytes <= 25 * 1024 * 1024)
-        );
-    }
-
-    function validMessagePart(part, groupId, messageId, senderId) {
-      return part is map
-        && part.keys().hasAll(['type', 'content'])
-        && part.keys().hasOnly([
-          'type',
-          'content',
-          'assetId',
-          'durationSeconds',
-          'fileName',
-          'sizeBytes'
-        ])
-        && part.type in ['text', 'voice', 'image']
-        && part.content is string
-        && part.content.size() >= 1
-        && part.content.size() <= 8000
-        && (
-          (part.type == 'text' && !part.keys().hasAny(['assetId']))
-          || (part.type in ['voice', 'image']
-            && managedMessageAsset(part, groupId, messageId, senderId))
-        )
-        && (
-          (part.type == 'voice'
-            && part.keys().hasAny(['durationSeconds'])
-            && part.durationSeconds is int
-            && part.durationSeconds >= 1
-            && part.durationSeconds <= 300)
-          || (part.type != 'voice'
-            && !part.keys().hasAny(['durationSeconds']))
-        )
-        && validOptionalString(part, 'fileName', 180)
-        && (!part.keys().hasAny(['sizeBytes'])
-          || (part.sizeBytes is int
-            && part.sizeBytes >= 1
-            && part.sizeBytes <= 25 * 1024 * 1024));
-    }
-
-    function validMessageCreate(data, groupId, messageId) {
-      return data.keys().hasAll([
-          'schemaVersion',
-          'senderId',
-          'senderName',
-          'parts',
-          'timestamp'
-        ])
-        && data.keys().hasOnly([
-          'schemaVersion',
-          'clientMessageId',
-          'space',
-          'senderId',
-          'senderName',
-          'senderPhotoUrl',
-          'replyToMessageId',
-          'parts',
-          'clientCreatedAt',
-          'timestamp',
-          'isEdited',
-          'isDeleted'
-        ])
-        && data.schemaVersion == 2
-        && (!data.keys().hasAny(['space'])
-          || data.space in ['reflection', 'discussion', 'prayer'])
-        && data.senderId == request.auth.uid
-        && data.senderName is string
-        && data.senderName.size() >= 1
-        && data.senderName.size() <= 80
-        && validOptionalString(data, 'senderPhotoUrl', 2048)
-        && matchesCanonicalPublicIdentity(
-          data.senderId,
-          data,
-          'senderName',
-          'senderPhotoUrl'
-        )
-        && validOptionalString(data, 'replyToMessageId', 128)
-        && validOptionalString(data, 'clientMessageId', 128)
-        && (!data.keys().hasAny(['clientCreatedAt'])
-          || (data.clientCreatedAt is timestamp
-            && data.clientCreatedAt <= request.time))
-        && data.parts is list
-        && data.parts.size() >= 1
-        && data.parts.size() <= 4
-        && validMessagePart(
-          data.parts[0], groupId, messageId, data.senderId
-        )
-        && (data.parts.size() < 2 || validMessagePart(
-          data.parts[1], groupId, messageId, data.senderId
-        ))
-        && (data.parts.size() < 3 || validMessagePart(
-          data.parts[2], groupId, messageId, data.senderId
-        ))
-        && (data.parts.size() < 4 || validMessagePart(
-          data.parts[3], groupId, messageId, data.senderId
-        ))
-        && data.timestamp == request.time
-        && (!data.keys().hasAny(['isEdited']) || data.isEdited == false)
-        && (!data.keys().hasAny(['isDeleted']) || data.isDeleted == false);
-    }
-
-    function canEditMessage(groupId, messageId) {
-      return resource.data.senderId == request.auth.uid
-        && request.time < resource.data.timestamp + duration.value(15, 'm')
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'parts',
-          'isEdited',
-          'editedAt'
-        ])
-        && request.resource.data.parts is list
-        && request.resource.data.parts.size() >= 1
-        && request.resource.data.parts.size() <= 4
-        && validMessagePart(
-          request.resource.data.parts[0],
-          groupId,
-          messageId,
-          request.resource.data.senderId
-        )
-        && (request.resource.data.parts.size() < 2
-          || validMessagePart(
-            request.resource.data.parts[1],
-            groupId,
-            messageId,
-            request.resource.data.senderId
-          ))
-        && (request.resource.data.parts.size() < 3
-          || validMessagePart(
-            request.resource.data.parts[2],
-            groupId,
-            messageId,
-            request.resource.data.senderId
-          ))
-        && (request.resource.data.parts.size() < 4
-          || validMessagePart(
-            request.resource.data.parts[3],
-            groupId,
-            messageId,
-            request.resource.data.senderId
-          ))
-        && request.resource.data.isEdited == true
-        && request.resource.data.editedAt == request.time;
-    }
-
-    function canTombstoneMessage() {
-      return resource.data.senderId == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'parts',
-          'isDeleted',
-          'deletedAt'
-        ])
-        && request.resource.data.parts is list
-        && request.resource.data.parts.size() == 0
-        && request.resource.data.isDeleted == true
-        && request.resource.data.deletedAt == request.time;
     }
 
     function validInsight(data) {
@@ -882,37 +717,17 @@ service cloud.firestore {
 
       match /messages/{messageId} {
         allow get, list: if isGroupMember(groupId);
-        allow create: if isGroupMember(groupId)
-          && groupData(groupId).lifecycle == 'active'
-          && validMessageCreate(request.resource.data, groupId, messageId);
-        allow update: if isGroupMember(groupId)
-          && (
-            canEditMessage(groupId, messageId)
-            || canTombstoneMessage()
-          );
-        allow delete: if false;
+        // Message creation is callable-only so rate, identity, attachment, and
+        // App Check policy are enforced at one authoritative boundary.
+        allow create: if false;
+        // Edits and author tombstones are callable-only for the same reason:
+        // one server transaction validates the full four-part payload without
+        // relying on Rules expression-heavy media lookups.
+        allow update, delete: if false;
 
         match /reactions/{uid} {
           allow get, list: if isGroupMember(groupId);
-          allow create: if isGroupMember(groupId)
-            && isSelf(uid)
-            && request.resource.data.keys().hasAll([
-              'uid',
-              'emoji',
-              'createdAt'
-            ])
-            && request.resource.data.keys().hasOnly([
-              'uid',
-              'emoji',
-              'createdAt'
-            ])
-            && request.resource.data.uid == uid
-            && request.resource.data.emoji is string
-            && request.resource.data.emoji.size() >= 1
-            && request.resource.data.emoji.size() <= 16
-            && request.resource.data.createdAt == request.time;
-          allow update: if false;
-          allow delete: if isGroupMember(groupId) && isSelf(uid);
+          allow create, update, delete: if false;
         }
       }
     }
@@ -940,73 +755,12 @@ service cloud.firestore {
 
       match /reactions/{uid} {
         allow get, list: if canReadParentInsight(insightId);
-        allow create: if canReadParentInsight(insightId)
-          && isSelf(uid)
-          && request.resource.data.keys().hasAll([
-            'uid',
-            'reaction',
-            'createdAt'
-          ])
-          && request.resource.data.keys().hasOnly([
-            'uid',
-            'reaction',
-            'createdAt'
-          ])
-          && request.resource.data.uid == uid
-          && request.resource.data.reaction in [
-            'amen',
-            'helpful',
-            'encouraging'
-          ]
-          && request.resource.data.createdAt == request.time;
-        allow update: if false;
-        allow delete: if canReadParentInsight(insightId) && isSelf(uid);
+        allow create, update, delete: if false;
       }
 
       match /comments/{commentId} {
         allow get, list: if canReadParentInsight(insightId);
-        allow create: if canReadParentInsight(insightId)
-          && request.resource.data.keys().hasAll([
-            'schemaVersion',
-            'insightId',
-            'authorUid',
-            'authorName',
-            'body',
-            'createdAt'
-          ])
-          && request.resource.data.keys().hasOnly([
-            'schemaVersion',
-            'insightId',
-            'authorUid',
-            'authorName',
-            'authorPhotoUrl',
-            'body',
-            'replyToId',
-            'createdAt',
-            'updatedAt'
-          ])
-          && request.resource.data.schemaVersion == 2
-          && request.resource.data.insightId == insightId
-          && request.resource.data.authorUid == request.auth.uid
-          && request.resource.data.authorName is string
-          && request.resource.data.authorName.size() >= 1
-          && request.resource.data.authorName.size() <= 80
-          && matchesCanonicalPublicIdentity(
-            request.resource.data.authorUid,
-            request.resource.data,
-            'authorName',
-            'authorPhotoUrl'
-          )
-          && validOptionalString(
-            request.resource.data,
-            'authorPhotoUrl',
-            2048
-          )
-          && request.resource.data.body is string
-          && request.resource.data.body.size() >= 1
-          && request.resource.data.body.size() <= 4000
-          && validOptionalString(request.resource.data, 'replyToId', 128)
-          && request.resource.data.createdAt == request.time;
+        allow create: if false;
         allow update: if canReadParentInsight(insightId)
           && resource.data.authorUid == request.auth.uid
           && request.time
@@ -1024,27 +778,7 @@ service cloud.firestore {
 
         match /reactions/{uid} {
           allow get, list: if canReadParentInsight(insightId);
-          allow create: if canReadParentInsight(insightId)
-            && isSelf(uid)
-            && request.resource.data.keys().hasAll([
-              'uid',
-              'reaction',
-              'createdAt'
-            ])
-            && request.resource.data.keys().hasOnly([
-              'uid',
-              'reaction',
-              'createdAt'
-            ])
-            && request.resource.data.uid == uid
-            && request.resource.data.reaction in [
-              'amen',
-              'helpful',
-              'encouraging'
-            ]
-            && request.resource.data.createdAt == request.time;
-          allow update: if false;
-          allow delete: if canReadParentInsight(insightId) && isSelf(uid);
+          allow create, update, delete: if false;
         }
       }
     }
@@ -1066,6 +800,31 @@ service cloud.firestore {
       // Reports are callable-only so identity and abuse limits are enforced.
       allow create: if false;
       allow update, delete: if false;
+    }
+
+    match /moderation_audit/{auditId} {
+      allow get, list: if isModerator();
+      allow create, update, delete: if false;
+    }
+
+    match /moderation_appeals/{appealId} {
+      allow get: if signedIn()
+        && (
+          resource.data.appellantUid == request.auth.uid
+          || isModerator()
+        );
+      allow list: if isModerator();
+      allow create, update, delete: if false;
+    }
+
+    match /moderation_operators/{operatorUid} {
+      allow get: if isSelf(operatorUid);
+      allow list, create, update, delete: if false;
+    }
+
+    match /moderation_appeal_audit/{reviewId} {
+      allow get, list: if isModerator();
+      allow create, update, delete: if false;
     }
 
     match /invites/{inviteId} {

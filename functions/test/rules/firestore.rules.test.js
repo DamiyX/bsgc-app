@@ -130,6 +130,16 @@ async function seedFirestore() {
         status: "active",
         joinedAt: now(),
       }),
+      setDoc(doc(db, "groups/group-a/messages/existing-message"), {
+        schemaVersion: 2,
+        senderId: "member",
+        senderName: "Member",
+        space: "discussion",
+        parts: [{ type: "text", content: "Existing" }],
+        timestamp: now(),
+        isEdited: false,
+        isDeleted: false,
+      }),
       setDoc(doc(db, "managed_assets/asset-message-a"), {
         schemaVersion: 1,
         assetId: "asset-message-a",
@@ -143,6 +153,20 @@ async function seedFirestore() {
         mimeType: "image/jpeg",
         sizeBytes: 8,
         status: "pending",
+        createdAt: now(),
+      }),
+      setDoc(doc(db, "moderation_operators/operator"), {
+        uid: "operator",
+        role: "moderator",
+        status: "active",
+        assignedAt: now(),
+      }),
+      setDoc(doc(db, "moderation_audit/action-a"), {
+        schemaVersion: 1,
+        actionId: "action-a",
+        operatorUid: "operator",
+        action: "remove_content",
+        reportId: "report-a",
         createdAt: now(),
       }),
       setDoc(doc(db, "insights/insight-a"), insightData()),
@@ -348,7 +372,7 @@ describe("group ownership and membership integrity", () => {
 });
 
 describe("messages", () => {
-  test("members can send bounded messages only as themselves", async () => {
+  test("message creation is callable-only for every payload shape", async () => {
     const db = testEnv.authenticatedContext("member").firestore();
     const validMessage = {
       schemaVersion: 2,
@@ -364,7 +388,7 @@ describe("messages", () => {
       isDeleted: false,
     };
 
-    await assertSucceeds(
+    await assertFails(
       setDoc(doc(db, "groups/group-a/messages/message-a"), validMessage),
     );
     await assertFails(
@@ -407,7 +431,7 @@ describe("messages", () => {
         }],
       }),
     );
-    await assertSucceeds(
+    await assertFails(
       setDoc(doc(db, "groups/group-a/messages/message-media"), {
         ...validMessage,
         parts: [{
@@ -459,6 +483,43 @@ describe("messages", () => {
     );
     await assertFails(
       setDoc(doc(db, "groups/completed-group/messages/message-a"), message),
+    );
+  });
+
+  test("a four-part text message cannot bypass the callable", async () => {
+    const db = testEnv.authenticatedContext("member").firestore();
+    await assertFails(
+      setDoc(doc(db, "groups/group-a/messages/four-part-text"), {
+        schemaVersion: 2,
+        senderId: "member",
+        senderName: "Member",
+        space: "discussion",
+        parts: [
+          { type: "text", content: "First" },
+          { type: "text", content: "Second" },
+          { type: "text", content: "Third" },
+          { type: "text", content: "Fourth" },
+        ],
+        timestamp: serverTimestamp(),
+      }),
+    );
+  });
+
+  test("message edits and tombstones are callable-only", async () => {
+    const db = testEnv.authenticatedContext("member").firestore();
+    await assertFails(
+      updateDoc(doc(db, "groups/group-a/messages/existing-message"), {
+        parts: [{ type: "text", content: "Edited" }],
+        isEdited: true,
+        editedAt: serverTimestamp(),
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(db, "groups/group-a/messages/existing-message"), {
+        parts: [],
+        isDeleted: true,
+        deletedAt: serverTimestamp(),
+      }),
     );
   });
 
@@ -518,7 +579,7 @@ describe("contacts-only insights and safety controls", () => {
     );
   });
 
-  test("eligible contact can comment only as themselves", async () => {
+  test("comment creation is callable-only", async () => {
     const db = testEnv.authenticatedContext("contact").firestore();
     const validComment = {
       schemaVersion: 2,
@@ -529,7 +590,7 @@ describe("contacts-only insights and safety controls", () => {
       createdAt: serverTimestamp(),
     };
 
-    await assertSucceeds(
+    await assertFails(
       setDoc(
         doc(db, "insights/insight-a/comments/comment-a"),
         validComment,
@@ -638,6 +699,26 @@ describe("private state and reporting", () => {
         status: "open",
         createdAt: serverTimestamp(),
       }),
+    );
+  });
+
+  test("only actively assigned operators can read moderation audit", async () => {
+    const operatorDb = testEnv
+      .authenticatedContext("operator", { moderationRole: "moderator" })
+      .firestore();
+    const staleClaimDb = testEnv
+      .authenticatedContext("stale", { moderationRole: "moderator" })
+      .firestore();
+    const memberDb = testEnv.authenticatedContext("member").firestore();
+
+    await assertSucceeds(
+      getDoc(doc(operatorDb, "moderation_audit/action-a")),
+    );
+    await assertFails(
+      getDoc(doc(staleClaimDb, "moderation_audit/action-a")),
+    );
+    await assertFails(
+      getDoc(doc(memberDb, "moderation_audit/action-a")),
     );
   });
 });

@@ -9,6 +9,7 @@
     "test": "node --test test/functions/*.test.js",
     "test:rules": "firebase emulators:exec --project demo-braid-rules --config ../firebase.json --only firestore,storage \"node --test --test-concurrency=1 test/rules/*.test.js\"",
     "migrate:v2:dry-run": "node scripts/migrate-v2.js",
+    "migrate:v2:rehearse": "node scripts/migrate-v2.js --rehearse",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"
   },

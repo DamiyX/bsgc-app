@@ -1,23 +1,27 @@
 {
   "workflow": "Braid full audit remediation",
   "branch": "codex/bsgc-full-remediation",
-  "current_phase": "Post-remediation implementation wave 4 verified; awaiting local commit",
+  "current_phase": "Post-remediation implementation wave 5 verified; awaiting local commit",
   "repository_implementation": "in progress against docs/post-remediation-audit/05-prioritized-implementation-plan.md",
   "automated_verification": {
     "flutter_format": "pass",
     "flutter_analyze": "pass",
-    "flutter_tests": "73 passed",
-    "functions_tests": "44 passed",
-    "firebase_rules_tests": "28 passed"
+    "flutter_tests": "75 passed",
+    "functions_tests": "69 passed",
+    "firebase_rules_tests": "31 passed",
+    "functions_check": "pass",
+    "migration_rehearsal": "pass",
+    "git_diff_check": "pass"
   },
   "open_gates": [
     "Android emulator and physical-device visual/offline/accessibility review",
+    "official firebase_app_check dependency and provider activation (requires owner approval)",
     "successful signed release AAB and size analysis",
     "production backup and migration dry-run review",
     "staged Firebase backend deployment",
     "production signing and App/Universal Link verification",
     "legal, store, monitoring, and operational approval"
   ],
-  "next_action": "Commit verified Milestone 6, then implement Milestone 7 migration and abuse-resistance work; continue Milestones 8-12 before final branch review.",
-  "updated_at": "2026-07-29T17:19:36+01:00"
+  "next_action": "Commit verified Wave 5, then implement Milestones 8-12; keep App Check package activation as an explicit owner-approved gate.",
+  "updated_at": "2026-08-01T07:35:00+01:00"
 }

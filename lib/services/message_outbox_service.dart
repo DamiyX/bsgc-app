@@ -563,6 +563,7 @@ class MessageOutboxService {
             type: part.type,
             content: managedAsset.storagePath,
             assetId: managedAsset.assetId,
+            sizeBytes: managedAsset.sizeBytes,
             durationSeconds: part.durationSeconds,
           ),
         );

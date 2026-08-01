@@ -181,6 +181,7 @@ describe("community publishing contracts", () => {
         targetType: "message",
         targetId: "message-a",
         groupId: "group-a",
+        insightId: null,
         reason: "harassment",
         details: "Context",
       },
@@ -190,6 +191,30 @@ describe("community publishing contracts", () => {
         targetType: "database",
         targetId: "x",
         reason: "other",
+      }),
+      RangeError,
+    );
+    assert.deepEqual(
+      normalizeReportInput({
+        targetType: "comment",
+        targetId: "comment-a",
+        insightId: "insight-a",
+        reason: "spam",
+      }),
+      {
+        targetType: "comment",
+        targetId: "comment-a",
+        groupId: null,
+        insightId: "insight-a",
+        reason: "spam",
+        details: null,
+      },
+    );
+    assert.throws(
+      () => normalizeReportInput({
+        targetType: "comment",
+        targetId: "comment-a",
+        reason: "spam",
       }),
       RangeError,
     );

@@ -47,6 +47,8 @@ Stable client-generated document ID; `space` is `reflection`, `discussion`, or
 identity; optional reply pointer. Voice/image parts reference an exact
 canonical Storage path and `managed_assets` ID. Arbitrary HTTPS media is not a
 trusted inline attachment. Video/doc parts are deferred.
+Creation, edits, and author tombstones are callable-only; the server owns
+identity, membership, edit-window, attachment, and abuse validation.
 
 ### `insights/{insightId}`
 
@@ -54,11 +56,15 @@ Author-owned contacts reflection with explicit audience/status/expiry. Comments 
 
 ### `reports/{reportId}` and `users/{uid}/blocks/{blockedUid}`
 
-Client-created immutable report and owner-only block state. Moderator read access requires a custom token claim.
+Callable-created immutable report and owner-only block state. Moderator read
+access requires an active operator assignment plus the appropriate claim.
 
 ### `invites/{tokenHash}`
 
 Server-managed expiring/revocable invite state. A transaction enforces use count, capacity, blocks, membership, and connection creation.
+This is the only canonical invite collection; `group_invites` is a legacy
+migration source and must not be used by application code, rules, cleanup, or
+indexes.
 
 ### `managed_assets/{assetId}`
 

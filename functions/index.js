@@ -45,6 +45,20 @@ const {
   createAccountDeletionHandlers,
   processDeletionStep,
 } = require("./lib/account_deletion");
+const {
+  ABUSE_POLICIES,
+  evaluateRateLimit,
+  normalizeGroupMessageInput,
+  reportTargetPath,
+} = require("./lib/abuse_controls");
+const {
+  buildModerationAuditRecord,
+  moderationCapabilities,
+  normalizeModerationDecision,
+} = require("./lib/moderation");
+const {
+  drainPagedJob,
+} = require("./lib/scheduled_jobs");
 
 admin.initializeApp();
 
@@ -55,10 +69,22 @@ const enforceAppCheck = defineBoolean("ENFORCE_APP_CHECK", {
   default: false,
   description: "Reject callable requests without a valid App Check token.",
 });
+const enforceHighAbuseAppCheck = defineBoolean(
+  "ENFORCE_HIGH_ABUSE_APP_CHECK",
+  {
+    default: false,
+    description:
+      "Staged App Check enforcement for abuse-prone callable functions.",
+  },
+);
 
 const callableOptions = {
   region: "us-central1",
   enforceAppCheck,
+};
+const highAbuseCallableOptions = {
+  region: "us-central1",
+  enforceAppCheck: enforceHighAbuseAppCheck,
 };
 
 function authenticatedUid(request) {
@@ -74,6 +100,25 @@ function invalidArgument(error) {
     return new HttpsError("invalid-argument", error.message);
   }
   return error;
+}
+
+function requireAccountPostingAccess(accountSnapshot) {
+  if (!accountSnapshot?.exists) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Complete account setup before continuing.",
+    );
+  }
+  const status = accountSnapshot.data().accountStatus ?? "active";
+  if (status !== "active") {
+    throw new HttpsError(
+      "permission-denied",
+      status === "suspended"
+        ? "This account is suspended."
+        : "This account is temporarily restricted from posting.",
+      { accountStatus: status },
+    );
+  }
 }
 
 function boundedNotificationText(value, fallback) {
@@ -201,36 +246,50 @@ async function enforceDailyRateLimit(
   uid,
   action,
   now,
-  { minIntervalMs, dailyLimit },
+  policy = ABUSE_POLICIES[action],
+  cost = 1,
 ) {
+  if (!policy) throw new Error(`Missing abuse policy for ${action}.`);
   const rateRef = db.doc(`rate_limits/${uid}/actions/${action}`);
   const rateSnapshot = await transaction.get(rateRef);
   const current = rateSnapshot.exists ? rateSnapshot.data() : {};
-  const windowStartedAt = current.windowStartedAt?.toMillis?.() ?? 0;
   const nowMillis = now.toMillis();
-  const withinWindow = nowMillis - windowStartedAt < 24 * 60 * 60 * 1000;
-  const count = withinWindow ? current.count ?? 0 : 0;
-  const lastCreatedAt = current.lastCreatedAt?.toMillis?.() ?? 0;
-
-  if (nowMillis - lastCreatedAt < minIntervalMs) {
+  const evaluation = evaluateRateLimit({
+    windowStartedAtMillis: current.windowStartedAt?.toMillis?.(),
+    lastActionAtMillis: current.lastActionAt?.toMillis?.()
+      ?? current.lastCreatedAt?.toMillis?.(),
+    count: current.count,
+  }, nowMillis, policy, cost);
+  if (!evaluation.allowed && evaluation.reason === "min_interval") {
     throw new HttpsError(
       "resource-exhausted",
       "Please wait before trying that again.",
+      {
+        action,
+        reason: evaluation.reason,
+        retryAfterMillis: evaluation.retryAfterMillis,
+      },
     );
   }
-  if (count >= dailyLimit) {
+  if (!evaluation.allowed) {
     throw new HttpsError(
       "resource-exhausted",
-      "Daily limit reached. Please try again tomorrow.",
+      "Action limit reached. Please try again later.",
+      {
+        action,
+        reason: evaluation.reason,
+        retryAfterMillis: evaluation.retryAfterMillis,
+      },
     );
   }
-
   transaction.set(
     rateRef,
     {
-      windowStartedAt: withinWindow ? current.windowStartedAt : now,
-      count: count + 1,
-      lastCreatedAt: now,
+      windowStartedAt: Timestamp.fromMillis(
+        evaluation.next.windowStartedAtMillis,
+      ),
+      count: evaluation.next.count,
+      lastActionAt: now,
       action,
     },
     { merge: true },
@@ -243,11 +302,40 @@ async function enforceInviteRateLimit(transaction, uid, now) {
     uid,
     "create_group_invite",
     now,
-    { minIntervalMs: 10 * 1000, dailyLimit: 30 },
   );
 }
 
-exports.createStudyGroup = onCall(callableOptions, async (request) => {
+function validateManagedMessageAssets({ input, assets, uid }) {
+  const parts = input.parts.filter((part) => part.assetId);
+  for (let index = 0; index < assets.length; index += 1) {
+    const asset = assets[index].exists ? assets[index].data() : null;
+    const part = parts[index];
+    if (
+      !asset ||
+      asset.assetId !== part.assetId ||
+      asset.storagePath !== part.content ||
+      asset.ownerUid !== uid ||
+      asset.groupId !== input.groupId ||
+      asset.entityType !== "message" ||
+      asset.entityId !== input.messageId ||
+      asset.sizeBytes !== part.sizeBytes ||
+      (part.type === "image" &&
+        !/^image\/(jpeg|png|webp)$/.test(asset.mimeType)) ||
+      (part.type === "voice" &&
+        !/^audio\/(aac|m4a|mp4|mpeg|ogg|wav|webm)$/.test(
+          asset.mimeType,
+        )) ||
+      !["pending", "committed"].includes(asset.status)
+    ) {
+      throw new HttpsError(
+        "failed-precondition",
+        "An attachment is not registered for this message.",
+      );
+    }
+  }
+}
+
+exports.createStudyGroup = onCall(highAbuseCallableOptions, async (request) => {
   const uid = authenticatedUid(request);
 
   try {
@@ -309,37 +397,58 @@ exports.createStudyGroup = onCall(callableOptions, async (request) => {
     const lifecycle = startDate && startDate.toMillis() > now.toMillis()
       ? "scheduled"
       : "active";
-    const batch = db.batch();
-
-    batch.create(groupRef, {
-      schemaVersion: 2,
-      ownerId: uid,
-      name,
-      members: [uid],
-      readingProgress: { [uid]: 0 },
-      userCompletedChapters: { [uid]: [] },
-      unreadCounts: { [uid]: 0 },
-      pinnedScripture: "",
-      description,
-      createdAt: now,
-      groupType,
-      topic,
-      studyBook,
-      totalChapters,
-      startDate,
-      endDate,
-      lifecycle,
-      extensionCount: 0,
+    await db.runTransaction(async (transaction) => {
+      const [ownedGroups, accountSnapshot] = await Promise.all([
+        transaction.get(
+          db.collection("groups")
+            .where("ownerId", "==", uid)
+            .where("lifecycle", "in", ["scheduled", "active"])
+            .limit(5),
+        ),
+        transaction.get(db.doc(`users_private/${uid}`)),
+      ]);
+      requireAccountPostingAccess(accountSnapshot);
+      if (ownedGroups.size >= 5) {
+        throw new HttpsError(
+          "resource-exhausted",
+          "Archive or complete an active study before creating another.",
+        );
+      }
+      await enforceDailyRateLimit(
+        transaction,
+        uid,
+        "create_group",
+        now,
+      );
+      transaction.create(groupRef, {
+        schemaVersion: 2,
+        ownerId: uid,
+        name,
+        members: [uid],
+        readingProgress: { [uid]: 0 },
+        userCompletedChapters: { [uid]: [] },
+        unreadCounts: { [uid]: 0 },
+        pinnedScripture: "",
+        description,
+        createdAt: now,
+        groupType,
+        topic,
+        studyBook,
+        totalChapters,
+        startDate,
+        endDate,
+        lifecycle,
+        extensionCount: 0,
+      });
+      transaction.create(memberRef, {
+        schemaVersion: 2,
+        uid,
+        role: "owner",
+        status: "active",
+        joinedAt: now,
+        invitedBy: uid,
+      });
     });
-    batch.create(memberRef, {
-      schemaVersion: 2,
-      uid,
-      role: "owner",
-      status: "active",
-      joinedAt: now,
-      invitedBy: uid,
-    });
-    await batch.commit();
 
     return { groupId: groupRef.id };
   } catch (error) {
@@ -347,7 +456,7 @@ exports.createStudyGroup = onCall(callableOptions, async (request) => {
   }
 });
 
-exports.createGroupInvite = onCall(callableOptions, async (request) => {
+exports.createGroupInvite = onCall(highAbuseCallableOptions, async (request) => {
   const uid = authenticatedUid(request);
 
   try {
@@ -375,7 +484,11 @@ exports.createGroupInvite = onCall(callableOptions, async (request) => {
     );
 
     await db.runTransaction(async (transaction) => {
-      const group = await requireGroupOwner(transaction, groupRef, uid);
+      const [group, accountSnapshot] = await Promise.all([
+        requireGroupOwner(transaction, groupRef, uid),
+        transaction.get(db.doc(`users_private/${uid}`)),
+      ]);
+      requireAccountPostingAccess(accountSnapshot);
       if (group.lifecycle === "archived" || group.lifecycle === "completed") {
         throw new HttpsError(
           "failed-precondition",
@@ -407,6 +520,275 @@ exports.createGroupInvite = onCall(callableOptions, async (request) => {
       joinUrl: `https://braidapp.com/join/${token}`,
       expiresAtMillis: expiresAt.toMillis(),
     };
+  } catch (error) {
+    throw invalidArgument(error);
+  }
+});
+
+exports.sendGroupMessage = onCall(
+  highAbuseCallableOptions,
+  async (request) => {
+    const uid = authenticatedUid(request);
+    try {
+      const input = normalizeGroupMessageInput(request.data);
+      const now = Timestamp.now();
+      const groupRef = db.doc(`groups/${input.groupId}`);
+      const profileRef = db.doc(`users_public/${uid}`);
+      const accountRef = db.doc(`users_private/${uid}`);
+      const messageRef = db.doc(
+        `groups/${input.groupId}/messages/${input.messageId}`,
+      );
+      const assetIds = input.parts
+        .filter((part) => part.assetId)
+        .map((part) => part.assetId);
+      if (
+        input.attachmentCount > 0 &&
+        !(await messageRef.get()).exists
+      ) {
+        await db.runTransaction((transaction) => enforceDailyRateLimit(
+          transaction,
+          uid,
+          "send_group_attachment",
+          now,
+          ABUSE_POLICIES.send_group_attachment,
+          input.attachmentCount,
+        ));
+      }
+
+      let alreadyCommitted = false;
+      await db.runTransaction(async (transaction) => {
+        const [
+          groupSnapshot,
+          profileSnapshot,
+          accountSnapshot,
+          messageSnapshot,
+          ...assets
+        ] =
+          await Promise.all([
+            transaction.get(groupRef),
+            transaction.get(profileRef),
+            transaction.get(accountRef),
+            transaction.get(messageRef),
+            ...assetIds.map(
+              (assetId) => transaction.get(
+                db.doc(`managed_assets/${assetId}`),
+              ),
+            ),
+          ]);
+        if (!groupSnapshot.exists || !profileSnapshot.exists ||
+            !accountSnapshot.exists) {
+          throw new HttpsError(
+            "failed-precondition",
+            "Complete your profile and join the study before posting.",
+          );
+        }
+        const group = groupSnapshot.data();
+        if (
+          !Array.isArray(group.members) ||
+          !group.members.includes(uid) ||
+          group.lifecycle !== "active"
+        ) {
+          throw new HttpsError(
+            "permission-denied",
+            "This study is not accepting messages from this account.",
+          );
+        }
+        if (messageSnapshot.exists) {
+          const existing = messageSnapshot.data();
+          if (
+            existing.senderId !== uid ||
+            existing.clientMessageId !== input.clientMessageId ||
+            JSON.stringify(existing.parts) !== JSON.stringify(input.parts)
+          ) {
+            throw new HttpsError(
+              "already-exists",
+              "That message identifier is already in use.",
+            );
+          }
+          alreadyCommitted = true;
+          return;
+        }
+        validateManagedMessageAssets({ input, assets, uid });
+        requireAccountPostingAccess(accountSnapshot);
+        await enforceDailyRateLimit(
+          transaction,
+          uid,
+          "send_group_message",
+          now,
+        );
+        const profile = profileSnapshot.data();
+        const senderName =
+          typeof profile.displayName === "string" &&
+          profile.displayName.trim()
+            ? profile.displayName.trim().slice(0, 80)
+            : "Braid member";
+        const senderPhotoUrl =
+          typeof profile.photoUrl === "string" && profile.photoUrl
+            ? profile.photoUrl.slice(0, 2048)
+            : null;
+        transaction.create(messageRef, {
+          schemaVersion: 2,
+          clientMessageId: input.clientMessageId,
+          space: input.space,
+          senderId: uid,
+          senderName,
+          ...(senderPhotoUrl ? { senderPhotoUrl } : {}),
+          ...(input.replyToMessageId
+            ? { replyToMessageId: input.replyToMessageId }
+            : {}),
+          parts: input.parts,
+          clientCreatedAt: now,
+          timestamp: now,
+          isEdited: false,
+          isDeleted: false,
+        });
+      });
+      return { messageId: input.messageId, alreadyCommitted };
+    } catch (error) {
+      throw invalidArgument(error);
+    }
+  },
+);
+
+exports.editGroupMessage = onCall(
+  highAbuseCallableOptions,
+  async (request) => {
+    const uid = authenticatedUid(request);
+    try {
+      const groupId = requireString(request.data?.groupId, "groupId", 128);
+      const messageId = requireString(request.data?.messageId, "messageId", 160);
+      const now = Timestamp.now();
+      const groupRef = db.doc(`groups/${groupId}`);
+      const accountRef = db.doc(`users_private/${uid}`);
+      const messageRef = db.doc(`groups/${groupId}/messages/${messageId}`);
+
+      await db.runTransaction(async (transaction) => {
+        const [groupSnapshot, accountSnapshot, messageSnapshot] =
+          await Promise.all([
+            transaction.get(groupRef),
+            transaction.get(accountRef),
+            transaction.get(messageRef),
+          ]);
+        if (!groupSnapshot.exists || !accountSnapshot.exists ||
+            !messageSnapshot.exists) {
+          throw new HttpsError("not-found", "Message or study not found.");
+        }
+        const group = groupSnapshot.data();
+        const message = messageSnapshot.data();
+        if (!Array.isArray(group.members) || !group.members.includes(uid) ||
+            group.lifecycle !== "active") {
+          throw new HttpsError(
+            "permission-denied",
+            "This study is not accepting message edits.",
+          );
+        }
+        if (message.senderId !== uid) {
+          throw new HttpsError(
+            "permission-denied",
+            "Only the message author can edit this message.",
+          );
+        }
+        if (message.isDeleted === true) {
+          throw new HttpsError(
+            "failed-precondition",
+            "Deleted messages cannot be edited.",
+          );
+        }
+        const createdAtMillis = message.timestamp?.toMillis?.();
+        if (!Number.isFinite(createdAtMillis) ||
+            now.toMillis() - createdAtMillis > 15 * 60 * 1000) {
+          throw new HttpsError(
+            "failed-precondition",
+            "Messages can only be edited for 15 minutes.",
+          );
+        }
+        const input = normalizeGroupMessageInput({
+          groupId,
+          messageId,
+          clientMessageId: message.clientMessageId ?? messageId,
+          space: message.space ?? "discussion",
+          parts: request.data?.parts,
+        });
+        const assets = await Promise.all(
+          input.parts
+            .filter((part) => part.assetId)
+            .map((part) => transaction.get(
+              db.doc(`managed_assets/${part.assetId}`),
+            )),
+        );
+        validateManagedMessageAssets({ input, assets, uid });
+        requireAccountPostingAccess(accountSnapshot);
+        if (input.attachmentCount > 0) {
+          await enforceDailyRateLimit(
+            transaction,
+            uid,
+            "send_group_attachment",
+            now,
+            ABUSE_POLICIES.send_group_attachment,
+            input.attachmentCount,
+          );
+        }
+        await enforceDailyRateLimit(
+          transaction,
+          uid,
+          "edit_group_message",
+          now,
+        );
+        transaction.update(messageRef, {
+          parts: input.parts,
+          isEdited: true,
+          editedAt: now,
+        });
+      });
+      return { messageId };
+    } catch (error) {
+      throw invalidArgument(error);
+    }
+  },
+);
+
+exports.deleteGroupMessage = onCall(callableOptions, async (request) => {
+  const uid = authenticatedUid(request);
+  try {
+    const groupId = requireString(request.data?.groupId, "groupId", 128);
+    const messageId = requireString(request.data?.messageId, "messageId", 160);
+    const now = Timestamp.now();
+    const groupRef = db.doc(`groups/${groupId}`);
+    const messageRef = db.doc(`groups/${groupId}/messages/${messageId}`);
+    let alreadyDeleted = false;
+    await db.runTransaction(async (transaction) => {
+      const [groupSnapshot, messageSnapshot] = await Promise.all([
+        transaction.get(groupRef),
+        transaction.get(messageRef),
+      ]);
+      if (!groupSnapshot.exists || !messageSnapshot.exists) {
+        throw new HttpsError("not-found", "Message or study not found.");
+      }
+      const group = groupSnapshot.data();
+      const message = messageSnapshot.data();
+      if (!Array.isArray(group.members) || !group.members.includes(uid)) {
+        throw new HttpsError(
+          "permission-denied",
+          "Only active study members can remove messages.",
+        );
+      }
+      if (message.senderId !== uid) {
+        throw new HttpsError(
+          "permission-denied",
+          "Only the message author can remove this message.",
+        );
+      }
+      if (message.isDeleted === true) {
+        alreadyDeleted = true;
+        return;
+      }
+      transaction.update(messageRef, {
+        isDeleted: true,
+        parts: [],
+        deletedAt: now,
+      });
+    });
+    return { messageId, alreadyDeleted };
   } catch (error) {
     throw invalidArgument(error);
   }
@@ -455,7 +837,7 @@ exports.updateStudyGroup = onCall(callableOptions, async (request) => {
   }
 });
 
-exports.redeemGroupInvite = onCall(callableOptions, async (request) => {
+exports.redeemGroupInvite = onCall(highAbuseCallableOptions, async (request) => {
   const uid = authenticatedUid(request);
 
   try {
@@ -465,6 +847,12 @@ exports.redeemGroupInvite = onCall(callableOptions, async (request) => {
     const inviteId = hashInviteToken(token);
     const inviteRef = db.doc(`invites/${inviteId}`);
     const now = Timestamp.now();
+    await db.runTransaction((transaction) => enforceDailyRateLimit(
+      transaction,
+      uid,
+      "redeem_group_invite",
+      now,
+    ));
 
     const redemption = await db.runTransaction(async (transaction) => {
       const inviteSnapshot = await transaction.get(inviteRef);
@@ -534,6 +922,9 @@ exports.redeemGroupInvite = onCall(callableOptions, async (request) => {
       );
       const inviteeBlockRef = db.doc(`users/${uid}/blocks/${inviterUid}`);
       const inviterBlockRef = db.doc(`users/${inviterUid}/blocks/${uid}`);
+      const ownerUid = group.ownerId;
+      const inviteeOwnerBlockRef = db.doc(`users/${uid}/blocks/${ownerUid}`);
+      const ownerInviteeBlockRef = db.doc(`users/${ownerUid}/blocks/${uid}`);
       const inviteePrivateRef = db.doc(`users_private/${uid}`);
       const inviterPrivateRef = db.doc(`users_private/${inviterUid}`);
       const [
@@ -541,6 +932,8 @@ exports.redeemGroupInvite = onCall(callableOptions, async (request) => {
         inviterConnectionSnapshot,
         inviteeBlockSnapshot,
         inviterBlockSnapshot,
+        inviteeOwnerBlockSnapshot,
+        ownerInviteeBlockSnapshot,
         inviteePrivateSnapshot,
         inviterPrivateSnapshot,
       ] = await Promise.all([
@@ -548,10 +941,17 @@ exports.redeemGroupInvite = onCall(callableOptions, async (request) => {
         transaction.get(inviterConnectionRef),
         transaction.get(inviteeBlockRef),
         transaction.get(inviterBlockRef),
+        transaction.get(inviteeOwnerBlockRef),
+        transaction.get(ownerInviteeBlockRef),
         transaction.get(inviteePrivateRef),
         transaction.get(inviterPrivateRef),
       ]);
-      if (inviteeBlockSnapshot.exists || inviterBlockSnapshot.exists) {
+      if (
+        inviteeBlockSnapshot.exists ||
+        inviterBlockSnapshot.exists ||
+        inviteeOwnerBlockSnapshot.exists ||
+        ownerInviteeBlockSnapshot.exists
+      ) {
         throw new HttpsError(
           "failed-precondition",
           "This invitation cannot be redeemed.",
@@ -563,6 +963,7 @@ exports.redeemGroupInvite = onCall(callableOptions, async (request) => {
           "Both accounts must complete profile setup before connecting.",
         );
       }
+      requireAccountPostingAccess(inviteePrivateSnapshot);
       const inviteeNeedsConnection = !inviteeConnectionSnapshot.exists;
       const inviterNeedsConnection = !inviterConnectionSnapshot.exists;
       const inviteeConnectionCount =
@@ -687,32 +1088,104 @@ function insightFeedDocument(document, insight, sourceId = "connection") {
   };
 }
 
-exports.publishInsight = onCall(callableOptions, async (request) => {
+exports.publishInsight = onCall(highAbuseCallableOptions, async (request) => {
   const uid = authenticatedUid(request);
   try {
     const { title, body, themeId } = normalizeInsightInput(request.data);
+    const requestedInsightId = request.data?.insightId == null
+      ? null
+      : requireString(request.data.insightId, "insightId", 160);
+    const insightId = requestedInsightId ?? db.collection("insights").doc().id;
+    if (!/^[A-Za-z0-9_-]{1,160}$/.test(insightId)) {
+      throw new RangeError("insightId is invalid.");
+    }
 
     const now = Timestamp.now();
     const expiresAt = Timestamp.fromMillis(
       now.toMillis() + 3 * 24 * 60 * 60 * 1000,
     );
-    const insightRef = db.collection("insights").doc();
+    const insightRef = db.doc(`insights/${insightId}`);
     const profileRef = db.doc(`users_public/${uid}`);
+    const accountRef = db.doc(`users_private/${uid}`);
+    const existingBeforeAudience = await insightRef.get();
+    if (existingBeforeAudience.exists) {
+      const existing = existingBeforeAudience.data();
+      if (
+        existing.authorUid !== uid ||
+        existing.title !== title ||
+        existing.body !== body ||
+        existing.themeId !== themeId
+      ) {
+        throw new HttpsError(
+          "already-exists",
+          "That Insight identifier is already in use.",
+        );
+      }
+      return {
+        insightId,
+        expiresAtMillis: existing.expiresAt?.toMillis?.() ?? 0,
+        alreadyCommitted: true,
+      };
+    }
+    const connectionCountSnapshot = await db
+      .collection(`users/${uid}/connections`)
+      .where("status", "==", "accepted")
+      .limit(501)
+      .get();
+    if (connectionCountSnapshot.size > 500) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "The reflection audience is too large to publish safely.",
+      );
+    }
 
+    let alreadyCommitted = false;
+    let committedExpiresAtMillis = expiresAt.toMillis();
     await db.runTransaction(async (transaction) => {
-      const profileSnapshot = await transaction.get(profileRef);
-      if (!profileSnapshot.exists) {
+      const [profileSnapshot, accountSnapshot, existingSnapshot] =
+        await Promise.all([
+          transaction.get(profileRef),
+          transaction.get(accountRef),
+          transaction.get(insightRef),
+        ]);
+      if (existingSnapshot.exists) {
+        const existing = existingSnapshot.data();
+        if (
+          existing.authorUid !== uid ||
+          existing.title !== title ||
+          existing.body !== body ||
+          existing.themeId !== themeId
+        ) {
+          throw new HttpsError(
+            "already-exists",
+            "That Insight identifier is already in use.",
+          );
+        }
+        alreadyCommitted = true;
+        committedExpiresAtMillis = existing.expiresAt?.toMillis?.()
+          ?? committedExpiresAtMillis;
+        return;
+      }
+      if (!profileSnapshot.exists || !accountSnapshot.exists) {
         throw new HttpsError(
           "failed-precondition",
           "Complete your profile before sharing an Insight.",
         );
       }
+      requireAccountPostingAccess(accountSnapshot);
       await enforceDailyRateLimit(
         transaction,
         uid,
         "publish_insight",
         now,
-        { minIntervalMs: 30 * 1000, dailyLimit: 20 },
+      );
+      await enforceDailyRateLimit(
+        transaction,
+        uid,
+        "insight_fanout",
+        now,
+        ABUSE_POLICIES.insight_fanout,
+        connectionCountSnapshot.size + 1,
       );
       const profile = profileSnapshot.data();
       const authorName = typeof profile.displayName === "string"
@@ -739,31 +1212,271 @@ exports.publishInsight = onCall(callableOptions, async (request) => {
         expiresAt,
       });
     });
-    return { insightId: insightRef.id, expiresAtMillis: expiresAt.toMillis() };
+    return {
+      insightId: insightRef.id,
+      expiresAtMillis: committedExpiresAtMillis,
+      alreadyCommitted,
+    };
   } catch (error) {
     throw invalidArgument(error);
   }
 });
 
-exports.submitReport = onCall(callableOptions, async (request) => {
+async function requireVisibleInsight(
+  transaction,
+  insightRef,
+  uid,
+  now,
+) {
+  const insightSnapshot = await transaction.get(insightRef);
+  if (!insightSnapshot.exists) {
+    throw new HttpsError("not-found", "Reflection not found.");
+  }
+  const insight = insightSnapshot.data();
+  if (insight.authorUid === uid) return insight;
+  const [connection, viewerBlock, authorBlock] = await Promise.all([
+    transaction.get(
+      db.doc(`users/${insight.authorUid}/connections/${uid}`),
+    ),
+    transaction.get(db.doc(`users/${uid}/blocks/${insight.authorUid}`)),
+    transaction.get(db.doc(`users/${insight.authorUid}/blocks/${uid}`)),
+  ]);
+  if (
+    insight.status !== "active" ||
+    insight.expiresAt?.toMillis?.() <= now.toMillis() ||
+    !connection.exists ||
+    connection.data().status !== "accepted" ||
+    viewerBlock.exists ||
+    authorBlock.exists
+  ) {
+    throw new HttpsError(
+      "permission-denied",
+      "This reflection is not visible to this account.",
+    );
+  }
+  return insight;
+}
+
+exports.createInsightComment = onCall(
+  highAbuseCallableOptions,
+  async (request) => {
+    const uid = authenticatedUid(request);
+    try {
+      const insightId = requireString(request.data?.insightId, "insightId", 160);
+      const commentId = requireString(request.data?.commentId, "commentId", 160);
+      const body = requireString(request.data?.body, "body", 4000);
+      const replyToId = optionalString(
+        request.data?.replyToId,
+        "replyToId",
+        160,
+      );
+      const now = Timestamp.now();
+      const insightRef = db.doc(`insights/${insightId}`);
+      const commentRef = insightRef.collection("comments").doc(commentId);
+      const profileRef = db.doc(`users_public/${uid}`);
+      const accountRef = db.doc(`users_private/${uid}`);
+      await db.runTransaction(async (transaction) => {
+        const [
+          insight,
+          profileSnapshot,
+          accountSnapshot,
+          existingComment,
+          parentSnapshot,
+        ] =
+          await Promise.all([
+            requireVisibleInsight(transaction, insightRef, uid, now),
+            transaction.get(profileRef),
+            transaction.get(accountRef),
+            transaction.get(commentRef),
+            replyToId
+              ? transaction.get(
+                insightRef.collection("comments").doc(replyToId),
+              )
+              : Promise.resolve(null),
+          ]);
+        if (existingComment.exists) {
+          if (
+            existingComment.data().authorUid === uid &&
+            existingComment.data().body === body
+          ) {
+            return;
+          }
+          throw new HttpsError(
+            "already-exists",
+            "That comment identifier is already in use.",
+          );
+        }
+        if (!profileSnapshot.exists || !accountSnapshot.exists ||
+            (replyToId && !parentSnapshot?.exists)) {
+          throw new HttpsError(
+            "failed-precondition",
+            "The profile or reply target is unavailable.",
+          );
+        }
+        requireAccountPostingAccess(accountSnapshot);
+        await enforceDailyRateLimit(
+          transaction,
+          uid,
+          "create_insight_comment",
+          now,
+        );
+        const profile = profileSnapshot.data();
+        transaction.create(commentRef, {
+          schemaVersion: 2,
+          insightId,
+          authorUid: uid,
+          authorName: boundedNotificationText(
+            profile.displayName,
+            "Braid member",
+          ),
+          ...(typeof profile.photoUrl === "string" && profile.photoUrl
+            ? { authorPhotoUrl: profile.photoUrl.slice(0, 2048) }
+            : {}),
+          body,
+          ...(replyToId ? { replyToId } : {}),
+          createdAt: now,
+        });
+        void insight;
+      });
+      return { commentId };
+    } catch (error) {
+      throw invalidArgument(error);
+    }
+  },
+);
+
+exports.setInsightReaction = onCall(
+  highAbuseCallableOptions,
+  async (request) => {
+    const uid = authenticatedUid(request);
+    try {
+      const insightId = requireString(request.data?.insightId, "insightId", 160);
+      const commentId = optionalString(
+        request.data?.commentId,
+        "commentId",
+        160,
+      );
+      if (typeof request.data?.active !== "boolean") {
+        throw new TypeError("active must be a boolean");
+      }
+      const now = Timestamp.now();
+      const insightRef = db.doc(`insights/${insightId}`);
+      const parentRef = commentId
+        ? insightRef.collection("comments").doc(commentId)
+        : insightRef;
+      const reactionRef = parentRef.collection("reactions").doc(uid);
+      const accountRef = db.doc(`users_private/${uid}`);
+      await db.runTransaction(async (transaction) => {
+        const [accountSnapshot, , parentSnapshot] = await Promise.all([
+          transaction.get(accountRef),
+          requireVisibleInsight(transaction, insightRef, uid, now),
+          commentId ? transaction.get(parentRef) : Promise.resolve(null),
+        ]);
+        requireAccountPostingAccess(accountSnapshot);
+        if (commentId && !parentSnapshot?.exists) {
+          throw new HttpsError("not-found", "Comment not found.");
+        }
+        await enforceDailyRateLimit(
+          transaction,
+          uid,
+          "set_reaction",
+          now,
+        );
+        if (request.data.active) {
+          transaction.set(reactionRef, {
+            uid,
+            reaction: "helpful",
+            createdAt: now,
+          });
+        } else {
+          transaction.delete(reactionRef);
+        }
+      });
+      return { active: request.data.active };
+    } catch (error) {
+      throw invalidArgument(error);
+    }
+  },
+);
+
+exports.submitReport = onCall(highAbuseCallableOptions, async (request) => {
   const uid = authenticatedUid(request);
   try {
     const {
       targetType,
       targetId,
       groupId,
+      insightId,
       reason,
       details,
     } = normalizeReportInput(request.data);
     const now = Timestamp.now();
     const reportRef = db.collection("reports").doc();
+    const accountRef = db.doc(`users_private/${uid}`);
     await db.runTransaction(async (transaction) => {
+      const accountSnapshot = await transaction.get(accountRef);
+      requireAccountPostingAccess(accountSnapshot);
+      const targetPath = reportTargetPath({
+        targetType,
+        targetId,
+        groupId,
+        insightId,
+      });
+      const targetRef = db.doc(targetPath);
+      let target;
+      if (targetType === "insight") {
+        target = await requireVisibleInsight(
+          transaction,
+          targetRef,
+          uid,
+          now,
+        );
+      } else if (targetType === "comment") {
+        const commentInsightRef = db.doc(`insights/${insightId}`);
+        await requireVisibleInsight(transaction, commentInsightRef, uid, now);
+        const targetSnapshot = await transaction.get(targetRef);
+        if (!targetSnapshot.exists) {
+          throw new HttpsError("not-found", "Report target not found.");
+        }
+        target = targetSnapshot.data();
+      } else if (targetType === "message") {
+        const [targetSnapshot, groupSnapshot] = await Promise.all([
+          transaction.get(targetRef),
+          transaction.get(db.doc(`groups/${groupId}`)),
+        ]);
+        if (
+          !targetSnapshot.exists ||
+          !groupSnapshot.exists ||
+          !Array.isArray(groupSnapshot.data().members) ||
+          !groupSnapshot.data().members.includes(uid)
+        ) {
+          throw new HttpsError(
+            "permission-denied",
+            "The reported message is not visible to this account.",
+          );
+        }
+        target = targetSnapshot.data();
+      } else {
+        const targetSnapshot = await transaction.get(targetRef);
+        if (!targetSnapshot.exists) {
+          throw new HttpsError("not-found", "Report target not found.");
+        }
+        target = targetSnapshot.data();
+        if (
+          targetType === "group" &&
+          (!Array.isArray(target.members) || !target.members.includes(uid))
+        ) {
+          throw new HttpsError(
+            "permission-denied",
+            "The reported study is not visible to this account.",
+          );
+        }
+      }
       await enforceDailyRateLimit(
         transaction,
         uid,
         "submit_report",
         now,
-        { minIntervalMs: 5 * 1000, dailyLimit: 20 },
       );
       transaction.create(reportRef, {
         schemaVersion: 2,
@@ -771,8 +1484,20 @@ exports.submitReport = onCall(callableOptions, async (request) => {
         targetType,
         targetId,
         ...(groupId ? { groupId } : {}),
+        ...(insightId ? { insightId } : {}),
         reason,
         ...(details ? { details } : {}),
+        evidence: {
+          capturedAt: now,
+          ownerUid: target.authorUid ?? target.senderId ?? target.uid
+            ?? target.ownerId ?? null,
+          status: target.status ?? target.lifecycle ?? null,
+          excerpt: boundedNotificationText(
+            target.body ?? target.parts?.[0]?.content ?? target.displayName
+              ?? target.name,
+            "No text evidence available.",
+          ),
+        },
         status: "open",
         createdAt: now,
       });
@@ -782,6 +1507,365 @@ exports.submitReport = onCall(callableOptions, async (request) => {
     throw invalidArgument(error);
   }
 });
+
+exports.moderateReport = onCall(
+  highAbuseCallableOptions,
+  async (request) => {
+    const operatorUid = authenticatedUid(request);
+    try {
+      const decision = normalizeModerationDecision(request.data);
+      const now = Timestamp.now();
+      const reportRef = db.doc(`reports/${decision.reportId}`);
+      const operatorRef = db.doc(`moderation_operators/${operatorUid}`);
+      const auditRef = db.doc(`moderation_audit/${decision.actionId}`);
+      let idempotentReplay = false;
+      await db.runTransaction(async (transaction) => {
+        const [operatorSnapshot, reportSnapshot, auditSnapshot] =
+          await Promise.all([
+            transaction.get(operatorRef),
+            transaction.get(reportRef),
+            transaction.get(auditRef),
+          ]);
+        if (
+          !operatorSnapshot.exists ||
+          operatorSnapshot.data().status !== "active"
+        ) {
+          throw new HttpsError(
+            "permission-denied",
+            "This operator assignment is not active.",
+          );
+        }
+        const operatorRole = operatorSnapshot.data().role;
+        const capabilities = moderationCapabilities({
+          moderationRole: operatorRole,
+        });
+        if (!capabilities.includes(decision.action)) {
+          throw new HttpsError(
+            "permission-denied",
+            "This operator role cannot perform that action.",
+          );
+        }
+        if (auditSnapshot.exists) {
+          const existing = auditSnapshot.data();
+          if (
+            existing.operatorUid === operatorUid &&
+            existing.reportId === decision.reportId &&
+            existing.action === decision.action
+          ) {
+            idempotentReplay = true;
+            return;
+          }
+          throw new HttpsError(
+            "already-exists",
+            "That moderation action identifier is already in use.",
+          );
+        }
+        if (!reportSnapshot.exists) {
+          throw new HttpsError("not-found", "Report not found.");
+        }
+        const report = reportSnapshot.data();
+        if (report.status === "resolved") {
+          throw new HttpsError(
+            "failed-precondition",
+            "This report has already been resolved.",
+          );
+        }
+        const targetPath = reportTargetPath(report);
+        const targetRef = db.doc(targetPath);
+        const targetSnapshot = await transaction.get(targetRef);
+        if (
+          decision.action !== "dismiss_report" &&
+          decision.action !== "restore_account" &&
+          !targetSnapshot.exists
+        ) {
+          throw new HttpsError("not-found", "Moderation target not found.");
+        }
+        const accountUid = report.evidence?.ownerUid ??
+          (report.targetType === "user" ? report.targetId : null);
+        const accountRef = accountUid
+          ? db.doc(`users_private/${accountUid}`)
+          : null;
+        const accountSnapshot = accountRef
+          ? await transaction.get(accountRef)
+          : null;
+        const accountStatusBefore = accountSnapshot?.exists
+          ? accountSnapshot.data().accountStatus ?? "active"
+          : null;
+
+        if (decision.action === "remove_content") {
+          if (report.targetType === "insight") {
+            transaction.update(targetRef, {
+              status: "removed",
+              moderatedAt: now,
+              moderationAuditId: auditRef.id,
+            });
+          } else if (report.targetType === "message") {
+            transaction.update(targetRef, {
+              parts: [],
+              isDeleted: true,
+              deletedAt: now,
+              moderatedAt: now,
+              moderationAuditId: auditRef.id,
+            });
+          } else if (report.targetType === "group") {
+            transaction.update(targetRef, {
+              lifecycle: "archived",
+              archivedAt: now,
+              moderatedAt: now,
+              moderationAuditId: auditRef.id,
+            });
+          } else if (report.targetType === "comment") {
+            transaction.update(targetRef, {
+              body: "This comment was removed by moderation.",
+              isRemoved: true,
+              removedAt: now,
+              updatedAt: now,
+              moderatedAt: now,
+              moderationAuditId: auditRef.id,
+            });
+          } else {
+            throw new HttpsError(
+              "failed-precondition",
+              "This target does not support content removal.",
+            );
+          }
+        }
+        if ([
+          "restrict_account",
+          "suspend_account",
+          "restore_account",
+        ].includes(decision.action)) {
+          if (!accountRef || !accountSnapshot?.exists) {
+            throw new HttpsError(
+              "failed-precondition",
+              "The target account record is unavailable.",
+            );
+          }
+          const accountStatus = decision.action === "restore_account"
+            ? "active"
+            : decision.action === "suspend_account"
+              ? "suspended"
+              : "restricted";
+          transaction.update(accountRef, {
+            accountStatus,
+            moderationAuditId: auditRef.id,
+            moderationUpdatedAt: now,
+          });
+        }
+        transaction.create(auditRef, {
+          ...buildModerationAuditRecord({
+            operatorUid,
+            operatorRole,
+            decision,
+            report: {
+              ...report,
+              ...(accountStatusBefore
+                ? { accountStatusBefore }
+                : {}),
+            },
+            now,
+          }),
+          retentionExpiresAt: Timestamp.fromMillis(
+            now.toMillis() + 730 * 24 * 60 * 60 * 1000,
+          ),
+        });
+        transaction.update(reportRef, {
+          status: "resolved",
+          taxonomy: decision.taxonomy,
+          resolution: decision.action,
+          resolvedAt: now,
+          resolvedBy: operatorUid,
+          moderationAuditId: auditRef.id,
+          retentionExpiresAt: Timestamp.fromMillis(
+            now.toMillis() + 180 * 24 * 60 * 60 * 1000,
+          ),
+        });
+      });
+      return {
+        auditId: auditRef.id,
+        status: "resolved",
+        idempotentReplay,
+      };
+    } catch (error) {
+      throw invalidArgument(error);
+    }
+  },
+);
+
+exports.submitModerationAppeal = onCall(
+  highAbuseCallableOptions,
+  async (request) => {
+    const uid = authenticatedUid(request);
+    try {
+      const auditId = requireString(request.data?.auditId, "auditId", 160);
+      const statement = requireString(
+        request.data?.statement,
+        "statement",
+        4_000,
+        { minLength: 20 },
+      );
+      const now = Timestamp.now();
+      const auditRef = db.doc(`moderation_audit/${auditId}`);
+      const appealRef = db.doc(`moderation_appeals/${auditId}_${uid}`);
+      await db.runTransaction(async (transaction) => {
+        const [auditSnapshot, appealSnapshot] = await Promise.all([
+          transaction.get(auditRef),
+          transaction.get(appealRef),
+        ]);
+        if (!auditSnapshot.exists) {
+          throw new HttpsError("not-found", "Moderation action not found.");
+        }
+        const audit = auditSnapshot.data();
+        if (
+          audit.reportSnapshot?.ownerUid !== uid &&
+          audit.reportSnapshot?.targetId !== uid
+        ) {
+          throw new HttpsError(
+            "permission-denied",
+            "This moderation action does not belong to this account.",
+          );
+        }
+        if (appealSnapshot.exists) {
+          throw new HttpsError(
+            "already-exists",
+            "An appeal is already open for this action.",
+          );
+        }
+        transaction.create(appealRef, {
+          schemaVersion: 1,
+          auditId,
+          appellantUid: uid,
+          statement,
+          status: "open",
+          createdAt: now,
+        });
+      });
+      return { appealId: appealRef.id, status: "open" };
+    } catch (error) {
+      throw invalidArgument(error);
+    }
+  },
+);
+
+exports.reviewModerationAppeal = onCall(
+  highAbuseCallableOptions,
+  async (request) => {
+    const reviewerUid = authenticatedUid(request);
+    try {
+      const appealId = requireString(request.data?.appealId, "appealId", 321);
+      const reviewId = requireString(request.data?.reviewId, "reviewId", 160);
+      const outcome = requireString(request.data?.outcome, "outcome", 20);
+      const rationale = requireString(
+        request.data?.rationale,
+        "rationale",
+        2_000,
+        { minLength: 10 },
+      );
+      if (!["upheld", "overturned"].includes(outcome)) {
+        throw new RangeError("outcome is unsupported");
+      }
+      const appealRef = db.doc(`moderation_appeals/${appealId}`);
+      const operatorRef = db.doc(`moderation_operators/${reviewerUid}`);
+      const reviewRef = db.doc(`moderation_appeal_audit/${reviewId}`);
+      const now = Timestamp.now();
+      await db.runTransaction(async (transaction) => {
+        const [operatorSnapshot, appealSnapshot, reviewSnapshot] =
+          await Promise.all([
+            transaction.get(operatorRef),
+            transaction.get(appealRef),
+            transaction.get(reviewRef),
+          ]);
+        if (
+          !operatorSnapshot.exists ||
+          operatorSnapshot.data().status !== "active" ||
+          !moderationCapabilities({
+            moderationRole: operatorSnapshot.data().role,
+          }).includes("suspend_account")
+        ) {
+          throw new HttpsError(
+            "permission-denied",
+            "An active trust and safety reviewer is required.",
+          );
+        }
+        if (reviewSnapshot.exists) {
+          const existing = reviewSnapshot.data();
+          if (
+            existing.reviewerUid === reviewerUid &&
+            existing.appealId === appealId &&
+            existing.outcome === outcome
+          ) {
+            return;
+          }
+          throw new HttpsError(
+            "already-exists",
+            "That appeal review identifier is already in use.",
+          );
+        }
+        if (!appealSnapshot.exists || appealSnapshot.data().status !== "open") {
+          throw new HttpsError(
+            "failed-precondition",
+            "This appeal is not open.",
+          );
+        }
+        const appeal = appealSnapshot.data();
+        const actionSnapshot = await transaction.get(
+          db.doc(`moderation_audit/${appeal.auditId}`),
+        );
+        if (!actionSnapshot.exists) {
+          throw new HttpsError("not-found", "Original action not found.");
+        }
+        if (actionSnapshot.data().operatorUid === reviewerUid) {
+          throw new HttpsError(
+            "permission-denied",
+            "Appeals require an independent reviewer.",
+          );
+        }
+        transaction.create(reviewRef, {
+          schemaVersion: 1,
+          reviewId,
+          appealId,
+          originalAuditId: appeal.auditId,
+          reviewerUid,
+          reviewerRole: operatorSnapshot.data().role,
+          outcome,
+          rationale,
+          createdAt: now,
+          retentionExpiresAt: Timestamp.fromMillis(
+            now.toMillis() + 730 * 24 * 60 * 60 * 1000,
+          ),
+        });
+        transaction.update(appealRef, {
+          status: outcome,
+          reviewedAt: now,
+          reviewedBy: reviewerUid,
+          reviewAuditId: reviewId,
+          retentionExpiresAt: Timestamp.fromMillis(
+            now.toMillis() + 180 * 24 * 60 * 60 * 1000,
+          ),
+        });
+        if (
+          outcome === "overturned" &&
+          [
+            "restrict_account",
+            "suspend_account",
+            "restore_account",
+          ].includes(actionSnapshot.data().action)
+        ) {
+          const priorStatus = actionSnapshot.data().reportSnapshot
+            ?.accountStatusBefore ?? "active";
+          transaction.update(db.doc(`users_private/${appeal.appellantUid}`), {
+            accountStatus: priorStatus,
+            moderationUpdatedAt: now,
+            moderationAuditId: reviewId,
+          });
+        }
+      });
+      return { reviewId, outcome };
+    } catch (error) {
+      throw invalidArgument(error);
+    }
+  },
+);
 
 exports.syncInsightFeed = onDocumentWritten(
   {
@@ -1281,29 +2365,89 @@ exports.advanceGroupLifecycle = onSchedule(
   },
   async () => {
     const now = Timestamp.now();
-    const [scheduledSnapshot, activeSnapshot] = await Promise.all([
-      db.collection("groups")
-        .where("lifecycle", "==", "scheduled")
-        .where("startDate", "<=", now)
-        .limit(400)
-        .get(),
-      db.collection("groups")
-        .where("lifecycle", "==", "active")
-        .where("endDate", "<=", now)
-        .limit(400)
-        .get(),
-    ]);
-    if (scheduledSnapshot.empty && activeSnapshot.empty) return;
-    const result = await commitLifecycleUpdates({
-      firestore: db,
-      scheduledDocuments: scheduledSnapshot.docs,
-      activeDocuments: activeSnapshot.docs,
-      now,
+    const scheduledQuery = () => db.collection("groups")
+      .where("lifecycle", "==", "scheduled")
+      .where("startDate", "<=", now);
+    const activeQuery = () => db.collection("groups")
+      .where("lifecycle", "==", "active")
+      .where("endDate", "<=", now);
+    const metrics = await drainPagedJob({
+      // Updating lifecycle removes every successful document from these
+      // queries, so restarting from the head is a mutation-derived cursor.
+      // Inserts before/after a previous page therefore cannot be skipped.
+      loadPage: async ({ limit }) => {
+        const perStateLimit = Math.max(1, Math.floor(limit / 2));
+        const [scheduled, active] = await Promise.all([
+          scheduledQuery().orderBy("startDate").limit(perStateLimit).get(),
+          activeQuery().orderBy("endDate").limit(perStateLimit).get(),
+        ]);
+        const items = [
+          ...scheduled.docs.map((document) => ({
+            id: `scheduled:${document.id}`,
+            state: "scheduled",
+            document,
+          })),
+          ...active.docs.map((document) => ({
+            id: `active:${document.id}`,
+            state: "active",
+            document,
+          })),
+        ];
+        items.pageFull =
+          scheduled.size === perStateLimit || active.size === perStateLimit;
+        return items;
+      },
+      processPage: async (items) => {
+        try {
+          const result = await commitLifecycleUpdates({
+            firestore: db,
+            scheduledDocuments: items
+              .filter((item) => item.state === "scheduled")
+              .map((item) => item.document),
+            activeDocuments: items
+              .filter((item) => item.state === "active")
+              .map((item) => item.document),
+            now,
+            maxBatchWrites: 450,
+          });
+          return {
+            processed: result.activatedCount + result.completedCount,
+            errors: 0,
+          };
+        } catch (error) {
+          logger.error("Lifecycle page failed", {
+            itemCount: items.length,
+            error: error?.message ?? String(error),
+          });
+          return { processed: 0, errors: items.length };
+        }
+      },
+      inspectBacklog: async () => {
+        const [scheduledCount, activeCount, oldestScheduled, oldestActive] =
+          await Promise.all([
+            scheduledQuery().count().get(),
+            activeQuery().count().get(),
+            scheduledQuery().orderBy("startDate").limit(1).get(),
+            activeQuery().orderBy("endDate").limit(1).get(),
+          ]);
+        const eligibleTimes = [
+          oldestScheduled.docs[0]?.data().startDate?.toMillis?.(),
+          oldestActive.docs[0]?.data().endDate?.toMillis?.(),
+        ].filter(Number.isFinite);
+        return {
+          backlogCount:
+            scheduledCount.data().count + activeCount.data().count,
+          oldestEligibleAtMillis: eligibleTimes.length > 0
+            ? Math.min(...eligibleTimes)
+            : null,
+        };
+      },
+      timeBudgetMs: 7 * 60 * 1000,
+      pageSize: 450,
     });
     logger.info("Group lifecycle advancement", {
-      activatedCount: result.activatedCount,
-      completedCount: result.completedCount,
-      batchCount: result.batchCount,
+      ...metrics,
+      cursorStrategy: "mutation_derived",
     });
   },
 );
@@ -1445,80 +2589,179 @@ exports.cleanupExpiredData = onSchedule(
     const orphanMediaCutoff = Timestamp.fromMillis(
       now.toMillis() - 24 * 60 * 60 * 1000,
     );
-    const [
-      inviteSnapshot,
-      feedSnapshot,
-      eventSnapshot,
-      rateSnapshot,
-      pendingMediaSnapshot,
-      deletionMediaSnapshot,
-    ] = await Promise.all([
-      db.collection("invites")
-        .where("expiresAt", "<=", now)
-        .limit(400)
-        .get(),
-      db.collectionGroup("insight_feed")
-        .where("expiresAt", "<=", now)
-        .limit(400)
-        .get(),
-      db.collectionGroup("message_events")
-        .where("summaryProcessedAt", "<=", oldMessageEventCutoff)
-        .limit(400)
-        .get(),
-      db.collectionGroup("actions")
-        .where("windowStartedAt", "<=", oldRateLimitCutoff)
-        .limit(400)
-        .get(),
-      db.collection("managed_assets")
-        .where("status", "==", "pending")
-        .where("createdAt", "<=", orphanMediaCutoff)
-        .limit(250)
-        .get(),
-      db.collection("managed_assets")
-        .where("status", "==", "delete_pending")
-        .limit(250)
-        .get(),
-    ]);
-
-    const bulkWriter = db.bulkWriter();
-    for (const snapshot of [
-      inviteSnapshot,
-      feedSnapshot,
-      eventSnapshot,
-      rateSnapshot,
-    ]) {
-      for (const document of snapshot.docs) {
-        bulkWriter.delete(document.ref);
-      }
-    }
-
-    let committedManagedMediaCount = 0;
-    let removedOrphanMediaCount = 0;
-    for (const document of [
-      ...pendingMediaSnapshot.docs,
-      ...deletionMediaSnapshot.docs,
-    ]) {
-      const result = await reconcileExpiredManagedAsset({
-        firestore: db,
-        storage: admin.storage(),
-        assetDocument: document,
-        now,
+    const drainDeleteQuery = async ({ name, query, timeField }) => {
+      const metrics = await drainPagedJob({
+        // Deletes remove processed documents from the eligible query. Reading
+        // from the head each page is a mutation-derived cursor that also
+        // includes inserts arriving around a previous page boundary.
+        loadPage: async ({ limit }) => {
+          const snapshot = await query()
+            .orderBy(timeField)
+            .limit(limit)
+            .get();
+          return snapshot.docs.map((document) => ({
+            id: document.id,
+            document,
+          }));
+        },
+        processPage: async (items) => {
+          try {
+            const batch = db.batch();
+            for (const item of items) batch.delete(item.document.ref);
+            await batch.commit();
+            return { processed: items.length, errors: 0 };
+          } catch (error) {
+            logger.error("Cleanup page failed", {
+              name,
+              itemCount: items.length,
+              error: error?.message ?? String(error),
+            });
+            return { processed: 0, errors: items.length };
+          }
+        },
+        inspectBacklog: async () => {
+          const [count, oldest] = await Promise.all([
+            query().count().get(),
+            query().orderBy(timeField).limit(1).get(),
+          ]);
+          return {
+            backlogCount: count.data().count,
+            oldestEligibleAtMillis:
+              oldest.docs[0]?.data()[timeField]?.toMillis?.() ?? null,
+          };
+        },
+        timeBudgetMs: 35 * 1000,
+        pageSize: 400,
       });
-      if (result === "committed") committedManagedMediaCount += 1;
-      if (result === "deleted") removedOrphanMediaCount += 1;
-    }
-    await bulkWriter.close();
+      return { name, ...metrics, cursorStrategy: "mutation_derived" };
+    };
 
-    logger.info("Expired data cleanup", {
-      expiredInviteCount: inviteSnapshot.size,
-      expiredFeedPointerCount: feedSnapshot.size,
-      oldMessageEventCount: eventSnapshot.size,
-      oldRateLimitCount: rateSnapshot.size,
-      reviewedPendingMediaCount: pendingMediaSnapshot.size,
-      retriedMediaDeletionCount: deletionMediaSnapshot.size,
-      committedManagedMediaCount,
-      removedOrphanMediaCount,
-    });
+    const cleanupMetrics = [];
+    cleanupMetrics.push(await drainDeleteQuery({
+      name: "expired_invites",
+      query: () => db.collection("invites").where("expiresAt", "<=", now),
+      timeField: "expiresAt",
+    }));
+    cleanupMetrics.push(await drainDeleteQuery({
+      name: "expired_feed",
+      query: () => db.collectionGroup("insight_feed")
+        .where("expiresAt", "<=", now),
+      timeField: "expiresAt",
+    }));
+    cleanupMetrics.push(await drainDeleteQuery({
+      name: "message_events",
+      query: () => db.collectionGroup("message_events")
+        .where("summaryProcessedAt", "<=", oldMessageEventCutoff),
+      timeField: "summaryProcessedAt",
+    }));
+    cleanupMetrics.push(await drainDeleteQuery({
+      name: "rate_limits",
+      query: () => db.collectionGroup("actions")
+        .where("windowStartedAt", "<=", oldRateLimitCutoff),
+      timeField: "windowStartedAt",
+    }));
+    cleanupMetrics.push(await drainDeleteQuery({
+      name: "moderation_reports",
+      query: () => db.collection("reports")
+        .where("retentionExpiresAt", "<=", now),
+      timeField: "retentionExpiresAt",
+    }));
+    cleanupMetrics.push(await drainDeleteQuery({
+      name: "moderation_appeals",
+      query: () => db.collection("moderation_appeals")
+        .where("retentionExpiresAt", "<=", now),
+      timeField: "retentionExpiresAt",
+    }));
+    cleanupMetrics.push(await drainDeleteQuery({
+      name: "moderation_audit",
+      query: () => db.collection("moderation_audit")
+        .where("retentionExpiresAt", "<=", now),
+      timeField: "retentionExpiresAt",
+    }));
+    cleanupMetrics.push(await drainDeleteQuery({
+      name: "moderation_appeal_audit",
+      query: () => db.collection("moderation_appeal_audit")
+        .where("retentionExpiresAt", "<=", now),
+      timeField: "retentionExpiresAt",
+    }));
+
+    const drainManagedMedia = async ({
+      name,
+      query,
+      timeField,
+    }) => {
+      let committedCount = 0;
+      let deletedCount = 0;
+      const metrics = await drainPagedJob({
+        loadPage: async ({ limit }) => {
+          const snapshot = await query().orderBy(timeField).limit(limit).get();
+          return snapshot.docs.map((document) => ({
+            id: document.id,
+            document,
+          }));
+        },
+        processPage: async (items) => {
+          let errors = 0;
+          let processed = 0;
+          for (const item of items) {
+            try {
+              const result = await reconcileExpiredManagedAsset({
+                firestore: db,
+                storage: admin.storage(),
+                assetDocument: item.document,
+                now,
+              });
+              if (result === "committed") committedCount += 1;
+              if (result === "deleted") deletedCount += 1;
+              processed += 1;
+            } catch (error) {
+              errors += 1;
+              logger.error("Managed media cleanup item failed", {
+                name,
+                assetId: item.id,
+                error: error?.message ?? String(error),
+              });
+            }
+          }
+          return { processed, errors };
+        },
+        inspectBacklog: async () => {
+          const [count, oldest] = await Promise.all([
+            query().count().get(),
+            query().orderBy(timeField).limit(1).get(),
+          ]);
+          return {
+            backlogCount: count.data().count,
+            oldestEligibleAtMillis:
+              oldest.docs[0]?.data()[timeField]?.toMillis?.() ?? null,
+          };
+        },
+        timeBudgetMs: 35 * 1000,
+        pageSize: 200,
+      });
+      return {
+        name,
+        ...metrics,
+        committedCount,
+        deletedCount,
+        cursorStrategy: "mutation_derived",
+      };
+    };
+    cleanupMetrics.push(await drainManagedMedia({
+      name: "pending_media",
+      query: () => db.collection("managed_assets")
+        .where("status", "==", "pending")
+        .where("createdAt", "<=", orphanMediaCutoff),
+      timeField: "createdAt",
+    }));
+    cleanupMetrics.push(await drainManagedMedia({
+      name: "pending_media_deletion",
+      query: () => db.collection("managed_assets")
+        .where("status", "==", "delete_pending"),
+      timeField: "deletePendingAt",
+    }));
+
+    logger.info("Expired data cleanup", { jobs: cleanupMetrics });
   },
 );
 

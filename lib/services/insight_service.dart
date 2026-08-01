@@ -3,7 +3,6 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/insight_model.dart';
-import 'canonical_identity_service.dart';
 import 'firestore_commit_service.dart';
 
 bool shouldRemoveUnavailableSavedInsight(Object error) {
@@ -70,21 +69,14 @@ class InsightService implements MyInsightsDataSource {
   final FirebaseFirestore _firestore;
   final FirebaseFunctions _functions;
   final FirebaseAuth _auth;
-  final CanonicalIdentitySource _identitySource;
 
   InsightService({
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
     FirebaseAuth? auth,
-    CanonicalIdentitySource? identitySource,
   }) : _firestore = firestore ?? FirebaseFirestore.instance,
        _functions = functions ?? FirebaseFunctions.instance,
-       _auth = auth ?? FirebaseAuth.instance,
-       _identitySource =
-           identitySource ??
-           FirestoreCanonicalIdentitySource(
-             firestore ?? FirebaseFirestore.instance,
-           );
+       _auth = auth ?? FirebaseAuth.instance;
 
   String _requireUserId() {
     final uid = _auth.currentUser?.uid;
@@ -165,11 +157,16 @@ class InsightService implements MyInsightsDataSource {
     if (insight.authorUid != uid) {
       throw StateError('You can publish only your own reflection.');
     }
-    await _functions.httpsCallable('publishInsight').call({
+    final response = await _functions.httpsCallable('publishInsight').call({
+      'insightId': insight.id,
       'title': insight.title.trim(),
       'body': insight.body.trim(),
       'themeId': insight.themeId,
     });
+    if (response.data is! Map ||
+        (response.data as Map)['insightId']?.toString() != insight.id) {
+      throw StateError('The server did not acknowledge the expected Insight.');
+    }
   }
 
   @override
@@ -349,23 +346,19 @@ class InsightService implements MyInsightsDataSource {
     if (comment.authorUid != uid) {
       throw StateError('You can publish only your own comment.');
     }
-    final identity = await _identitySource.load(uid);
-    final reference = _firestore
-        .collection('insights')
-        .doc(insightId)
-        .collection('comments')
-        .doc(comment.id);
-    await reference.set({
-      'schemaVersion': 2,
-      'insightId': insightId,
-      'authorUid': uid,
-      'authorName': identity.displayName,
-      if (identity.photoUrl != null) 'authorPhotoUrl': identity.photoUrl,
-      'body': comment.body.trim(),
-      if (comment.replyToId?.isNotEmpty == true) 'replyToId': comment.replyToId,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-    await waitForDocumentCommit(reference);
+    final response = await _functions
+        .httpsCallable('createInsightComment')
+        .call({
+          'insightId': insightId,
+          'commentId': comment.id,
+          'body': comment.body.trim(),
+          if (comment.replyToId?.isNotEmpty == true)
+            'replyToId': comment.replyToId,
+        });
+    if (response.data is! Map ||
+        (response.data as Map)['commentId']?.toString() != comment.id) {
+      throw StateError('The server did not acknowledge the expected comment.');
+    }
   }
 
   Future<void> toggleCommentLike(
@@ -436,17 +429,14 @@ class InsightService implements MyInsightsDataSource {
     if (_requireUserId() != userId) {
       throw StateError('Reaction identity does not match the signed-in user.');
     }
-    if (!isLiking) {
-      await reference.delete();
-      await waitForDocumentCommit(reference);
-      return;
-    }
-    await reference.set({
-      'uid': userId,
-      'reaction': 'helpful',
-      'createdAt': FieldValue.serverTimestamp(),
+    final segments = reference.path.split('/');
+    final insightId = segments[1];
+    final commentId = segments.length > 4 ? segments[3] : null;
+    await _functions.httpsCallable('setInsightReaction').call({
+      'insightId': insightId,
+      'commentId': ?commentId,
+      'active': isLiking,
     });
-    await waitForDocumentCommit(reference);
   }
 
   Future<void> saveInsight(String userId, InsightModel insight) async {

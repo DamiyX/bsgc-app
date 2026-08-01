@@ -64,6 +64,7 @@ class SafetyService {
     required String targetId,
     required String reason,
     String? groupId,
+    String? insightId,
     String? details,
   }) async {
     _requireUserId();
@@ -71,6 +72,7 @@ class SafetyService {
       'targetType': targetType,
       'targetId': targetId,
       if (groupId?.isNotEmpty == true) 'groupId': groupId,
+      if (insightId?.isNotEmpty == true) 'insightId': insightId,
       'reason': reason,
       if (details?.trim().isNotEmpty == true) 'details': details!.trim(),
     });

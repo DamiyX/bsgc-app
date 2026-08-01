@@ -76,8 +76,9 @@ class _AppStartupGateState extends State<_AppStartupGate> {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
     if (!kIsWeb) {
       final firestore = FirebaseFirestore.instance;
-      await firestore.clearPersistence();
-      firestore.settings = const Settings(persistenceEnabled: false);
+      // Preserve Firestore's local cache so the signed-in shell, groups, and
+      // previously loaded study content remain usable without a network.
+      firestore.settings = const Settings(persistenceEnabled: true);
       try {
         final crashlytics = FirebaseCrashlytics.instance;
         FlutterError.onError = (details) {

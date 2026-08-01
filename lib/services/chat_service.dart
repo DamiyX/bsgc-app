@@ -7,7 +7,6 @@ import 'package:uuid/uuid.dart';
 
 import '../models/group_model.dart';
 import '../models/message_model.dart';
-import 'canonical_identity_service.dart';
 import 'firestore_commit_service.dart';
 
 class GroupInvite {
@@ -142,23 +141,16 @@ class ChatService {
   final FirebaseAuth _auth;
   final FirebaseFunctions _functions;
   final Uuid _uuid;
-  final CanonicalIdentitySource _identitySource;
 
   ChatService({
     FirebaseFirestore? firestore,
     FirebaseAuth? auth,
     FirebaseFunctions? functions,
     Uuid? uuid,
-    CanonicalIdentitySource? identitySource,
   }) : _firestore = firestore ?? FirebaseFirestore.instance,
        _auth = auth ?? FirebaseAuth.instance,
        _functions = functions ?? FirebaseFunctions.instance,
-       _uuid = uuid ?? const Uuid(),
-       _identitySource =
-           identitySource ??
-           FirestoreCanonicalIdentitySource(
-             firestore ?? FirebaseFirestore.instance,
-           );
+       _uuid = uuid ?? const Uuid();
 
   User _requireUser() {
     final user = _auth.currentUser;
@@ -521,39 +513,39 @@ class ChatService {
     String? clientMessageId,
     String space = 'discussion',
   }) async {
-    final user = _requireUser();
+    _requireUser();
     if (parts.isEmpty || parts.length > 4) {
       throw ArgumentError('A message must contain between one and four parts.');
     }
     _validateMessageParts(parts);
-    final identity = await _identitySource.load(user.uid);
-
     final stableId = clientMessageId ?? _uuid.v4();
     if (!const {'reflection', 'discussion', 'prayer'}.contains(space)) {
       throw ArgumentError.value(space, 'space', 'Unknown study space.');
     }
-    final messageRef = _firestore
-        .collection('groups')
-        .doc(groupId)
-        .collection('messages')
-        .doc(stableId);
-    await messageRef.set({
-      'schemaVersion': 2,
-      'clientMessageId': stableId,
-      'space': space,
-      'senderId': user.uid,
-      'senderName': identity.displayName,
-      if (identity.photoUrl != null) 'senderPhotoUrl': identity.photoUrl,
-      if (replyToMessageId?.isNotEmpty == true)
-        'replyToMessageId': replyToMessageId,
-      'parts': parts.map((part) => part.toMap()).toList(),
-      'clientCreatedAt': Timestamp.now(),
-      'timestamp': FieldValue.serverTimestamp(),
-      'isEdited': false,
-      'isDeleted': false,
-    });
-    await waitForDocumentCommit(messageRef);
-    return stableId;
+    try {
+      final response = await _functions.httpsCallable('sendGroupMessage').call({
+        'groupId': groupId,
+        'messageId': stableId,
+        'clientMessageId': stableId,
+        'space': space,
+        if (replyToMessageId?.isNotEmpty == true)
+          'replyToMessageId': replyToMessageId,
+        'parts': parts.map((part) => part.toMap()).toList(),
+      });
+      final messageId = response.data is Map
+          ? (response.data as Map)['messageId']?.toString()
+          : null;
+      if (messageId != stableId) {
+        throw const ChatServiceException(
+          code: 'invalid-response',
+          message: 'The server did not acknowledge the expected message.',
+        );
+      }
+      return stableId;
+    } catch (error) {
+      if (error is ChatServiceException) rethrow;
+      throw _callableError(error);
+    }
   }
 
   Future<void> resetUnreadCount(String groupId) async {
@@ -564,16 +556,14 @@ class ChatService {
   }
 
   Future<void> deleteMessage(String groupId, String messageId) async {
-    final reference = _firestore
-        .collection('groups')
-        .doc(groupId)
-        .collection('messages')
-        .doc(messageId);
-    await reference.update({
-      'isDeleted': true,
-      'parts': <Map<String, dynamic>>[],
-      'deletedAt': FieldValue.serverTimestamp(),
+    final response = await _functions.httpsCallable('deleteGroupMessage').call({
+      'groupId': groupId,
+      'messageId': messageId,
     });
+    if (response.data is! Map ||
+        (response.data as Map)['messageId']?.toString() != messageId) {
+      throw StateError('The server did not acknowledge message removal.');
+    }
   }
 
   Future<void> deleteMessageForMe(String groupId, String messageId) async {
@@ -646,16 +636,15 @@ class ChatService {
       throw ArgumentError('A message must contain between one and four parts.');
     }
     _validateMessageParts(newParts);
-    await _firestore
-        .collection('groups')
-        .doc(groupId)
-        .collection('messages')
-        .doc(messageId)
-        .update({
-          'parts': newParts.map((part) => part.toMap()).toList(),
-          'isEdited': true,
-          'editedAt': FieldValue.serverTimestamp(),
-        });
+    final response = await _functions.httpsCallable('editGroupMessage').call({
+      'groupId': groupId,
+      'messageId': messageId,
+      'parts': newParts.map((part) => part.toMap()).toList(),
+    });
+    if (response.data is! Map ||
+        (response.data as Map)['messageId']?.toString() != messageId) {
+      throw StateError('The server did not acknowledge message editing.');
+    }
   }
 
   Future<ChapterProgressMutation> toggleGroupStudyChapter(
@@ -701,22 +690,23 @@ class ChatService {
           if (duration == null || duration < 1 || duration > 300) {
             throw ArgumentError('Voice reflections must be 1–300 seconds.');
           }
-          _requireSecureMediaUri(content);
+          if (!part.hasCanonicalManagedIdentity) {
+            throw ArgumentError(
+              'Voice reflections must use a registered managed attachment.',
+            );
+          }
         case MessageType.image:
           if (part.durationSeconds != null) {
             throw ArgumentError('Images cannot have audio duration.');
           }
-          _requireSecureMediaUri(content);
+          if (!part.hasCanonicalManagedIdentity) {
+            throw ArgumentError(
+              'Images must use a registered managed attachment.',
+            );
+          }
         case _:
           throw ArgumentError('This attachment type is not supported.');
       }
-    }
-  }
-
-  void _requireSecureMediaUri(String value) {
-    final uri = Uri.tryParse(value);
-    if (uri == null || uri.scheme != 'https' || !uri.hasAuthority) {
-      throw ArgumentError('Message media must use a secure HTTPS URL.');
     }
   }
 }

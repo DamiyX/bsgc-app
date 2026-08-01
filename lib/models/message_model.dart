@@ -35,12 +35,14 @@ class MessagePart {
   /// Text, a local draft file URI, or a canonical Firebase Storage path.
   final String content;
   final String? assetId;
+  final int? sizeBytes;
   final int? durationSeconds;
 
   MessagePart({
     required this.type,
     required this.content,
     this.assetId,
+    this.sizeBytes,
     this.durationSeconds,
   });
 
@@ -76,6 +78,9 @@ class MessagePart {
       type: _parseMessageType(data['type']),
       content: data['content']?.toString() ?? '',
       assetId: data['assetId']?.toString(),
+      sizeBytes: data['sizeBytes'] is num
+          ? (data['sizeBytes'] as num).toInt()
+          : null,
       durationSeconds: rawDuration is num ? rawDuration.toInt() : null,
     );
   }
@@ -85,6 +90,7 @@ class MessagePart {
       'type': type.name,
       'content': content,
       if (assetId != null) 'assetId': assetId,
+      if (sizeBytes != null) 'sizeBytes': sizeBytes,
       if (durationSeconds != null) 'durationSeconds': durationSeconds,
     };
   }

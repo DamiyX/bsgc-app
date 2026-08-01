@@ -1,14 +1,19 @@
 const { describe, test } = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  canonicalInvitePath,
   deriveGroupMigration,
+  deriveInviteMigration,
   deriveInsightMigration,
   deriveLifecycle,
   deriveMessageMigration,
   deriveNoteMigration,
   deriveSavedInsightMigration,
   deriveUserDocuments,
+  validateCanonicalDocument,
+  validateManagedMessageAsset,
 } = require("../../lib/migration");
+const fixtures = require("../fixtures/migration-legacy");
 
 const timestamp = {
   toMillis: () => 1_000_000,
@@ -24,6 +29,9 @@ describe("user migration", () => {
         phoneNumbers: ["+2348000000000", "+2348000000000"],
         fcmToken: "t".repeat(40),
         referredBy: "inviter",
+        deletionState: "blocked",
+        notificationPreferences: { enabled: false },
+        storagePreferences: { wifiOnly: true },
       },
       timestamp,
     );
@@ -35,6 +43,11 @@ describe("user migration", () => {
     assert.equal(result.private.phoneVerified, false);
     assert.equal(result.private.contactDiscoveryConsent, false);
     assert.equal(result.private.connectionCount, 0);
+    assert.equal(result.private.deletionState, "blocked");
+    assert.deepEqual(result.private.notificationPreferences, {
+      enabled: false,
+    });
+    assert.deepEqual(result.private.storagePreferences, { wifiOnly: true });
     assert.equal(result.legacyFcmToken, "t".repeat(40));
   });
 });
@@ -180,6 +193,26 @@ describe("group migration", () => {
     );
   });
 
+  test("normalizes all required fields and UID-keyed maps", () => {
+    const fixture = fixtures.groups[0];
+    const result = deriveGroupMigration(fixture.id, fixture.data, timestamp);
+
+    assert.equal(result.group.name, "Study group");
+    assert.equal(result.group.description, "");
+    assert.equal(result.group.groupType, "Topic");
+    assert.deepEqual(result.group.members, ["owner", "member"]);
+    assert.deepEqual(result.group.readingProgress, { owner: 1, member: 0 });
+    assert.deepEqual(result.group.userCompletedChapters, {
+      owner: [1],
+      member: [],
+    });
+    assert.deepEqual(result.group.unreadCounts, { owner: 0, member: 4 });
+    assert.deepEqual(
+      validateCanonicalDocument("group", result.group),
+      [],
+    );
+  });
+
   test("refuses to guess ownership for an empty group", () => {
     const result = deriveGroupMigration(
       "empty",
@@ -205,11 +238,143 @@ describe("group migration", () => {
 
 describe("Insight migration", () => {
   test("makes the intended contacts audience explicit", () => {
-    assert.deepEqual(deriveInsightMigration({}, timestamp), {
+    const insight = deriveInsightMigration({
+      authorUid: "alice",
+      authorName: "Alice",
+      body: "Grace",
+    }, timestamp, {
+      fromMillis: (millis) => ({ toMillis: () => millis }),
+    }).insight;
+    assert.deepEqual({ ...insight, expiresAt: undefined }, {
       schemaVersion: 2,
+      authorUid: "alice",
+      authorName: "Alice",
+      title: "",
+      body: "Grace",
+      themeId: "theme_0",
       audience: "contacts",
       status: "active",
+      createdAt: timestamp,
       updatedAt: timestamp,
+      expiresAt: undefined,
     });
+    assert.equal(insight.expiresAt.toMillis(), 260_200_000);
+  });
+
+  test("normalizes every required legacy Insight field", () => {
+    const result = deriveInsightMigration(
+      fixtures.insights[0].data,
+      timestamp,
+      { fromMillis: (millis) => ({ toMillis: () => millis }) },
+    );
+    assert.equal(result.insight.authorUid, "legacy-user");
+    assert.equal(result.insight.authorName, "Legacy User");
+    assert.equal(result.insight.body, "A reflection");
+    assert.equal(result.insight.title, "");
+    assert.equal(result.insight.themeId, "theme_3");
+    assert.deepEqual(result.insight.seenBy, ["viewer"]);
+    assert.equal(result.insight.expiresAt.toMillis(), 260_200_000);
+    assert.deepEqual(
+      validateCanonicalDocument("insight", result.insight),
+      [],
+    );
+  });
+});
+
+describe("canonical validation and idempotence", () => {
+  test("preserves a Unicode note and quarantines empty bodies", () => {
+    const valid = deriveNoteMigration(
+      "legacy-user",
+      fixtures.notes[0].data,
+      timestamp,
+    );
+    assert.equal(valid.body, fixtures.unicodeNoteBody);
+    assert.deepEqual(validateCanonicalDocument("note", valid), []);
+
+    const invalid = deriveNoteMigration(
+      "legacy-user",
+      fixtures.notes[1].data,
+      timestamp,
+    );
+    assert.equal(invalid.issue.code, "empty-note-body");
+  });
+
+  test("keeps only already-managed media and rejects legacy HTTPS media", () => {
+    const managed = fixtures.messages[1];
+    const result = deriveMessageMigration(
+      managed.id,
+      managed.data,
+      timestamp,
+      { groupId: managed.groupId },
+    );
+    assert.equal(result.message.parts[0].assetId, "managed-asset");
+    assert.deepEqual(validateCanonicalDocument("message", result.message), []);
+    assert.deepEqual(validateManagedMessageAsset(
+      result.message.parts[0],
+      {
+        assetId: "managed-asset",
+        storagePath:
+          "groups/legacy-group/messages/legacy-managed-voice/audio.m4a",
+        ownerUid: "owner",
+        entityType: "message",
+        entityId: "legacy-managed-voice",
+        groupId: "legacy-group",
+        status: "committed",
+        sizeBytes: 1024,
+        mimeType: "audio/m4a",
+      },
+      {
+        groupId: "legacy-group",
+        messageId: "legacy-managed-voice",
+        senderId: "owner",
+      },
+    ), []);
+
+    const external = fixtures.messages[2];
+    assert.equal(
+      deriveMessageMigration(
+        external.id,
+        external.data,
+        timestamp,
+        { groupId: external.groupId },
+      ).issue.code,
+      "external-media-requires-storage-migration",
+    );
+  });
+
+  test("canonical output is stable when transformed again", () => {
+    const first = deriveGroupMigration(
+      "legacy-group",
+      fixtures.groups[0].data,
+      timestamp,
+    );
+    const second = deriveGroupMigration(
+      "legacy-group",
+      first.group,
+      timestamp,
+    );
+    assert.deepEqual(second.group, first.group);
+  });
+});
+
+describe("invite migration", () => {
+  test("uses invites and hashes a legacy raw-token document id", () => {
+    const fixture = fixtures.invites[0];
+    const result = deriveInviteMigration(
+      fixture.id,
+      fixture.data,
+      timestamp,
+    );
+    assert.match(result.inviteId, /^[a-f0-9]{64}$/);
+    assert.equal(
+      canonicalInvitePath(result.inviteId),
+      `invites/${result.inviteId}`,
+    );
+    assert.equal(result.invite.groupId, "legacy-group");
+    assert.equal(result.invite.createdBy, "owner");
+    assert.equal(result.invite.maxUses, 3);
+    assert.equal(result.invite.useCount, 1);
+    assert.equal(Object.hasOwn(result.invite, "token"), false);
+    assert.deepEqual(validateCanonicalDocument("invite", result.invite), []);
   });
 });
