@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bsgc_app/services/deep_link_service.dart';
 import 'package:bsgc_app/services/notification_service.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -61,6 +63,31 @@ void main() {
         expect(persistence.payload, isNull);
       },
     );
+
+    test('serializes restore before a newer pending destination', () async {
+      const restoredDestination = NotificationDestination(
+        type: 'insight',
+        insightId: 'insight-old',
+      );
+      const newerDestination = NotificationDestination(
+        type: 'new_insight',
+        insightId: 'insight-new',
+      );
+      final persistence = _BlockingDestinationPersistence(
+        restoredDestination.toPayload(),
+      );
+      final store = NotificationDestinationStore(persistence: persistence);
+
+      final restore = store.restore();
+      await persistence.readStarted.future;
+      final setPending = store.setPending(newerDestination);
+      persistence.releaseRead();
+
+      await Future.wait([restore, setPending]);
+
+      expect(store.value, same(newerDestination));
+      expect(persistence.payload, newerDestination.toPayload());
+    });
 
     test('restores a pending destination after process recreation', () async {
       final persistence = _MemoryDestinationPersistence();
@@ -227,4 +254,23 @@ class _MemoryDestinationPersistence
   Future<void> write(String value) async {
     payload = value;
   }
+}
+
+class _BlockingDestinationPersistence extends _MemoryDestinationPersistence {
+  final String _restoredPayload;
+  final Completer<void> readStarted = Completer<void>();
+  final Completer<void> _readRelease = Completer<void>();
+
+  _BlockingDestinationPersistence(this._restoredPayload) : super() {
+    payload = _restoredPayload;
+  }
+
+  @override
+  Future<String?> read() async {
+    readStarted.complete();
+    await _readRelease.future;
+    return _restoredPayload;
+  }
+
+  void releaseRead() => _readRelease.complete();
 }

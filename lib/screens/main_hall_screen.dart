@@ -58,6 +58,7 @@ class _MainHallScreenState extends State<MainHallScreen> {
   bool _showNotificationOffer = false;
   bool _enablingNotifications = false;
   String _journalQuery = '';
+  final Set<String> _openingNotificationDestinationKeys = <String>{};
 
   @override
   void initState() {
@@ -144,12 +145,16 @@ class _MainHallScreenState extends State<MainHallScreen> {
   Future<void> _openNotificationDestination() async {
     if (!mounted) return;
     final destination = _notificationService.destination.value;
-    final groupId = destination?.groupId;
-    final insightId = destination?.insightId;
+    if (destination == null) return;
+    final groupId = destination.groupId;
+    final insightId = destination.insightId;
     if ((groupId == null || groupId.isEmpty) &&
         (insightId == null || insightId.isEmpty)) {
       return;
     }
+
+    final destinationKey = destination.toPayload();
+    if (!_openingNotificationDestinationKeys.add(destinationKey)) return;
 
     try {
       if (groupId != null && groupId.isNotEmpty) {
@@ -158,8 +163,10 @@ class _MainHallScreenState extends State<MainHallScreen> {
             .doc(groupId)
             .get();
         if (!snapshot.exists) {
-          await _notificationService.destination.complete(destination!);
-          if (mounted) {
+          final completed = await _completeNotificationDestinationSafely(
+            destination,
+          );
+          if (completed && mounted) {
             _showMessage('That study update is no longer available.');
           }
           return;
@@ -175,8 +182,10 @@ class _MainHallScreenState extends State<MainHallScreen> {
             .doc(insightId)
             .get();
         if (!snapshot.exists) {
-          await _notificationService.destination.complete(destination!);
-          if (mounted) {
+          final completed = await _completeNotificationDestinationSafely(
+            destination,
+          );
+          if (completed && mounted) {
             _showMessage('That reflection is no longer available.');
           }
           return;
@@ -195,19 +204,35 @@ class _MainHallScreenState extends State<MainHallScreen> {
           ),
         );
       }
-      await _notificationService.destination.complete(destination!);
+      await _completeNotificationDestinationSafely(destination);
     } on FirebaseException catch (error) {
       if (!mounted) return;
       if (_isRetryableDestinationError(error)) {
         _showDestinationRetry();
       } else {
-        await _notificationService.destination.complete(destination!);
-        if (mounted) {
+        final completed = await _completeNotificationDestinationSafely(
+          destination,
+        );
+        if (completed && mounted) {
           _showMessage('That study update is no longer available to you.');
         }
       }
     } catch (_) {
       if (mounted) _showDestinationRetry();
+    } finally {
+      _openingNotificationDestinationKeys.remove(destinationKey);
+    }
+  }
+
+  Future<bool> _completeNotificationDestinationSafely(
+    NotificationDestination destination,
+  ) async {
+    try {
+      await _notificationService.destination.complete(destination);
+      return true;
+    } catch (_) {
+      if (mounted) _showDestinationRetry();
+      return false;
     }
   }
 
@@ -242,7 +267,15 @@ class _MainHallScreenState extends State<MainHallScreen> {
 
   Future<void> _redeemPendingInvite() async {
     if (_isRedeemingInvite || !mounted) return;
-    final token = await _deepLinkService.getPendingInviteToken();
+    String? token;
+    try {
+      token = await _deepLinkService.getPendingInviteToken();
+    } catch (_) {
+      if (mounted) {
+        _showMessage('This invite could not be loaded yet. Please retry.');
+      }
+      return;
+    }
     if (token == null || !mounted) return;
 
     setState(() => _isRedeemingInvite = true);
@@ -261,8 +294,8 @@ class _MainHallScreenState extends State<MainHallScreen> {
       if (!mounted) return;
       final disposition = classifyInviteFailure(error.code);
       if (disposition == InviteFailureDisposition.terminal) {
-        await _deepLinkService.clearPendingInviteToken(token);
-        if (mounted) _showMessage(error.message);
+        final cleared = await _clearPendingInviteSafely(token);
+        if (cleared && mounted) _showMessage(error.message);
       } else {
         _showRetryableInviteFailure(token);
       }
@@ -293,13 +326,23 @@ class _MainHallScreenState extends State<MainHallScreen> {
             TextButton(
               onPressed: () {
                 messenger.hideCurrentMaterialBanner();
-                unawaited(_deepLinkService.clearPendingInviteToken(token));
+                unawaited(_clearPendingInviteSafely(token));
               },
               child: const Text('Dismiss'),
             ),
           ],
         ),
       );
+  }
+
+  Future<bool> _clearPendingInviteSafely(String token) async {
+    try {
+      await _deepLinkService.clearPendingInviteToken(token);
+      return true;
+    } catch (_) {
+      if (mounted) _showRetryableInviteFailure(token);
+      return false;
+    }
   }
 
   void _showMessage(String message) {
@@ -336,7 +379,7 @@ class _MainHallScreenState extends State<MainHallScreen> {
           onTargetResolved: destination == null
               ? null
               : () => unawaited(
-                  _notificationService.destination.complete(destination),
+                  _completeNotificationDestinationSafely(destination),
                 ),
         ),
       ),

@@ -1,12 +1,15 @@
 import 'package:flutter/widgets.dart';
 
+import 'insight_mutation_contract.dart';
+
 Future<bool> persistCommentText(
   TextEditingController controller,
-  Future<void> Function(String text) persist,
-) async {
+  Future<void> Function(String text) persist, {
+  Duration timeout = insightMutationTimeout,
+}) async {
   final text = controller.text.trim();
   try {
-    await persist(text);
+    await awaitInsightMutation(persist(text), timeout: timeout);
     controller.clear();
     return true;
   } catch (_) {
@@ -15,8 +18,12 @@ Future<bool> persistCommentText(
 }
 
 class ReversibleToggleController extends ChangeNotifier {
-  ReversibleToggleController({required bool initialValue})
-    : _value = initialValue;
+  ReversibleToggleController({
+    required bool initialValue,
+    this.timeout = insightMutationTimeout,
+  }) : _value = initialValue;
+
+  final Duration timeout;
 
   bool _value;
   bool _isPending = false;
@@ -49,7 +56,7 @@ class ReversibleToggleController extends ChangeNotifier {
     _lastError = null;
     _notifyListenersSafely();
     try {
-      await persist(_value);
+      await awaitInsightMutation(persist(_value), timeout: timeout);
       return true;
     } catch (error) {
       _value = previousValue;

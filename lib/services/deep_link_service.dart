@@ -35,33 +35,61 @@ class DeepLinkService {
   final AppLinks _appLinks = AppLinks();
   final ValueNotifier<String?> pendingInviteToken = ValueNotifier(null);
   StreamSubscription<Uri>? _linkSubscription;
-  bool _initialized = false;
+  Future<void>? _initialization;
+  Future<void> _pendingInviteOperationTail = Future<void>.value();
 
-  Future<void> init() async {
-    if (_initialized) return;
-    _initialized = true;
+  Future<void> init() {
+    final existingInitialization = _initialization;
+    if (existingInitialization != null) return existingInitialization;
 
-    final preferences = await SharedPreferences.getInstance();
-    pendingInviteToken.value = preferences.getString(_pendingInviteKey);
+    final completer = Completer<void>();
+    _initialization = completer.future;
+    unawaited(_runInitialization(completer));
+    return completer.future;
+  }
 
+  Future<void> _runInitialization(Completer<void> completer) async {
     try {
+      await _linkSubscription?.cancel();
+      _linkSubscription = null;
+
+      await _enqueuePendingInviteOperation(() async {
+        final preferences = await SharedPreferences.getInstance();
+        pendingInviteToken.value = preferences.getString(_pendingInviteKey);
+      });
+
       final initialUri = await _appLinks.getInitialLink();
       if (initialUri != null) {
         await handleIncomingLink(initialUri);
       }
 
       _linkSubscription = _appLinks.uriLinkStream.listen(
-        (uri) => unawaited(handleIncomingLink(uri)),
+        (uri) => unawaited(_handleIncomingLinkSafely(uri)),
         onError: (Object error, StackTrace stackTrace) {
           if (kDebugMode) {
             debugPrint('Deep-link stream failed: $error');
           }
         },
       );
+      completer.complete();
     } catch (error) {
       if (kDebugMode) {
         debugPrint('Deep-link initialization failed: $error');
       }
+      try {
+        await _linkSubscription?.cancel();
+      } catch (cancelError) {
+        if (kDebugMode) {
+          debugPrint('Deep-link subscription cleanup failed: $cancelError');
+        }
+      }
+      _linkSubscription = null;
+      if (identical(_initialization, completer.future)) {
+        _initialization = null;
+      }
+      // Initialization is intentionally best-effort. A later init call can
+      // retry after a transient platform or storage failure.
+      completer.complete();
     }
   }
 
@@ -78,17 +106,34 @@ class DeepLinkService {
     return _inviteTokenPattern.hasMatch(token) ? token : null;
   }
 
-  Future<bool> handleIncomingLink(Uri uri) async {
+  Future<bool> handleIncomingLink(Uri uri) {
     final token = inviteTokenFromUri(uri);
-    if (token == null) return false;
+    if (token == null) return Future<bool>.value(false);
 
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(_pendingInviteKey, token);
-    pendingInviteToken.value = token;
-    return true;
+    return _enqueuePendingInviteOperation(() async {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(_pendingInviteKey, token);
+      pendingInviteToken.value = token;
+      return true;
+    });
   }
 
-  Future<String?> getPendingInviteToken() async {
+  Future<String?> getPendingInviteToken() {
+    return _enqueuePendingInviteOperation(_readPendingInviteToken);
+  }
+
+  Future<void> clearPendingInviteToken(String redeemedToken) {
+    return _enqueuePendingInviteOperation(() async {
+      final currentToken = await _readPendingInviteToken();
+      if (currentToken != redeemedToken) return;
+
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.remove(_pendingInviteKey);
+      pendingInviteToken.value = null;
+    });
+  }
+
+  Future<String?> _readPendingInviteToken() async {
     final inMemoryToken = pendingInviteToken.value;
     if (inMemoryToken != null) return inMemoryToken;
 
@@ -98,13 +143,26 @@ class DeepLinkService {
     return persistedToken;
   }
 
-  Future<void> clearPendingInviteToken(String redeemedToken) async {
-    final currentToken = await getPendingInviteToken();
-    if (currentToken != redeemedToken) return;
+  Future<void> _handleIncomingLinkSafely(Uri uri) async {
+    try {
+      await handleIncomingLink(uri);
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Deep-link persistence failed: $error');
+      }
+    }
+  }
 
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.remove(_pendingInviteKey);
-    pendingInviteToken.value = null;
+  Future<T> _enqueuePendingInviteOperation<T>(Future<T> Function() operation) {
+    final completer = Completer<T>();
+    _pendingInviteOperationTail = _pendingInviteOperationTail.then((_) async {
+      try {
+        completer.complete(await operation());
+      } catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
+    });
+    return completer.future;
   }
 
   Future<void> dispose() async {

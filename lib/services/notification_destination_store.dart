@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -136,6 +137,7 @@ class SharedPreferencesNotificationDestinationPersistence
 class NotificationDestinationStore
     extends ValueNotifier<NotificationDestination?> {
   final NotificationDestinationPersistence _persistence;
+  Future<void> _operationTail = Future<void>.value();
 
   NotificationDestinationStore({
     NotificationDestinationPersistence? persistence,
@@ -143,34 +145,54 @@ class NotificationDestinationStore
            persistence ?? SharedPreferencesNotificationDestinationPersistence(),
        super(null);
 
-  Future<void> restore() async {
-    final payload = await _persistence.read();
-    if (payload == null) return;
-    final destination = NotificationDestination.fromPayload(payload);
-    if (destination == null) {
-      await _persistence.clear();
-      return;
-    }
-    value = destination;
+  Future<void> restore() {
+    return _enqueue(() async {
+      final payload = await _persistence.read();
+      if (payload == null) return;
+      final destination = NotificationDestination.fromPayload(payload);
+      if (destination == null) {
+        await _persistence.clear();
+        return;
+      }
+      value = destination;
+    });
   }
 
-  Future<void> setPending(NotificationDestination destination) async {
+  Future<void> setPending(NotificationDestination destination) {
     if (!destination.isValid) {
       throw const FormatException('Invalid notification destination.');
     }
-    await _persistence.write(destination.toPayload());
-    value = destination;
+    return _enqueue(() async {
+      await _persistence.write(destination.toPayload());
+      value = destination;
+    });
   }
 
-  Future<void> complete(NotificationDestination destination) async {
-    final pending = value;
-    if (pending == null || !pending.matches(destination)) return;
-    await _persistence.clear();
-    value = null;
+  Future<void> complete(NotificationDestination destination) {
+    return _enqueue(() async {
+      final pending = value;
+      if (pending == null || !pending.matches(destination)) return;
+      await _persistence.clear();
+      value = null;
+    });
   }
 
-  Future<void> discardAll() async {
-    await _persistence.clear();
-    value = null;
+  Future<void> discardAll() {
+    return _enqueue(() async {
+      await _persistence.clear();
+      value = null;
+    });
+  }
+
+  Future<T> _enqueue<T>(Future<T> Function() operation) {
+    final completer = Completer<T>();
+    _operationTail = _operationTail.then((_) async {
+      try {
+        completer.complete(await operation());
+      } catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
+    });
+    return completer.future;
   }
 }

@@ -176,7 +176,7 @@ class NotificationService {
         if (payload == null || payload.isEmpty) return;
         final parsedDestination = _destinationFromLocalPayload(payload);
         if (parsedDestination != null) {
-          unawaited(destination.setPending(parsedDestination));
+          unawaited(_setDestinationSafely(parsedDestination));
         }
       },
     );
@@ -494,7 +494,20 @@ class NotificationService {
   void _routeRemoteMessage(RemoteMessage message) {
     final parsedDestination = NotificationDestination.fromData(message.data);
     if (parsedDestination.isValid) {
-      unawaited(destination.setPending(parsedDestination));
+      unawaited(_setDestinationSafely(parsedDestination));
+    }
+  }
+
+  Future<void> _setDestinationSafely(
+    NotificationDestination parsedDestination,
+  ) async {
+    try {
+      await destination.setPending(parsedDestination);
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('Notification destination persistence failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
     }
   }
 

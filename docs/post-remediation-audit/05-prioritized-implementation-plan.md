@@ -405,9 +405,45 @@ integrated 31-test Rules Emulator baseline remains the applicable source
 check. The branch remains internal preview/development only. Device/offline
 acceptance, native Firestore cache isolation, deployed Storage/Functions
 parity, App Check, release artifacts, operations, legal, and product gates
-remain open. No further source wave is justified by the current local
-evidence; reopen a new numbered wave only for a concrete device/deployed
-reproduction or a newly identified source defect.
+remain open. At the `f33cacd` checkpoint no additional source wave had yet
+been justified by the local evidence. The next source wave below was opened
+after a fresh source trace identified two concrete reliability gaps in the
+Insight and notification/deep-link paths.
+
+## Implementation status — remediation Wave 2 / repository continuation wave 21
+
+The repository's historical continuation labels reached Wave 20 before the
+fresh remediation sequence was normalized. For the current workstream, that
+checkpoint is **remediation Wave 1** and this section is **remediation Wave 2**.
+The detailed handoffs are `docs/testing/wave-21-insight-mutations.md`,
+`docs/testing/wave-21-notification-destinations.md`, and the consolidated
+pause-point record `docs/testing/remediation-wave-2-remaining-work-handoff.md`.
+
+This wave started from source checkpoint `f33cacd` and closed two bounded
+source clusters:
+
+- `REL-007`, `REL-008`, and `UX-010`: Insight reaction/comment/save actions
+  now share an eight-second pending boundary. A timeout rolls optimistic
+  toggles back, clears pending guards, preserves failed comment text, and
+  leaves an honest retry path. The legacy comment stream now uses the newest
+  bounded ordering instead of silently pinning compatibility callers to the
+  oldest 100 records.
+- `REL-010`, `REL-011`, and `UX-010`: notification destinations and pending
+  invite tokens now serialize persistence operations. Initialization can retry
+  after a transient platform/storage failure; stream and notification
+  callbacks contain persistence errors; duplicate destination opens are
+  suppressed; and destination/invite completion remains pending when cleanup
+  fails.
+
+Wave 2 source evidence is 25 passing Insight reliability tests, 12 passing
+notification/invite reliability tests, 115 passing Flutter tests, 78 passing
+Functions tests, clean pinned formatting, `flutter analyze` with no issues,
+and `git diff --check` with no errors. No Functions or Rules files changed;
+the integrated 31-test Rules Emulator baseline remains the applicable Rules
+evidence. This remains source evidence only. Device/offline/accessibility
+review, native Firestore cache/account-switch proof, deployed parity,
+App Check, Android CI compilation, signed AAB and size analysis, migration,
+operations, legal, and product gates remain open.
 
 ---
 

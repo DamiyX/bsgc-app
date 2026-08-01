@@ -5,6 +5,7 @@ import 'package:bsgc_app/models/insight_model.dart';
 import 'package:bsgc_app/screens/my_insights_screen.dart';
 import 'package:bsgc_app/services/draft_service.dart';
 import 'package:bsgc_app/services/insight_action_controller.dart';
+import 'package:bsgc_app/services/insight_mutation_contract.dart';
 import 'package:bsgc_app/services/insight_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -58,6 +59,55 @@ void main() {
 
         expect(await persistCommentText(textController, (_) async {}), isTrue);
         expect(textController.text, isEmpty);
+      },
+    );
+
+    test(
+      'bounds comment persistence and preserves text after a timeout',
+      () async {
+        final textController = TextEditingController(text: 'Keep this comment');
+
+        expect(
+          await persistCommentText(
+            textController,
+            (_) => Completer<void>().future,
+            timeout: const Duration(milliseconds: 10),
+          ),
+          isFalse,
+        );
+        expect(textController.text, 'Keep this comment');
+      },
+    );
+
+    test(
+      'bounds reversible toggles and rolls them back after a timeout',
+      () async {
+        final controller = ReversibleToggleController(
+          initialValue: false,
+          timeout: const Duration(milliseconds: 10),
+        );
+
+        expect(
+          await controller.toggle((_) => Completer<void>().future),
+          isFalse,
+        );
+        expect(controller.value, isFalse);
+        expect(controller.isPending, isFalse);
+        expect(controller.lastError, isA<TimeoutException>());
+      },
+    );
+
+    test(
+      'shared Insight mutation boundary rejects an unresolved operation',
+      () async {
+        await expectLater(
+          awaitInsightMutation(
+            Completer<void>().future,
+            timeout: const Duration(milliseconds: 10),
+          ),
+          throwsA(isA<TimeoutException>()),
+        );
+        expect(insightMutationTimeout, const Duration(seconds: 8));
       },
     );
   });

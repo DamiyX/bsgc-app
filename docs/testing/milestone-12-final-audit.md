@@ -486,3 +486,27 @@ CI Android compilation, signed artifacts, App Check, staging/production
 operations, migration, legal, and product gates remain open. A new source wave
 should be opened only if device/deployed evidence or a new source audit
 produces a concrete defect.
+
+## Remediation Wave 2 / historical continuation Wave 21 verification
+
+The historical Wave 20 checkpoint above is treated as remediation Wave 1 in
+the normalized work sequence. A fresh source trace then opened remediation
+Wave 2 (repository continuation Wave 21) for two concrete gaps:
+
+- Insight comment/reaction/save callables now have a shared eight-second
+  timeout boundary. Timeout rollback clears pending controls and preserves
+  failed comment text; the compatibility comment stream uses newest-first
+  bounded ordering.
+- Notification destinations and invite links now serialize persistence,
+  retry initialization after transient failure, contain callback storage
+  errors, and suppress duplicate destination opens while navigation is in
+  flight.
+
+The Wave 2 handoffs are `docs/testing/wave-21-insight-mutations.md`,
+`docs/testing/wave-21-notification-destinations.md`, and
+`docs/testing/remediation-wave-2-remaining-work-handoff.md`. Source evidence
+is 25 passing Insight reliability tests, 12 notification/invite reliability
+tests, 115 passing Flutter tests, 78 passing Functions tests, clean formatting,
+clean analysis, and the unchanged 31-test Rules baseline. This is not device,
+deployed-backend, release, legal, or product acceptance; those gates remain
+open and are listed in the consolidated handoff.

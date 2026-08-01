@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/insight_model.dart';
 import 'firestore_commit_service.dart';
+import 'insight_mutation_contract.dart';
 
 bool shouldRemoveUnavailableSavedInsight(Object error) {
   return error is FirebaseException &&
@@ -249,18 +250,10 @@ class InsightService implements MyInsightsDataSource {
     String insightId, {
     int limit = 100,
   }) {
-    return _firestore
-        .collection('insights')
-        .doc(insightId)
-        .collection('comments')
-        .orderBy('createdAt')
-        .limit(limit.clamp(1, 100).toInt())
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-              .map(InsightCommentModel.fromFirestore)
-              .toList(growable: false),
-        );
+    // Keep the legacy API bounded to the newest comments. The viewer's cursor
+    // path and this compatibility path must not silently cap the feed at the
+    // oldest 100 records.
+    return watchNewestComments(insightId, limit: limit);
   }
 
   Future<InsightCommentPage> getCommentPage(
@@ -384,15 +377,15 @@ class InsightService implements MyInsightsDataSource {
     if (comment.authorUid != uid) {
       throw StateError('You can publish only your own comment.');
     }
-    final response = await _functions
-        .httpsCallable('createInsightComment')
-        .call({
-          'insightId': insightId,
-          'commentId': comment.id,
-          'body': comment.body.trim(),
-          if (comment.replyToId?.isNotEmpty == true)
-            'replyToId': comment.replyToId,
-        });
+    final response = await awaitInsightMutation(
+      _functions.httpsCallable('createInsightComment').call({
+        'insightId': insightId,
+        'commentId': comment.id,
+        'body': comment.body.trim(),
+        if (comment.replyToId?.isNotEmpty == true)
+          'replyToId': comment.replyToId,
+      }),
+    );
     if (response.data is! Map ||
         (response.data as Map)['commentId']?.toString() != comment.id) {
       throw StateError('The server did not acknowledge the expected comment.');
@@ -470,11 +463,13 @@ class InsightService implements MyInsightsDataSource {
     final segments = reference.path.split('/');
     final insightId = segments[1];
     final commentId = segments.length > 4 ? segments[3] : null;
-    await _functions.httpsCallable('setInsightReaction').call({
-      'insightId': insightId,
-      'commentId': ?commentId,
-      'active': isLiking,
-    });
+    await awaitInsightMutation(
+      _functions.httpsCallable('setInsightReaction').call({
+        'insightId': insightId,
+        'commentId': ?commentId,
+        'active': isLiking,
+      }),
+    );
   }
 
   Future<void> saveInsight(String userId, InsightModel insight) async {
