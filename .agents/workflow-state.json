@@ -1,7 +1,7 @@
 {
   "workflow": "Braid full audit remediation",
   "branch": "codex/bsgc-full-remediation",
-  "current_phase": "Post-remediation implementation wave 11 release configuration slice verified locally; Android build evidence pending CI",
+  "current_phase": "Milestone 12 final regression audit reconciled against post-remediation-audit/00–05; source verification is complete, release gates remain open",
   "repository_implementation": "in progress against docs/post-remediation-audit/05-prioritized-implementation-plan.md",
   "automated_verification": {
     "flutter_format": "pass",
@@ -11,6 +11,8 @@
     "firebase_rules_tests": "31 passed",
     "functions_check": "pass",
     "migration_rehearsal": "pass",
+    "scheduled_over_500_tests": "pass: 1,200 lifecycle writes in 450/450/300 chunks; 800-item deletion path in 450/350 chunks",
+    "dependency_audit": "high severity clean after npm audit fix --package-lock-only; 9 moderate nested uuid advisories remain under Google client dependencies",
     "git_diff_check": "pass",
     "firebase_hosting_json_parse": "pass",
     "android_local_debug_compile": "inconclusive: 120s and 300s bounded attempts timed out without APK; Gradle stopped",
@@ -19,14 +21,17 @@
   },
   "open_gates": [
     "Android emulator and physical-device visual/offline/accessibility review",
+    "Firestore persistence account-switch isolation and complete cache-purge behavior (SEC-006; source/legal copy now explicit, device proof pending)",
     "official firebase_app_check dependency and provider activation (requires owner approval)",
     "successful signed release AAB and size analysis",
     "quality workflow Android debug compile on this branch",
     "production backup and migration dry-run review",
+    "production-scale migration/rollback and scheduled-job backlog rehearsal",
+    "moderation operations, abuse monitoring, retention, and metrics review",
     "staged Firebase backend deployment",
     "production signing and App/Universal Link verification",
     "legal, store, monitoring, and operational approval"
   ],
-  "next_action": "Commit the verified Milestone 11 release/configuration slice locally, then complete Milestone 12 final regression audit; keep CI Android compile, signed AAB/size evidence, Play App Signing links, device QA, legacy snapshot backfill, and App Check as explicit gates.",
-  "updated_at": "2026-08-01T11:10:00+01:00"
+  "next_action": "Record the Milestone 12 final audit, run the final local checks, and commit without pushing. Do not merge or release until Android/device evidence, Firestore account isolation, App Check, signed AAB/size, production migration/backup, link, legal, and operational gates are reviewed.",
+  "updated_at": "2026-08-01T12:00:00+01:00"
 }

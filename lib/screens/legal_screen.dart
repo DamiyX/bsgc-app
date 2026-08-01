@@ -70,11 +70,12 @@ class LegalScreen extends StatelessWidget {
     (
       'Storage and offline data',
       'The app can keep previously authorized media in a bounded, '
-          'account-scoped cache. Private Firestore data is not persisted to disk; '
-          'content already loaded may remain only for the current app session. '
-          'Drafts and failed media uploads can be stored locally per account. '
-          'Sign-out clears that account’s drafts, outbox, and media caches on '
-          'the device.',
+          'account-scoped cache. Firestore also uses local persistence so '
+          'previously loaded study data can remain available during warm '
+          'offline use. Drafts and failed media uploads are stored locally per '
+          'account. Sign-out clears that account’s drafts, outbox, voice/image '
+          'caches, and navigation state; a complete Firestore-cache purge is '
+          'not currently guaranteed while active listeners exist.',
     ),
     (
       'Notifications',

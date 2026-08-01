@@ -128,7 +128,7 @@ Expected result:
 
 - formatting check succeeds;
 - analyzer reports no issues;
-- 4 Flutter tests pass.
+- 80 Flutter tests pass (the exact count may increase with later test-only additions; record the command output and commit).
 
 Optional backend/security verification:
 
@@ -142,8 +142,8 @@ npm run test:rules
 
 Expected result:
 
-- 21 Functions tests pass;
-- 26 Firestore/Storage rules tests pass.
+- 70 Functions tests pass;
+- 31 Firestore/Storage rules tests pass.
 
 Rules tests intentionally run serially because both integration-test files share and clear one emulator project.
 

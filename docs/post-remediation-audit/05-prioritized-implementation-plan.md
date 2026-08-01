@@ -177,6 +177,29 @@ estimates, deploy and curl-test the association files, and complete the
 Play-installed invite test. No source change can prove those owner- and
 console-controlled gates.
 
+## Implementation status — Milestone 12 final regression audit
+
+The reconciliation report is `docs/testing/milestone-12-final-audit.md`. It
+checks every finding family in audits 00–04 against this plan, the source
+tree, automated tests, and the release evidence produced by Waves 1–11.
+
+Local automated evidence is green for formatting, analysis, 80 Flutter tests,
+70 Functions tests, 31 Rules Emulator tests, migration interruption/resume and
+rollback rehearsal, and scheduled-job paths above 500 records. The Functions
+lockfile was refreshed without a force upgrade: high-severity production
+dependencies are clean, while nine moderate nested `uuid` advisories remain
+under Google client dependencies and are not safely removable without a
+breaking downgrade.
+
+Milestone 12 does not mark the branch release-ready. The Android compile did
+not produce an APK within bounded local attempts; CI Android smoke, signed AAB
+and size evidence, device/offline/accessibility/product review, real App Links,
+App Check activation, Firestore cache account isolation, production backup and
+migration rehearsal, staged deployment, and legal/operations approval remain
+explicit gates. The offline capability matrix and Legal screen were corrected
+so they no longer claim that Firestore persistence is disabled; the SDK cache
+purge/account-switch behavior still requires device evidence.
+
 ---
 
 ## Non-negotiable execution contract
