@@ -54,4 +54,24 @@ describe("effective group lifecycle policy", () => {
       true,
     );
   });
+
+  test("rejects an active group with a malformed start date", () => {
+    assert.equal(
+      isGroupEffectivelyActive({
+        lifecycle: "active",
+        startDate: "not-a-timestamp",
+      }, nowMillis),
+      false,
+    );
+  });
+
+  test("rejects an active group with a malformed end date", () => {
+    assert.equal(
+      isGroupEffectivelyActive({
+        lifecycle: "active",
+        endDate: "not-a-timestamp",
+      }, nowMillis),
+      false,
+    );
+  });
 });

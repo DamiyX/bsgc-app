@@ -9,6 +9,14 @@ import 'package:uuid/uuid.dart';
 const voiceRecordingDiscardedMessage =
     'The recording could not be saved and was discarded. Record again.';
 
+/// The recorder plugin can return null even though it was given a path. Keep
+/// the path owned by this service as the recovery candidate so a stopped file
+/// is either moved into the outbox or explicitly discarded; it must not be
+/// released into the OS temporary directory.
+String? resolveRecordingPath(String? stoppedPath, String? activePath) {
+  return stoppedPath ?? activePath;
+}
+
 class AudioService {
   final AudioRecorder _audioRecorder = AudioRecorder();
   final AudioPlayer _audioPlayer = AudioPlayer();
@@ -33,7 +41,10 @@ class AudioService {
     }
   }
 
-  Future<String?> stopRecording() => _audioRecorder.stop();
+  Future<String?> stopRecording() async {
+    final stoppedPath = await _audioRecorder.stop();
+    return resolveRecordingPath(stoppedPath, _recordingPath);
+  }
 
   /// Returns the user-visible duration for the current recording without
   /// reading the temporary file. The file is moved into the durable outbox

@@ -7,7 +7,7 @@ import '../services/deletion_semantics.dart';
 import '../services/insight_service.dart';
 import 'create_insight_screen.dart';
 import 'view_insight_screen.dart';
-import '../widgets/braid_media.dart';
+import '../widgets/current_user_avatar.dart';
 
 const myInsightsPrivacyNotice =
     'Visible only to the people you choose while each reflection is active. '
@@ -46,12 +46,14 @@ class MyInsightsScreen extends StatelessWidget {
            currentUserPhotoUrl ??
            (dataSource == null
                ? FirebaseAuth.instance.currentUser?.photoURL
-               : null);
+               : null),
+       _useCanonicalProfile = dataSource == null;
 
   final MyInsightsDataSource _dataSource;
   final String _currentUserId;
   final String _currentUserDisplayName;
   final String? _currentUserPhotoUrl;
+  final bool _useCanonicalProfile;
 
   void _deleteInsight(BuildContext context, InsightModel insight) async {
     final confirm = await showDialog<bool>(
@@ -215,11 +217,12 @@ class MyInsightsScreen extends StatelessWidget {
                               shape: BoxShape.circle,
                               color: scheme.surface,
                             ),
-                            child: BraidAvatar(
-                              identity: _currentUserId,
-                              displayName: _currentUserDisplayName,
-                              imageUrl: _currentUserPhotoUrl,
+                            child: CurrentUserAvatar(
+                              userId: _currentUserId,
+                              fallbackDisplayName: _currentUserDisplayName,
+                              fallbackPhotoUrl: _currentUserPhotoUrl,
                               radius: 22,
+                              useCanonicalProfile: _useCanonicalProfile,
                             ),
                           ),
                         ),

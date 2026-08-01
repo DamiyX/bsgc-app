@@ -37,6 +37,7 @@ const {
   collectGroupCoverReference,
   collectMessageAssetReferences,
   collectProfilePhotoReference,
+  deleteUnregisteredMessageAsset,
   reconcileExpiredManagedAsset,
   reconcileManagedReferences,
   registerManagedAsset,
@@ -58,6 +59,7 @@ const {
 } = require("./lib/moderation");
 const {
   drainPagedJob,
+  SCHEDULED_JOB_TIMEOUT_SECONDS,
 } = require("./lib/scheduled_jobs");
 const {
   studyDateRangeIssue,
@@ -2378,6 +2380,7 @@ exports.advanceGroupLifecycle = onSchedule(
     region: "us-central1",
     timeZone: "Etc/UTC",
     retryCount: 3,
+    timeoutSeconds: SCHEDULED_JOB_TIMEOUT_SECONDS,
   },
   async () => {
     const now = Timestamp.now();
@@ -2478,7 +2481,15 @@ exports.trackManagedMedia = onObjectFinalized(
     const record = buildMessageAssetRecord(object)
       ?? buildGroupCoverAssetRecord(object)
       ?? buildProfilePhotoAssetRecord(object);
-    if (!record) return;
+    if (!record) {
+      if (await deleteUnregisteredMessageAsset({
+        storage: admin.storage(),
+        object,
+      })) {
+        logger.warn("Removed an unregistered managed message asset.");
+      }
+      return;
+    }
     await registerManagedAsset({
       firestore: db,
       record,
@@ -2593,6 +2604,7 @@ exports.cleanupExpiredData = onSchedule(
     region: "us-central1",
     timeZone: "Etc/UTC",
     retryCount: 3,
+    timeoutSeconds: SCHEDULED_JOB_TIMEOUT_SECONDS,
   },
   async () => {
     const now = Timestamp.now();

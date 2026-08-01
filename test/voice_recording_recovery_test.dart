@@ -18,6 +18,17 @@ void main() {
     if (await root.exists()) await root.delete(recursive: true);
   });
 
+  test('keeps the active temporary path when stop returns no path', () {
+    expect(
+      resolveRecordingPath(null, '/tmp/recording.m4a'),
+      '/tmp/recording.m4a',
+    );
+    expect(
+      resolveRecordingPath('/tmp/stopped.m4a', '/tmp/active.m4a'),
+      '/tmp/stopped.m4a',
+    );
+  });
+
   MessageOutboxService outbox() {
     return MessageOutboxService(
       outboxRootProvider: (userId) async =>

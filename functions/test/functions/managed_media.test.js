@@ -4,6 +4,8 @@ const {
   buildGroupCoverAssetRecord,
   buildMessageAssetRecord,
   collectMessageAssetReferences,
+  deleteUnregisteredMessageAsset,
+  isCanonicalMessageAssetPath,
   managedAssetIdForPath,
   nextManagedAssetStatus,
   reconcileManagedReferences,
@@ -98,6 +100,52 @@ describe("managed message media contracts", () => {
       ...base,
       metadata: { ...base.metadata, assetId: "forged" },
     }), null);
+  });
+
+  test("recognizes only canonical message paths for orphan cleanup", () => {
+    assert.equal(
+      isCanonicalMessageAssetPath(
+        "groups/group-a/messages/message-a/attachment.jpg",
+      ),
+      true,
+    );
+    assert.equal(
+      isCanonicalMessageAssetPath("groups/group-a/covers/attachment.jpg"),
+      false,
+    );
+  });
+
+  test("deletes invalid canonical message objects but ignores other paths", async () => {
+    const deleted = [];
+    const storage = {
+      bucket: (bucketName) => ({
+        file: (storagePath) => ({
+          delete: async (options) => {
+            deleted.push({ bucketName, storagePath, options });
+          },
+        }),
+      }),
+    };
+
+    assert.equal(await deleteUnregisteredMessageAsset({
+      storage,
+      object: {
+        bucket: "bucket-a",
+        name: "groups/group-a/messages/message-a/attachment.jpg",
+      },
+    }), true);
+    assert.equal(await deleteUnregisteredMessageAsset({
+      storage,
+      object: {
+        bucket: "bucket-a",
+        name: "groups/group-a/covers/cover.jpg",
+      },
+    }), false);
+    assert.deepEqual(deleted, [{
+      bucketName: "bucket-a",
+      storagePath: "groups/group-a/messages/message-a/attachment.jpg",
+      options: { ignoreNotFound: true },
+    }]);
   });
 
   test("collects only canonical managed references, never HTTPS URLs", () => {

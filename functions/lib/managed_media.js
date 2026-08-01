@@ -32,6 +32,23 @@ function parseProfilePhotoPath(storagePath) {
   return match ? { ownerUid: match[1], fileName: match[2] } : null;
 }
 
+function isCanonicalMessageAssetPath(storagePath) {
+  return parseMessageAssetPath(storagePath) !== null;
+}
+
+async function deleteUnregisteredMessageAsset({ storage, object }) {
+  if (
+    !isCanonicalMessageAssetPath(object?.name)
+    || typeof object?.bucket !== "string"
+  ) {
+    return false;
+  }
+  await storage.bucket(object.bucket).file(object.name).delete({
+    ignoreNotFound: true,
+  });
+  return true;
+}
+
 function buildProfilePhotoAssetRecord(object) {
   const identity = parseProfilePhotoPath(object?.name);
   const metadata = object?.metadata;
@@ -425,6 +442,8 @@ module.exports = {
   collectGroupCoverReference,
   collectMessageAssetReferences,
   collectProfilePhotoReference,
+  deleteUnregisteredMessageAsset,
+  isCanonicalMessageAssetPath,
   managedAssetIdForPath,
   nextManagedAssetStatus,
   parseGroupCoverPath,

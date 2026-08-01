@@ -884,6 +884,32 @@ class _MainHallScreenState extends State<MainHallScreen> {
 
   Widget _buildMe() {
     final user = FirebaseAuth.instance.currentUser;
+    final profileStream = user == null
+        ? null
+        : FirebaseFirestore.instance
+              .collection('users_public')
+              .doc(user.uid)
+              .snapshots();
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: profileStream,
+      builder: (context, snapshot) {
+        final profile = snapshot.data?.data();
+        final canonicalName = profile?['displayName']?.toString().trim();
+        final canonicalPhoto = profile?['photoUrl']?.toString().trim();
+        return _buildMeContent(
+          user,
+          canonicalName?.isNotEmpty == true
+              ? canonicalName!
+              : user?.displayName?.trim().isNotEmpty == true
+              ? user!.displayName!.trim()
+              : 'Your space',
+          canonicalPhoto?.isNotEmpty == true ? canonicalPhoto : user?.photoURL,
+        );
+      },
+    );
+  }
+
+  Widget _buildMeContent(User? user, String displayName, String? photoUrl) {
     return ListView(
       key: const PageStorageKey('me'),
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
@@ -891,16 +917,14 @@ class _MainHallScreenState extends State<MainHallScreen> {
         Center(
           child: CurrentUserAvatar(
             userId: user?.uid ?? '',
-            fallbackDisplayName: user?.displayName ?? 'You',
-            fallbackPhotoUrl: user?.photoURL,
+            fallbackDisplayName: displayName,
+            fallbackPhotoUrl: photoUrl,
             radius: 48,
           ),
         ),
         const SizedBox(height: 12),
         Text(
-          user?.displayName?.trim().isNotEmpty == true
-              ? user!.displayName!.trim()
-              : 'Your space',
+          displayName,
           textAlign: TextAlign.center,
           style: Theme.of(
             context,

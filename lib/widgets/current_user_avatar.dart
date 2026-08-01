@@ -10,16 +10,18 @@ class CurrentUserAvatar extends StatelessWidget {
     required this.fallbackDisplayName,
     required this.fallbackPhotoUrl,
     required this.radius,
+    this.useCanonicalProfile = true,
   });
 
   final String userId;
   final String fallbackDisplayName;
   final String? fallbackPhotoUrl;
   final double radius;
+  final bool useCanonicalProfile;
 
   @override
   Widget build(BuildContext context) {
-    if (userId.isEmpty) {
+    if (userId.isEmpty || !useCanonicalProfile) {
       return BraidAvatar(
         identity: 'me',
         displayName: fallbackDisplayName,

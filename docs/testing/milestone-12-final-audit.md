@@ -543,6 +543,9 @@ Wave 4 started from `2105d1e` and closed two further source findings:
   enforce lifecycle start/end timestamps, so stale scheduled state cannot keep
   a group writable between scheduler runs.
 
+The evidence sentence below records the initial Wave 4 checkpoint before the
+completion correction. The superseding final-correction evidence follows.
+
 Wave 4 evidence is 4 identity tests, 4 lifecycle-policy tests, 125 passing
 Flutter tests, 82 passing Functions tests, 32 passing Rules Emulator tests,
 clean formatting, no analyzer issues, and a clean diff check. The repository
@@ -551,3 +554,25 @@ source waves are normalized as Wave 1 (historical Wave 20) through Wave 4
 automatic Wave 5 is planned. Device/offline, deployed parity, CI/release,
 App Check, migration, operations, legal, and product gates remain external;
 see `docs/testing/remediation-wave-4-remaining-work-handoff.md`.
+
+## Final verification correction - still normalized Wave 4
+
+The completion audit after checkpoint `0c3c3e8` found and corrected bounded
+source gaps inside the existing Wave 4 contracts:
+
+- Recorder stop now retains the service-owned temporary path when the plugin
+  returns null, so the Study Room can move or delete it rather than orphaning
+  an OS temporary file (`REL-023`).
+- Main Hall Me and My Insights now use canonical `users_public/{uid}` identity
+  streams, with Auth identity only as a fallback while the canonical profile
+  is unavailable (`REL-017`).
+- Malformed present lifecycle dates fail closed; scheduled lifecycle/cleanup
+  handlers declare a 540-second timeout; and invalid canonical message media
+  finalized in Storage is removed (`REL-025`/managed-media safety).
+
+The superseding local evidence is **126 Flutter tests**, **87 Functions
+tests**, **32 Rules Emulator tests**, clean formatting, clean analysis, and a
+clean diff check. These are corrections within normalized Wave 4, not a new
+Wave 5. Reservation-before-upload design and device, deployed, CI/release,
+App Check, migration, operations, legal, and product acceptance remain open
+gates.

@@ -1,6 +1,7 @@
 "use strict";
 
 const SAFE_COMMIT_WRITE_LIMIT = 450;
+const SCHEDULED_JOB_TIMEOUT_SECONDS = 540;
 
 function buildWriteBatches(
   items,
@@ -100,6 +101,7 @@ async function drainPagedJob({
 
 module.exports = {
   SAFE_COMMIT_WRITE_LIMIT,
+  SCHEDULED_JOB_TIMEOUT_SECONDS,
   buildWriteBatches,
   drainPagedJob,
 };

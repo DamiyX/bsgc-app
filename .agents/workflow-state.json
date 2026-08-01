@@ -1,13 +1,13 @@
 {
   "workflow": "Braid full audit remediation",
   "branch": "codex/bsgc-full-remediation",
-  "current_phase": "Remediation Wave 4 (historical continuation Wave 23) canonical-identity and lifecycle-timing source-closure slice verified locally; external gates remain open",
+  "current_phase": "Remediation Wave 4 (historical continuation Wave 23) final verification correction verified locally; external gates remain open",
   "repository_implementation": "in progress against docs/post-remediation-audit/05-prioritized-implementation-plan.md",
   "automated_verification": {
     "flutter_format": "pass",
     "flutter_analyze": "pass",
-    "flutter_tests": "125 passed",
-    "functions_tests": "82 passed",
+    "flutter_tests": "126 passed",
+    "functions_tests": "87 passed",
     "firebase_rules_tests": "32 passed",
     "functions_check": "pass",
     "migration_rehearsal": "pass",
@@ -39,9 +39,13 @@
     "wave_3_timestamp_tests": "4 passed; stable epoch and known-state compatibility readers",
     "wave_3_focused_flutter_tests": "19 passed across deletion and timestamp tracks",
     "wave_4_identity_tests": "4 passed; canonical public identity, UID isolation, coalescing, and source-boundary checks",
-    "wave_4_lifecycle_tests": "4 passed; active, stale-end, future-start, and legacy-date policy checks",
-    "wave_4_focused_flutter_tests": "4 passed for canonical identity",
-    "wave_4_focused_functions_tests": "4 passed for lifecycle timing policy",
+    "wave_4_lifecycle_tests": "6 passed; active, stale-end, future-start, legacy-date, and malformed-date policy checks",
+    "wave_4_focused_flutter_tests": "5 passed for canonical identity and recorder-stop fallback",
+    "wave_4_focused_functions_tests": "6 passed for lifecycle timing policy",
+    "wave_4_final_verification_ui_identity": "canonical users_public streams in Main Hall Me and My Insights with isolated test-data fallback",
+    "wave_4_final_verification_voice_cleanup": "1 new regression path; recorder stop fallback preserves the service-owned temporary file",
+    "wave_4_final_verification_scheduler": "540-second explicit timeout for bounded scheduled drains; helper test passed",
+    "wave_4_final_verification_media": "invalid canonical message objects are removed by the finalize trigger; reservation-before-upload remains a larger follow-up",
     "wave_4_rules_regressions": "pass; member progress rejects stale, scheduled, and completed lifecycle windows",
     "scheduled_over_500_tests": "pass: 1,200 lifecycle writes in 450/450/300 chunks; 800-item deletion path in 450/350 chunks",
     "dependency_audit": "high severity clean after npm audit fix --package-lock-only; 9 moderate nested uuid advisories remain under Google client dependencies",
@@ -64,6 +68,6 @@
     "production signing and App/Universal Link verification",
     "legal, store, monitoring, and operational approval"
   ],
-  "next_action": "Run the external device/offline, deployed, CI/release, and acceptance gates documented in docs/testing/remediation-wave-4-remaining-work-handoff.md. Open a Wave 5 only if one of those checks produces a concrete reproducible source defect.",
-  "updated_at": "2026-08-01T16:45:00+01:00"
+  "next_action": "Run the external device/offline, deployed, CI/release, and acceptance gates documented in docs/testing/remediation-wave-4-remaining-work-handoff.md. Keep the normalized program count at four; open a new wave only if one of those checks produces a concrete reproducible source defect.",
+  "updated_at": "2026-08-01T17:20:00+01:00"
 }

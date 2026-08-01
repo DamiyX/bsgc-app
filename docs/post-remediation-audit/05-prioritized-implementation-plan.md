@@ -488,6 +488,9 @@ found during the continuation audit. The detailed track records are
   enforce `startDate`/`endDate` boundaries as well as the persisted lifecycle,
   closing the stale-active window between scheduler runs.
 
+The evidence sentence below records the initial Wave 4 checkpoint before the
+completion correction. The superseding final-correction evidence follows.
+
 Wave 4 evidence is 4 identity tests, 4 lifecycle-policy tests, 125 passing
 Flutter tests, 82 passing Functions tests, 32 passing Rules Emulator tests,
 clean pinned formatting, `flutter analyze` with no issues, and a clean diff
@@ -496,6 +499,31 @@ check. The historical labels Wave 20 through Wave 23 map to normalized Waves
 Open device/offline, deployed, CI/release, App Check, migration, operations,
 legal, and product gates remain external acceptance work, as listed in the
 Wave 4 handoff.
+
+### Final verification correction - same normalized Wave 4
+
+The completion audit after `0c3c3e8` found and corrected bounded gaps that
+belonged to the existing Wave 4 contracts; it did not open a fifth normalized
+program wave:
+
+- `REL-023`: recorder stop now falls back to the service-owned temporary path
+  when the plugin returns null, so the Study Room can move the file into the
+  durable outbox or explicitly delete it instead of orphaning it.
+- `REL-017`: Main Hall Me and My Insights now read canonical
+  `users_public/{uid}` identity streams, with Auth identity only as a fallback
+  while the canonical snapshot is unavailable. Injected test data sources
+  explicitly avoid creating Firebase streams.
+- `REL-025` and scheduled safety: malformed lifecycle dates fail closed;
+  scheduled lifecycle/cleanup handlers declare a 540-second timeout; invalid
+  canonical message objects are removed by the finalize trigger.
+
+Final local evidence is **126 Flutter tests**, **87 Functions tests**, **32
+Rules Emulator tests**, clean pinned formatting, no analyzer issues, and a
+clean diff check. The historical labels Wave 20 through Wave 23 map to
+normalized Waves 1 through 4. No automatic Wave 5 is planned. Reservation-
+before-upload design, device/offline behavior, deployed parity, CI/release,
+App Check, migration, operations, legal, and product acceptance remain
+external gates.
 
 ---
 

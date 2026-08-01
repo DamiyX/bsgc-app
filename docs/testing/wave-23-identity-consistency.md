@@ -19,6 +19,9 @@ generic placeholder or another account's cached identity.
 - `CreateInsightScreen` now loads canonical public identity before publishing.
 - `ViewInsightScreen` now loads canonical identity before creating a comment and
   preserves the entered text when that profile read fails.
+- The Main Hall Me header and My Insights avatar now read the same canonical
+  `users_public/{uid}` profile stream, falling back to Auth identity only while
+  the canonical snapshot is unavailable.
 - Profile edit and onboarding writes invalidate the selected account's cached
   identity; sign-out clears it; account boundaries cannot reuse another UID's
   value.
@@ -39,6 +42,21 @@ that returns the wrong UID.
 
 Focused result: **4 tests passed**; formatting passed. The integrated Wave 4
 gate also passed full Flutter analysis/tests and the Functions/Rules suites.
+
+## Final verification correction
+
+The post-remediation completion audit found that authored content was using
+the canonical repository while two visible identity surfaces still rendered a
+constructor-time Auth snapshot. The Main Hall and My Insights surfaces now use
+`CurrentUserAvatar`/canonical profile data. An explicit fallback mode keeps
+injected data-source widget tests independent of Firebase initialization; the
+production `InsightService` path continues to use the canonical stream.
+
+The integrated correction also added a recorder-stop regression test because
+the same audit found that a null recorder return could otherwise clear an
+owned temporary path without moving or deleting it. The test is recorded in
+`test/voice_recording_recovery_test.dart` and is part of the 126-test Flutter
+gate.
 
 ## Remaining boundary
 

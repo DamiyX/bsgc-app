@@ -29,6 +29,12 @@ message boundary because `sendGroupMessage` and `editGroupMessage` checked
   `readingProgress`, `userCompletedChapters`, and `unreadCounts` updates.
   Scheduled and completed groups remain read-only even when a client has an
   old document snapshot.
+- Present-but-malformed `startDate` and `endDate` values now fail closed in
+  the callable policy instead of being silently treated as missing legacy
+  dates.
+- `advanceGroupLifecycle` and `cleanupExpiredData` declare an explicit
+  540-second Cloud Functions timeout, covering their bounded sequential drain
+  budgets and making the operational contract visible in source and tests.
 
 No scheduler cadence, date storage format, group query, identity/timestamp
 contract, or UI layout was changed in this track. The existing Study Room copy
@@ -38,12 +44,27 @@ being the only protection.
 
 ## Verification
 
+The four-test/82-test values in the original block below are the initial
+Wave 4 checkpoint before the final verification correction. The superseding
+integrated result is recorded after that block.
+
 - `node --check index.js` — pass.
 - `node --test test/functions/lifecycle_policy.test.js` — 4 passed.
 - `npm test -- --test-concurrency=1` — 82 passed.
 - `npm run test:rules` — 32 passed across 8 suites. This requires the Firebase
   Firestore/Storage emulators and is not a substitute for a deployed staging
   check.
+
+## Final verification correction
+
+The completion audit added two lifecycle-safety checks: malformed present
+`startDate`/`endDate` values fail closed, and the scheduled handlers declare a
+540-second timeout that covers their bounded drain budgets. The integrated
+correction result is **6 lifecycle-policy tests**, **87 Functions tests**, and
+**32 Rules Emulator tests**. It also adds a bounded Storage-finalize cleanup
+for invalid canonical message objects. That cleanup does not replace a full
+reservation-before-upload protocol; the larger cross-layer design remains a
+follow-up if pre-upload reservation is required.
 
 ## Remaining evidence
 

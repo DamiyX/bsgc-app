@@ -3,10 +3,16 @@ const assert = require("node:assert/strict");
 const {
   buildWriteBatches,
   drainPagedJob,
+  SCHEDULED_JOB_TIMEOUT_SECONDS,
 } = require("../../lib/scheduled_jobs");
 const { commitLifecycleUpdates } = require("../../lib/lifecycle");
 
 describe("scheduled job safety", () => {
+  test("uses a timeout that covers bounded scheduler drain budgets", () => {
+    assert.equal(SCHEDULED_JOB_TIMEOUT_SECONDS, 540);
+    assert.ok(SCHEDULED_JOB_TIMEOUT_SECONDS <= 540);
+  });
+
   test("accounts for multi-write items and never exceeds the safe cap", () => {
     const batches = buildWriteBatches([
       { id: "a", writeCount: 300 },
