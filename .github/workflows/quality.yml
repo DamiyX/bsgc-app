@@ -27,7 +27,7 @@ jobs:
       - run: flutter analyze
       - run: flutter test
       - name: Android debug compile smoke
-        run: flutter build apk --debug --target-platform android-arm64 --split-per-abi --no-pub
+        run: flutter build apk --debug --target-platform android-arm64 --split-per-abi --dart-define=BRAID_ENV=local --no-pub
 
   functions:
     runs-on: ubuntu-latest

@@ -302,3 +302,32 @@ report and its evidence updates locally, then let the friend/device reviewer
 run the preview guide and return screenshots, logs, exact device/OS, and the
 gates above. Only after those results are reviewed should the branch be
 considered for merge or release.
+
+## Continuation verification — Wave 14 source closure
+
+Wave 14 re-opened only the source-controlled gaps identified by this report;
+the complete handoff is `docs/testing/wave-14-source-closure.md`. This is a
+continuation of the Milestone 12 baseline, not a claim that the external gates
+above were completed.
+
+- `SEC-007` and `RELENG-004`: the official FlutterFire
+  `firebase_app_check` dependency and activation adapter are now present.
+  `BRAID_ENV=local` uses debug providers; staging and production select Play
+  Integrity on Android and App Attest with DeviceCheck fallback on Apple. The
+  startup gate activates App Check after `Firebase.initializeApp()` and before
+  other Firebase service use. Quality and release workflows pass explicit
+  environment defines. Functions enforcement remains disabled pending owner,
+  Firebase-console, signed-client, metrics, and rollback evidence.
+- `UX-005`: the duplicate Me-tab app-bar Settings action is removed. Settings
+  remains a single destination in the Me list. Profile/Journal information
+  architecture is intentionally unchanged pending a product walkthrough.
+- `UX-010`: profile photo and details writes now wait for Firestore's pending
+  write metadata to clear before confirmed success. A bounded timeout shows
+  queued-local/reconnect/retry copy and does not dismiss the editor. The full
+  mutation inventory and device behavior remain follow-up gates.
+
+The pinned Flutter verification after integration is recorded in the Wave 14
+handoff and workflow state. It remains source evidence only: the branch is
+still **internal preview/development only**, and device, native Firestore cache
+isolation, Firebase App Check registration/enforcement, signed artifacts,
+production operations, legal approval, and release decision remain open.

@@ -2,11 +2,28 @@
 
 ## Source integration gate
 
-The client-side provider plan is implemented in
-`lib/services/app_check_bootstrap.dart`. Completing activation requires the
-official FlutterFire `firebase_app_check` package. Do not enable either
-Functions enforcement parameter until release clients include and activate
-that package.
+The client-side provider plan and activation adapter are implemented in
+`lib/services/app_check_bootstrap.dart` using the official FlutterFire
+`firebase_app_check` `0.4.5+2` package. `activateConfiguredAppCheck()` runs
+after `Firebase.initializeApp()` and before Messaging, Firestore, or any other
+Firebase service is used. Provider selection is controlled by the
+`BRAID_ENV` compile-time define:
+
+- `local` (the default for development and CI debug builds) uses the Android
+  and Apple debug providers;
+- `staging` uses Play Integrity on Android and App Attest with DeviceCheck
+  fallback on Apple;
+- `production` uses the same attested providers as staging.
+
+No debug token is committed or logged by the client. Unsupported web and
+desktop targets fail startup with an explicit configuration diagnostic rather
+than silently presenting an unenforced client as secure. Web remains outside
+the current mobile release scope and needs an explicit reCAPTCHA provider
+before it can be supported.
+
+This source integration does not enable either Functions enforcement parameter.
+Do not enable enforcement until the release-client and operator gates below
+are complete.
 
 Provider policy:
 

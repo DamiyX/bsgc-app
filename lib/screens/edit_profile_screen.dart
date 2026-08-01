@@ -7,7 +7,13 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/storage_service.dart';
+import '../services/firestore_commit_service.dart';
 import '../widgets/current_user_avatar.dart';
+
+const profilePicturePendingMessage =
+    'The profile picture change is queued locally. Reconnect and retry to finish saving.';
+const profileChangesPendingMessage =
+    'Your profile changes are queued locally. Reconnect and retry to finish saving.';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -77,14 +83,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         bytes: compressed,
         userId: user.uid,
       );
-      await FirebaseFirestore.instance
+      final reference = FirebaseFirestore.instance
           .collection('users_public')
-          .doc(user.uid)
-          .update({
-            'photoUrl': storagePath,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
+          .doc(user.uid);
+      await reference.update({
+        'photoUrl': storagePath,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      await waitForDocumentCommit(reference);
       _showMessage('Profile picture updated.');
+    } on TimeoutException {
+      _showMessage(profilePicturePendingMessage);
     } on FirebaseException catch (error) {
       _showMessage(_friendlyError(error));
     } catch (_) {
@@ -102,14 +111,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     setState(() => _isLoading = true);
     final displayName = _nameController.text.trim();
     try {
-      await FirebaseFirestore.instance
+      final reference = FirebaseFirestore.instance
           .collection('users_public')
-          .doc(user.uid)
-          .update({
-            'displayName': displayName,
-            'bio': _bioController.text.trim(),
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
+          .doc(user.uid);
+      await reference.update({
+        'displayName': displayName,
+        'bio': _bioController.text.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      await waitForDocumentCommit(reference);
       if (user.displayName != displayName) {
         try {
           await user.updateDisplayName(displayName);
@@ -119,6 +129,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       }
       if (!mounted) return;
       Navigator.pop(context, true);
+    } on TimeoutException {
+      _showMessage(profileChangesPendingMessage);
     } on FirebaseException catch (error) {
       _showMessage(_friendlyError(error));
     } catch (_) {

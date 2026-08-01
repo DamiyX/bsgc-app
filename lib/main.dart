@@ -8,6 +8,7 @@ import 'package:bsgc_app/services/auth_service.dart';
 import 'package:bsgc_app/services/deep_link_service.dart';
 import 'package:bsgc_app/services/startup_service.dart';
 import 'package:bsgc_app/services/account_session_boundary.dart';
+import 'package:bsgc_app/services/app_check_bootstrap.dart';
 import 'package:bsgc_app/screens/foyer_screen.dart';
 import 'package:bsgc_app/widgets/user_data_wrapper.dart';
 import 'package:bsgc_app/theme.dart';
@@ -74,6 +75,11 @@ class _AppStartupGateState extends State<_AppStartupGate> {
         options: DefaultFirebaseOptions.currentPlatform,
       );
     }
+    // App Check must be registered after Firebase.initializeApp and before
+    // any Firebase service starts. Provider selection is compile-time driven;
+    // activation failures remain visible through StartupController instead
+    // of silently presenting an unenforced client as secure.
+    await activateConfiguredAppCheck();
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
     if (!kIsWeb) {
       final firestore = FirebaseFirestore.instance;

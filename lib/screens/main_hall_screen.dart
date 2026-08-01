@@ -502,15 +502,6 @@ class _MainHallScreenState extends State<MainHallScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                 ),
-              if (_selectedIndex == 3)
-                IconButton(
-                  tooltip: 'Settings',
-                  icon: const Icon(Icons.settings_outlined),
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                  ),
-                ),
             ],
           ),
           body: SafeArea(

@@ -221,6 +221,33 @@ acceptance: account-switch/offline/process-death, accessibility/contrast,
 App Check, signed artifact, link, production migration, and legal/operations
 gates remain open.
 
+## Implementation status — continuation wave 14 source-closure slice
+
+The detailed handoff is `docs/testing/wave-14-source-closure.md` and the App
+Check rollout contract is `docs/testing/wave-14-app-check.md`.
+
+This wave closes the source-controlled portions of four Milestone 12 review
+items without treating owner or device evidence as complete:
+
+- `SEC-007`/`RELENG-004`: the official FlutterFire `firebase_app_check`
+  dependency is integrated. `BRAID_ENV` selects debug providers for local
+  builds and Play Integrity/App Attest with DeviceCheck fallback for staging
+  and production. Startup activates App Check after Firebase initialization and
+  before other Firebase services. Backend enforcement remains disabled pending
+  Firebase-console registration, signed-client metrics, and rollback evidence.
+- `UX-005`: the duplicate Me-tab app-bar Settings action is gone; Settings is
+  now reached from the Me destination list. The Profile/Journal information
+  architecture remains unchanged until a product migration decision is tested.
+- `UX-010`: profile photo and details edits wait for Firestore's pending-write
+  metadata to clear before confirmed success. A timeout produces explicit
+  queued-local/reconnect/retry copy and keeps the editor open.
+
+The parent verification run reports clean formatting, analysis, and the full
+Flutter test suite. This is still a source-closure wave, not release
+acceptance. Native Firestore cache isolation, App Check project setup and
+enforcement, CI/device review, signed artifacts, links, migration/backup,
+moderation operations, and legal/product approval remain open gates.
+
 ---
 
 ## Non-negotiable execution contract
