@@ -666,6 +666,43 @@ describe("private state and reporting", () => {
     await assertFails(
       getDoc(doc(otherDb, "users/owner/saved_insights/insight-a")),
     );
+
+    await assertSucceeds(
+      setDoc(doc(ownerDb, "users/owner/saved_insights/insight-b"), {
+        schemaVersion: 2,
+        snapshotSchemaVersion: 1,
+        insightId: "insight-b",
+        savedAt: serverTimestamp(),
+        authorUid: "author",
+        authorName: "Author",
+        title: "A saved reflection",
+        body: "A bounded saved snapshot.",
+        themeId: "theme_0",
+        audience: "contacts",
+        status: "active",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        expiresAt: future(72),
+      }),
+    );
+    await assertFails(
+      setDoc(doc(ownerDb, "users/owner/saved_insights/invalid"), {
+        schemaVersion: 2,
+        snapshotSchemaVersion: 1,
+        insightId: "invalid",
+        savedAt: serverTimestamp(),
+        authorUid: "author",
+        authorName: "Author",
+        title: "Invalid snapshot",
+        body: "x".repeat(12_001),
+        themeId: "theme_0",
+        audience: "contacts",
+        status: "active",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        expiresAt: future(72),
+      }),
+    );
   });
 
   test("reports are callable-only and cannot be edited by clients", async () => {

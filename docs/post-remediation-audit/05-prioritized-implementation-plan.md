@@ -109,6 +109,38 @@ small-screen, and contrast checks on a device or emulator. Automatic
 transcription, a full screen-controller extraction, and production release
 configuration remain outside this bounded wave.
 
+## Implementation status — wave 10 scale and measured-performance slice
+
+**Local status:** implemented locally and verified by static analysis,
+automated tests, and Rules Emulator checks; production-scale device traces and
+legacy pointer backfill remain release gates.
+
+This wave addresses SCL-004–005 and PERF-002–006 with bounded source paths:
+
+| Finding | Implemented outcome |
+|---|---|
+| SCL-004, PERF-006 | Active/scheduled Groups, Journal notes, saved reflections, and archived studies use bounded first pages and explicit cursor-based “Load older” actions. Active and archived study queries are separate and indexed. |
+| SCL-005, PERF-003 | Server-created `insight_feed` pointers now carry a safe display snapshot. The active feed renders that snapshot without one dependent `insights/{id}` read per pointer; legacy pointers use a compatibility fallback. Saved bookmarks carry the same bounded snapshot and are paged. |
+| PERF-002 | Main Hall/Profile list responsibilities are moved into bounded paged components; the largest room/viewer screens retain their existing state boundaries for a later measured extraction. |
+| PERF-004, PERF-005 | Existing account-scoped voice cache and outbox quota/expiry controls remain the enforced media budget; this wave keeps their user-visible download/retry paths while bounding the surrounding lists. |
+
+Wave 10 evidence:
+
+- Dart formatting: pass;
+- `flutter analyze`: no issues;
+- Full Flutter tests: 80 passed;
+- Functions syntax check and tests: 70 passed;
+- Firestore/Storage Rules Emulator: 31 passed;
+- `firestore.indexes.json` parse and Git whitespace validation: pass.
+
+Known limitations: old feed pointers and old saved bookmarks are hydrated by a
+bounded compatibility path until a server migration/backfill writes snapshots;
+the pointer snapshot intentionally trades some fanout bytes for predictable
+feed latency and must be measured against fanout-on-read before million-user
+scale. Device traces for time-to-first-content, reads per open, room frame
+time, memory, and cache bytes are still required before claiming production
+performance budgets.
+
 ---
 
 ## Non-negotiable execution contract

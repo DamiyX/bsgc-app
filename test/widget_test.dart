@@ -1,9 +1,11 @@
 import 'package:bsgc_app/models/message_model.dart';
+import 'package:bsgc_app/models/insight_model.dart';
 import 'package:bsgc_app/screens/foyer_screen.dart';
 import 'package:bsgc_app/services/deep_link_service.dart';
 import 'package:bsgc_app/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 void main() {
   test('canonical invite links reject unsafe hosts and malformed tokens', () {
@@ -59,6 +61,30 @@ void main() {
     expect(part.caption, 'A short summary');
     expect(part.toMap()['caption'], 'A short summary');
   });
+
+  test(
+    'feed snapshots rebuild complete reflections without a dependent read',
+    () {
+      final created = Timestamp.fromDate(DateTime(2026, 1, 1));
+      final insight = InsightModel.fromMap('snapshot-id', {
+        'schemaVersion': 2,
+        'authorUid': 'author',
+        'authorName': 'Author',
+        'title': 'Snapshot title',
+        'body': 'Snapshot body',
+        'themeId': 'theme_0',
+        'audience': 'contacts',
+        'status': 'active',
+        'createdAt': created,
+        'updatedAt': created,
+        'expiresAt': Timestamp.fromDate(DateTime(2026, 1, 4)),
+      });
+
+      expect(insight.id, 'snapshot-id');
+      expect(insight.body, 'Snapshot body');
+      expect(insight.expiresAt, DateTime(2026, 1, 4));
+    },
+  );
 
   testWidgets('sign-in screen remains usable on a narrow display', (
     tester,

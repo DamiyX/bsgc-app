@@ -56,6 +56,13 @@ Archived studies are discoverable from Groups and open read-only. Journal
 cards can launch a reviewed copy flow into a contacts-scoped reflection; the
 private journal record is not mutated by sharing.
 
+Long histories are loaded in bounded cursor pages. Recent Groups, Journal, and
+saved-reflection pages render first; explicit “Load older…” actions retrieve
+more records, while Archived studies remains a separate history surface. Feed
+pointers contain the server-created safe reflection snapshot so opening the
+active feed does not issue one content read per pointer. Legacy pointers are
+hydrated only as a compatibility path until the snapshot backfill is complete.
+
 ## Motion
 
 Motion is optional and functional. Avoid looping/decorative motion in core flows. Respect the platform’s reduced-motion setting; navigation and status understanding must never depend on animation.

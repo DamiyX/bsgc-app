@@ -49,9 +49,13 @@ class InsightModel {
   factory InsightModel.fromFirestore(DocumentSnapshot doc) {
     final raw = doc.data();
     final data = raw is Map<String, dynamic> ? raw : const <String, dynamic>{};
+    return InsightModel.fromMap(doc.id, data);
+  }
+
+  factory InsightModel.fromMap(String id, Map<String, dynamic> data) {
     final createdAt = _dateFrom(data['createdAt'], fallback: DateTime.now());
     return InsightModel(
-      id: doc.id,
+      id: id,
       schemaVersion: data['schemaVersion'] is int
           ? data['schemaVersion'] as int
           : 1,

@@ -17,6 +17,8 @@ import '../widgets/braid_media.dart';
 import '../widgets/current_user_avatar.dart';
 import '../widgets/insights_row.dart';
 import '../widgets/note_card.dart';
+import '../widgets/paged_groups_list.dart';
+import '../widgets/paged_notes_list.dart';
 import 'create_group_screen.dart';
 import 'create_insight_screen.dart';
 import 'create_note_screen.dart';
@@ -717,22 +719,29 @@ class _MainHallScreenState extends State<MainHallScreen> {
   }
 
   Widget _buildGroups(List<GroupModel> groups) {
-    return ListView.separated(
-      key: const PageStorageKey('groups'),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 112),
-      itemCount: groups.length + (groups.isEmpty ? 2 : 1),
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        if (groups.isEmpty && index == 0) {
-          return _EmptyGroups(onCreate: _createGroup);
-        }
-        final archiveIndex = groups.isEmpty ? 1 : groups.length;
-        if (index == archiveIndex) {
-          return _ArchivedStudiesEntry(onTap: _openArchivedStudies);
-        }
-        final group = groups[groups.isEmpty ? index - 1 : index];
-        return _GroupCard(group: group, onTap: () => _openGroup(group));
-      },
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      return const Center(child: Text('Sign in to open your studies.'));
+    }
+    return Column(
+      children: [
+        Expanded(
+          child: PagedGroupsList(
+            key: const PageStorageKey('groups'),
+            service: _chatService,
+            userId: uid,
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            emptyBuilder: (context) => _EmptyGroups(onCreate: _createGroup),
+            errorBuilder: (context, error, retry) => _LoadError(onRetry: retry),
+            itemBuilder: (context, group) =>
+                _GroupCard(group: group, onTap: () => _openGroup(group)),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 112),
+          child: _ArchivedStudiesEntry(onTap: _openArchivedStudies),
+        ),
+      ],
     );
   }
 
@@ -766,44 +775,25 @@ class _MainHallScreenState extends State<MainHallScreen> {
           ),
         ),
         Expanded(
-          child: StreamBuilder<List<NoteModel>>(
-            stream: _noteService.getUserNotes(uid),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting &&
-                  !snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (snapshot.hasError && !snapshot.hasData) {
-                return const _LoadError();
-              }
-              final notes = (snapshot.data ?? const <NoteModel>[])
-                  .where(
-                    (note) =>
-                        _journalQuery.isEmpty ||
-                        note.title.toLowerCase().contains(_journalQuery) ||
-                        note.body.toLowerCase().contains(_journalQuery),
-                  )
-                  .toList();
-              if (notes.isEmpty) {
-                return _EmptyJournal(
-                  hasSearch: _journalQuery.isNotEmpty,
-                  onWrite: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const CreateNoteScreen()),
-                  ),
-                );
-              }
-              return ListView.builder(
-                key: const PageStorageKey('journal'),
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 112),
-                itemCount: notes.length,
-                itemBuilder: (context, index) => NoteCard(
-                  note: notes[index],
-                  onDelete: () => _confirmDeleteNote(uid, notes[index]),
-                  onShare: () => _shareNoteCopy(notes[index]),
-                ),
-              );
-            },
+          child: PagedNotesList(
+            key: const PageStorageKey('journal'),
+            service: _noteService,
+            userId: uid,
+            searchQuery: _journalQuery,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 112),
+            emptyBuilder: (context) => _EmptyJournal(
+              hasSearch: _journalQuery.isNotEmpty,
+              onWrite: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const CreateNoteScreen()),
+              ),
+            ),
+            errorBuilder: (context, error, retry) => _LoadError(onRetry: retry),
+            itemBuilder: (context, note) => NoteCard(
+              note: note,
+              onDelete: () => _confirmDeleteNote(uid, note),
+              onShare: () => _shareNoteCopy(note),
+            ),
           ),
         ),
       ],

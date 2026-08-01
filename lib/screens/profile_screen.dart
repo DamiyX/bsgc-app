@@ -4,13 +4,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../models/insight_model.dart';
 import '../models/note_model.dart';
 import '../services/insight_service.dart';
 import '../services/note_service.dart';
 import '../widgets/braid_media.dart';
 import '../widgets/note_card.dart';
-import '../widgets/saved_insight_card.dart';
+import '../widgets/paged_notes_list.dart';
+import '../widgets/paged_saved_insights_list.dart';
 import 'create_note_screen.dart';
 import 'edit_profile_screen.dart';
 
@@ -249,72 +249,50 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildNotes() {
-    return StreamBuilder<List<NoteModel>>(
-      stream: _noteService.getUserNotes(_uid),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            !snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError && !snapshot.hasData) {
-          return const _ProfileListState(
-            icon: Icons.cloud_off_outlined,
-            title: 'Notes are not available yet',
-          );
-        }
-        final notes = snapshot.data ?? const <NoteModel>[];
-        if (notes.isEmpty) {
-          return const _ProfileListState(
-            icon: Icons.edit_note_rounded,
-            title: 'No private reflections yet',
-            description: 'Your Journal is visible only to you.',
-          );
-        }
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-          itemCount: notes.length,
-          itemBuilder: (context, index) => NoteCard(
-            note: notes[index],
-            onDelete: () => unawaited(_deleteNote(notes[index])),
-          ),
-        );
-      },
+    return PagedNotesList(
+      service: _noteService,
+      userId: _uid,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+      emptyBuilder: (_) => const _ProfileListState(
+        icon: Icons.edit_note_rounded,
+        title: 'No private reflections yet',
+        description: 'Your Journal is visible only to you.',
+      ),
+      errorBuilder: (_, error, retry) => _ProfileListState(
+        icon: Icons.cloud_off_outlined,
+        title: 'Notes are not available yet',
+        action: TextButton.icon(
+          onPressed: retry,
+          icon: const Icon(Icons.refresh_rounded),
+          label: const Text('Retry'),
+        ),
+      ),
+      itemBuilder: (context, note) =>
+          NoteCard(note: note, onDelete: () => unawaited(_deleteNote(note))),
     );
   }
 
   Widget _buildSavedInsights() {
-    return StreamBuilder<List<InsightModel>>(
-      stream: _insightService.getSavedInsights(_uid),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            !snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError && !snapshot.hasData) {
-          return const _ProfileListState(
-            icon: Icons.cloud_off_outlined,
-            title: 'Saved Insights are not available yet',
-          );
-        }
-        final insights = snapshot.data ?? const <InsightModel>[];
-        if (insights.isEmpty) {
-          return const _ProfileListState(
-            icon: Icons.bookmark_outline,
-            title: 'Nothing saved yet',
-            description: savedInsightsRetentionNotice,
-          );
-        }
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-          itemCount: insights.length,
-          itemBuilder: (context, index) => SavedInsightCard(
-            insight: insights[index],
-            onDelete: () => unawaited(
-              _insightService.unsaveInsight(_uid, insights[index].id),
-            ),
-          ),
-        );
-      },
+    return PagedSavedInsightsList(
+      service: _insightService,
+      userId: _uid,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+      emptyBuilder: (_) => const _ProfileListState(
+        icon: Icons.bookmark_outline,
+        title: 'Nothing saved yet',
+        description: savedInsightsRetentionNotice,
+      ),
+      errorBuilder: (_, error, retry) => _ProfileListState(
+        icon: Icons.cloud_off_outlined,
+        title: 'Saved reflections are not available yet',
+        action: TextButton.icon(
+          onPressed: retry,
+          icon: const Icon(Icons.refresh_rounded),
+          label: const Text('Retry'),
+        ),
+      ),
+      onDelete: (insight) =>
+          unawaited(_insightService.unsaveInsight(_uid, insight.id)),
     );
   }
 
@@ -346,11 +324,13 @@ class _ProfileListState extends StatelessWidget {
   final IconData icon;
   final String title;
   final String? description;
+  final Widget? action;
 
   const _ProfileListState({
     required this.icon,
     required this.title,
     this.description,
+    this.action,
   });
 
   @override
@@ -374,6 +354,7 @@ class _ProfileListState extends StatelessWidget {
               const SizedBox(height: 6),
               Text(description!, textAlign: TextAlign.center),
             ],
+            if (action != null) ...[const SizedBox(height: 12), action!],
           ],
         ),
       ),

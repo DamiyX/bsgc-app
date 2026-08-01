@@ -368,6 +368,48 @@ service cloud.firestore {
         && (!data.keys().hasAny(['likedBy']) || data.likedBy is list);
     }
 
+    function validSavedInsightSnapshot(data) {
+      return data.keys().hasAll([
+          'schemaVersion',
+          'snapshotSchemaVersion',
+          'insightId',
+          'authorUid',
+          'authorName',
+          'title',
+          'body',
+          'themeId',
+          'audience',
+          'status',
+          'createdAt',
+          'updatedAt',
+          'expiresAt'
+        ])
+        && data.schemaVersion == 2
+        && data.snapshotSchemaVersion == 1
+        && data.insightId is string
+        && data.insightId.size() >= 1
+        && data.insightId.size() <= 160
+        && data.authorUid is string
+        && data.authorUid.size() >= 1
+        && data.authorUid.size() <= 128
+        && data.authorName is string
+        && data.authorName.size() >= 1
+        && data.authorName.size() <= 80
+        && validOptionalString(data, 'authorPhotoUrl', 2048)
+        && data.title is string
+        && data.title.size() <= 160
+        && data.body is string
+        && data.body.size() >= 1
+        && data.body.size() <= 12000
+        && data.themeId is string
+        && data.themeId.size() <= 64
+        && data.audience == 'contacts'
+        && data.status == 'active'
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && data.expiresAt is timestamp;
+    }
+
     function canReadInsight(data, insightId) {
       return signedIn()
         && (
@@ -580,14 +622,32 @@ service cloud.firestore {
       match /saved_insights/{insightId} {
         allow get, list: if isSelf(uid);
         allow create: if isSelf(uid)
-          && request.resource.data.keys().hasAll([
-            'insightId',
-            'savedAt'
-          ])
-          && request.resource.data.keys().hasOnly([
-            'insightId',
-            'savedAt'
-          ])
+          && request.resource.data.keys().hasAll(['insightId', 'savedAt'])
+          && (
+            request.resource.data.keys().hasAny(['snapshotSchemaVersion'])
+              ? request.resource.data.keys().hasOnly([
+                  'schemaVersion',
+                  'snapshotSchemaVersion',
+                  'insightId',
+                  'savedAt',
+                  'authorUid',
+                  'authorName',
+                  'authorPhotoUrl',
+                  'title',
+                  'body',
+                  'themeId',
+                  'audience',
+                  'status',
+                  'createdAt',
+                  'updatedAt',
+                  'expiresAt'
+                ])
+                && validSavedInsightSnapshot(request.resource.data)
+              : request.resource.data.keys().hasOnly([
+                  'insightId',
+                  'savedAt'
+                ])
+          )
           && request.resource.data.insightId == insightId
           && request.resource.data.savedAt == request.time;
         allow update: if false;

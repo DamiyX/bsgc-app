@@ -84,6 +84,33 @@ class InsightService implements MyInsightsDataSource {
     return uid;
   }
 
+  bool _hasFeedSnapshot(Map<String, dynamic> data) {
+    return data['schemaVersion'] == 2 &&
+        data['authorUid'] is String &&
+        data['authorName'] is String &&
+        data['title'] is String &&
+        data['body'] is String &&
+        data['themeId'] is String &&
+        data['audience'] is String &&
+        data['status'] is String &&
+        data['createdAt'] is Timestamp &&
+        data['updatedAt'] is Timestamp &&
+        data['expiresAt'] is Timestamp;
+  }
+
+  Future<Map<String, DocumentSnapshot<Map<String, dynamic>>>>
+  _loadLegacyInsights(Iterable<String> insightIds) async {
+    final ids = insightIds.toSet().toList(growable: false);
+    if (ids.isEmpty) return const {};
+    final documents = await Future.wait(
+      ids.map((id) => _firestore.collection('insights').doc(id).get()),
+    );
+    return {
+      for (final document in documents)
+        if (document.exists) document.id: document,
+    };
+  }
+
   Stream<List<InsightModel>> getActiveInsights({int limit = 40}) {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return Stream.value(const []);
@@ -98,28 +125,35 @@ class InsightService implements MyInsightsDataSource {
         .limit(boundedLimit)
         .snapshots()
         .asyncMap((snapshot) async {
-          final models = await Future.wait(
-            snapshot.docs.map((pointer) async {
-              final insightId =
-                  pointer.data()['insightId']?.toString() ?? pointer.id;
-              try {
-                final insight = await _firestore
-                    .collection('insights')
-                    .doc(insightId)
-                    .get();
-                if (!insight.exists) return null;
-                final model = InsightModel.fromFirestore(insight);
-                if (model.status != 'active' ||
-                    !model.expiresAt.isAfter(DateTime.now())) {
-                  return null;
-                }
-                return model;
-              } catch (_) {
-                return null;
+          final legacyIds = snapshot.docs
+              .where((pointer) => !_hasFeedSnapshot(pointer.data()))
+              .map(
+                (pointer) =>
+                    pointer.data()['insightId']?.toString() ?? pointer.id,
+              );
+          final legacyDocuments = await _loadLegacyInsights(legacyIds);
+          final now = DateTime.now();
+          final models = <InsightModel>[];
+          for (final pointer in snapshot.docs) {
+            final data = pointer.data();
+            try {
+              final legacyDocument =
+                  legacyDocuments[data['insightId']?.toString() ?? pointer.id];
+              final model = _hasFeedSnapshot(data)
+                  ? InsightModel.fromMap(pointer.id, data)
+                  : legacyDocument == null
+                  ? null
+                  : InsightModel.fromFirestore(legacyDocument);
+              if (model != null &&
+                  model.status == 'active' &&
+                  model.expiresAt.isAfter(now)) {
+                models.add(model);
               }
-            }),
-          );
-          return models.whereType<InsightModel>().toList(growable: false);
+            } catch (_) {
+              // A malformed or legacy pointer should not break the entire feed.
+            }
+          }
+          return models;
         });
   }
 
@@ -451,8 +485,22 @@ class InsightService implements MyInsightsDataSource {
         .collection('saved_insights')
         .doc(insight.id);
     await reference.set({
+      'schemaVersion': 2,
       'insightId': insight.id,
       'savedAt': FieldValue.serverTimestamp(),
+      'snapshotSchemaVersion': 1,
+      'authorUid': insight.authorUid,
+      'authorName': insight.authorName,
+      if (insight.authorPhotoUrl != null)
+        'authorPhotoUrl': insight.authorPhotoUrl,
+      'title': insight.title,
+      'body': insight.body,
+      'themeId': insight.themeId,
+      'audience': insight.audience,
+      'status': insight.status,
+      'createdAt': Timestamp.fromDate(insight.createdAt),
+      'updatedAt': Timestamp.fromDate(insight.updatedAt),
+      'expiresAt': Timestamp.fromDate(insight.expiresAt),
     });
     await waitForDocumentCommit(reference);
   }
@@ -477,34 +525,68 @@ class InsightService implements MyInsightsDataSource {
         .orderBy('savedAt', descending: true)
         .limit(100)
         .snapshots()
-        .asyncMap((snapshot) async {
-          final insights = await Future.wait(
-            snapshot.docs.map((saved) async {
-              try {
-                final document = await _firestore
-                    .collection('insights')
-                    .doc(saved.id)
-                    .get();
-                if (!document.exists) {
-                  await saved.reference.delete();
-                  return null;
-                }
-                final insight = InsightModel.fromFirestore(document);
-                if (insight.status != 'active' ||
-                    !insight.expiresAt.isAfter(DateTime.now())) {
-                  await saved.reference.delete();
-                  return null;
-                }
-                return insight;
-              } catch (error) {
-                if (!shouldRemoveUnavailableSavedInsight(error)) rethrow;
-                await saved.reference.delete();
-                return null;
-              }
-            }),
-          );
-          return insights.whereType<InsightModel>().toList(growable: false);
-        });
+        .asyncMap((snapshot) => _resolveSavedInsights(snapshot.docs));
+  }
+
+  Future<SavedInsightPage> getSavedInsightPage({
+    required String userId,
+    DocumentSnapshot<Map<String, dynamic>>? after,
+    int pageSize = 50,
+  }) async {
+    if (_auth.currentUser?.uid != userId) {
+      return const SavedInsightPage(insights: [], cursor: null, hasMore: false);
+    }
+    final boundedPageSize = pageSize.clamp(1, 100).toInt();
+    Query<Map<String, dynamic>> query = _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('saved_insights')
+        .orderBy('savedAt', descending: true)
+        .limit(boundedPageSize + 1);
+    if (after != null) query = query.startAfterDocument(after);
+    final snapshot = await query.get();
+    final documents = snapshot.docs.take(boundedPageSize).toList();
+    return SavedInsightPage(
+      insights: await _resolveSavedInsights(documents),
+      cursor: documents.lastOrNull,
+      hasMore: snapshot.docs.length > boundedPageSize,
+    );
+  }
+
+  Future<List<InsightModel>> _resolveSavedInsights(
+    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> savedDocuments,
+  ) async {
+    final documents = savedDocuments.toList(growable: false);
+    final legacyIds = documents
+        .where((saved) => !_hasFeedSnapshot(saved.data()))
+        .map((saved) => saved.id);
+    final legacyDocuments = await _loadLegacyInsights(legacyIds);
+    final now = DateTime.now();
+    final staleReferences = <DocumentReference<Map<String, dynamic>>>[];
+    final insights = <InsightModel>[];
+    for (final saved in documents) {
+      final data = saved.data();
+      try {
+        final legacyDocument = legacyDocuments[saved.id];
+        final insight = _hasFeedSnapshot(data)
+            ? InsightModel.fromMap(saved.id, data)
+            : legacyDocument == null
+            ? null
+            : InsightModel.fromFirestore(legacyDocument);
+        if (insight == null ||
+            insight.status != 'active' ||
+            !insight.expiresAt.isAfter(now)) {
+          staleReferences.add(saved.reference);
+        } else {
+          insights.add(insight);
+        }
+      } catch (error) {
+        if (!shouldRemoveUnavailableSavedInsight(error)) rethrow;
+        staleReferences.add(saved.reference);
+      }
+    }
+    await Future.wait(staleReferences.map((reference) => reference.delete()));
+    return insights;
   }
 
   Future<bool> isInsightSaved(String userId, String insightId) async {
@@ -517,4 +599,16 @@ class InsightService implements MyInsightsDataSource {
         .get();
     return snapshot.exists;
   }
+}
+
+class SavedInsightPage {
+  final List<InsightModel> insights;
+  final DocumentSnapshot<Map<String, dynamic>>? cursor;
+  final bool hasMore;
+
+  const SavedInsightPage({
+    required this.insights,
+    required this.cursor,
+    required this.hasMore,
+  });
 }

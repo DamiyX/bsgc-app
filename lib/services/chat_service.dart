@@ -183,12 +183,12 @@ class ChatService {
     return _firestore
         .collection('groups')
         .where('members', arrayContains: userId)
+        .where('lifecycle', whereIn: const ['scheduled', 'active'])
+        .orderBy('createdAt', descending: true)
+        .limit(50)
         .snapshots()
         .map((snapshot) {
-          final groups = snapshot.docs
-              .map(GroupModel.fromFirestore)
-              .where((group) => group.lifecycle != 'archived')
-              .toList();
+          final groups = snapshot.docs.map(GroupModel.fromFirestore).toList();
           groups.sort((a, b) {
             final aTime = a.lastMessageTime ?? a.createdAt;
             final bTime = b.lastMessageTime ?? b.createdAt;
@@ -196,6 +196,34 @@ class ChatService {
           });
           return groups;
         });
+  }
+
+  Future<GroupPage> getUserGroupPage({
+    required String userId,
+    DocumentSnapshot<Map<String, dynamic>>? after,
+    int pageSize = 50,
+  }) async {
+    final boundedPageSize = pageSize.clamp(1, 100).toInt();
+    Query<Map<String, dynamic>> query = _firestore
+        .collection('groups')
+        .where('members', arrayContains: userId)
+        .where('lifecycle', whereIn: const ['scheduled', 'active'])
+        .orderBy('createdAt', descending: true)
+        .limit(boundedPageSize + 1);
+    if (after != null) query = query.startAfterDocument(after);
+    final snapshot = await query.get();
+    final documents = snapshot.docs.take(boundedPageSize).toList();
+    final groups = documents.map(GroupModel.fromFirestore).toList();
+    groups.sort((a, b) {
+      final aTime = a.lastMessageTime ?? a.createdAt;
+      final bTime = b.lastMessageTime ?? b.createdAt;
+      return bTime.compareTo(aTime);
+    });
+    return GroupPage(
+      groups: groups,
+      cursor: documents.lastOrNull,
+      hasMore: snapshot.docs.length > boundedPageSize,
+    );
   }
 
   static List<GroupModel> sortArchivedGroups(Iterable<GroupModel> source) {
@@ -259,8 +287,33 @@ class ChatService {
     final snapshot = await _firestore
         .collection('groups')
         .where('members', arrayContains: userId)
+        .where('lifecycle', isEqualTo: 'archived')
+        .orderBy('endDate', descending: true)
+        .limit(100)
         .get();
     return sortArchivedGroups(snapshot.docs.map(GroupModel.fromFirestore));
+  }
+
+  Future<GroupPage> getArchivedGroupPage({
+    required String userId,
+    DocumentSnapshot<Map<String, dynamic>>? after,
+    int pageSize = 50,
+  }) async {
+    final boundedPageSize = pageSize.clamp(1, 100).toInt();
+    Query<Map<String, dynamic>> query = _firestore
+        .collection('groups')
+        .where('members', arrayContains: userId)
+        .where('lifecycle', isEqualTo: 'archived')
+        .orderBy('endDate', descending: true)
+        .limit(boundedPageSize + 1);
+    if (after != null) query = query.startAfterDocument(after);
+    final snapshot = await query.get();
+    final documents = snapshot.docs.take(boundedPageSize).toList();
+    return GroupPage(
+      groups: sortArchivedGroups(documents.map(GroupModel.fromFirestore)),
+      cursor: documents.lastOrNull,
+      hasMore: snapshot.docs.length > boundedPageSize,
+    );
   }
 
   Future<GroupInvite> createGroupInvite(
@@ -746,6 +799,18 @@ class ChatService {
       }
     }
   }
+}
+
+class GroupPage {
+  final List<GroupModel> groups;
+  final DocumentSnapshot<Map<String, dynamic>>? cursor;
+  final bool hasMore;
+
+  const GroupPage({
+    required this.groups,
+    required this.cursor,
+    required this.hasMore,
+  });
 }
 
 class GroupMessagePageItem {
