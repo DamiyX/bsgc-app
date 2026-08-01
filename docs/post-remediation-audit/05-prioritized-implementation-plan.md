@@ -259,7 +259,8 @@ This wave closes a bounded part of the remaining error-trust surface:
   or plugin exception messages are not rendered; debug diagnostics omit the
   raw message. The full mutation inventory remains open.
 - `REL-026`: the scoped account/invite paths no longer expose raw server error
-  text. The broader date-picker/time-zone contract still needs its own review.
+  text. At the Wave 15 checkpoint, the broader date-picker/time-zone contract
+  still needed its own review; Wave 17 records that later source closure below.
 - `REL-020`: verification found the source fix already present from Wave 2;
   `GroupStreamRetryController.retry()` creates a fresh stream and its focused
   test proves the replacement. No duplicate source change was made.
@@ -288,6 +289,33 @@ The pinned Flutter toolchain reports clean formatting, analysis, 26 focused
 tests, and 93 full Flutter tests. Remaining mutation paths, device/offline
 behavior, native Firestore cache isolation, release evidence, and owner/product
 gates remain open.
+
+## Implementation status — continuation wave 17 source-closure slice
+
+The detailed handoff is `docs/testing/wave-17-source-closure.md`. This wave
+reconciles the two remaining source gaps called out by the Milestone 12 review
+without treating device or deployed-backend evidence as implicit:
+
+- `REL-023`: stopped voice recordings are moved from the OS temporary
+  directory into the account/group-scoped outbox before they are referenced by
+  a durable group draft. The draft write is awaited before the in-memory
+  composer is updated; scoped attachment deletion, quota handling, and
+  truthful discard/re-record copy remove the previous “saved locally” claim.
+  The move-to-draft crash window, codec/permission behavior, and kill/relaunch
+  matrix remain device gates.
+- `REL-026`: the picker/client/server now share calendar-date semantics through
+  explicit `YYYY-MM-DD` keys, while the existing millisecond timestamps remain
+  the stored lifecycle values. Same-day, missing, malformed, and over-365-day
+  inputs return stable reasons that map to inline date guidance. Legacy
+  millisecond-only callers retain a bounded fallback.
+
+Wave 17 evidence: pinned Flutter formatting is clean, `flutter analyze` reports
+no issues, 101 Flutter tests pass, the focused voice/study-room run passes 23
+tests, the Functions syntax check passes, and the full Functions suite passes
+78 tests. The branch remains internal preview/development only; CI Android
+compile, signed artifacts, device/offline/accessibility review, deployed
+Function parity, Firestore cache isolation, App Check rollout, staging
+deployment, migration/operations, legal, and product gates remain open.
 
 ---
 

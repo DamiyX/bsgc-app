@@ -116,7 +116,7 @@ push, or run a heavy build.
 | REL-020 | Implemented a new recovery action for group-list retry | Device retry/empty/error visual check remains open |
 | REL-021 | Implemented edit/delete-aware last-message summaries | Long-room and concurrent edit/delete test remains open |
 | REL-022 | Implemented durable private/contact composer drafts | Account-switch and process-death matrix remains open |
-| REL-023 | Implemented audio-preparation failure recovery and retry | Device media failure cases remain open |
+| REL-023 | Implemented account/group-scoped recording-to-draft recovery with truthful discard/re-record handling | Move-to-draft crash window, codec/permission, and device media failure cases remain open |
 | REL-024 | Implemented archived-group rediscovery/read-only route | Device navigation and permissions review remains open |
 | REL-025 | Timing remains deliberately approximate and is surfaced honestly | Product decision and real scheduler timing evidence remain open |
 | REL-026 | Implemented normalized date contract at the source boundary | Time-zone/device picker review remains open |
@@ -350,6 +350,34 @@ Flutter tests. This remains source evidence only; the mutation device matrix,
 native Firestore cache isolation, App Check project/enforcement, signed
 artifacts, operations, legal, and product gates remain open.
 
+## Continuation verification — Wave 17 source closure
+
+Wave 17 re-opened the two source gaps that remained explicit in the post-
+remediation finding ledger. The detailed evidence is
+`docs/testing/wave-17-source-closure.md`.
+
+- `REL-023`: a stopped voice recording is moved out of the OS temporary
+  directory into an account/group/message-scoped outbox attachment before it
+  is referenced by a durable group draft. The draft write is awaited before
+  the in-memory composer changes; scoped removal, quota handling, and truthful
+  discard/re-record copy remove the previous claim that an unfindable temp
+  recording was “saved locally.” A small move-to-draft filesystem crash window,
+  codec/permission behavior, and kill/relaunch proof remain device gates.
+- `REL-026`: the client sends explicit picker date keys alongside the existing
+  lifecycle timestamps. The callable validates calendar days (strictly later,
+  at most 365 days, with malformed/missing rejection) and returns a stable
+  reason; the client maps it to inline date guidance without rendering raw
+  server text. Legacy millisecond-only callers retain a bounded fallback.
+
+Wave 17 source evidence is 101 passing Flutter tests, 23 focused voice/study
+room tests, 78 passing Functions tests, clean `flutter analyze`, clean pinned
+formatting, and a passing Functions syntax check. This is a continuation of
+the Milestone 12 source ledger, not release acceptance. Deployed Function
+parity, emulator/physical-device date and media review, native Firestore cache
+isolation, App Check registration/enforcement, CI Android compile, signed
+artifacts, staging/production operations, migration, legal, and product gates
+remain open.
+
 ## Continuation verification — Wave 15 source closure
 
 Wave 15 checked the next source-adjacent items without reopening the accepted
@@ -361,8 +389,9 @@ boundaries or treating device evidence as implied:
   raw message. Profile-edit commit acknowledgement from Wave 14 remains in
   force.
 - `REL-026` is improved for those callable paths because their server codes are
-  mapped instead of displayed. The broader date-picker/time-zone contract is
-  still a separate review item.
+  mapped instead of displayed. At the Wave 15 checkpoint, the broader
+  date-picker/time-zone contract was still a separate review item; Wave 17
+  records its later source closure above.
 - `REL-020` was re-verified rather than changed: the earlier Wave 2
   `GroupStreamRetryController` creates a fresh stream and the existing test
   proves the stream identity changes. Its device visual/error acceptance gate

@@ -452,6 +452,97 @@ class MessageOutboxService {
     return file.uri.toString();
   }
 
+  /// Moves a freshly-created local attachment into the account/group-scoped
+  /// outbox before the composer does any further work. The recorder writes to
+  /// the OS temporary directory, so leaving the source there would make a
+  /// failed preparation impossible to recover after a process restart.
+  ///
+  /// A rename is preferred (it avoids a second full copy), with an atomic
+  /// copy-and-rename fallback for platforms that do not allow a cross-volume
+  /// move. The source is deleted only after the durable destination exists.
+  Future<String> persistAttachmentFile({
+    required String userId,
+    required String groupId,
+    required String messageId,
+    required File source,
+    required String extension,
+  }) async {
+    final normalizedExtension = extension.toLowerCase().replaceAll('.', '');
+    if (!RegExp(
+      r'^(jpg|jpeg|png|webp|m4a|aac)$',
+    ).hasMatch(normalizedExtension)) {
+      throw ArgumentError('Unsupported attachment type.');
+    }
+    final isAudio = {'m4a', 'aac'}.contains(normalizedExtension);
+    final limit = isAudio ? maxAudioBytes : maxImageBytes;
+    if (!await source.exists()) {
+      throw StateError('The local attachment is no longer available.');
+    }
+    final length = await source.length();
+    if (length == 0 || length > limit) {
+      throw ArgumentError(
+        isAudio
+            ? 'Voice reflections must be under 10 MB.'
+            : 'Images must be under 8 MB.',
+      );
+    }
+
+    final directory = await _entryDirectory(userId, groupId, messageId);
+    if (!await directory.exists()) {
+      await _ensureItemQuota(userId);
+    }
+    await _ensureByteQuota(userId, length);
+    await directory.create(recursive: true);
+    final file = File(
+      '${directory.path}${Platform.pathSeparator}'
+      'attachment_${_clock().microsecondsSinceEpoch}.$normalizedExtension',
+    );
+    final temporary = File('${file.path}.tmp');
+    try {
+      try {
+        await source.rename(file.path);
+      } on FileSystemException {
+        // Temporary and application-support directories can be on different
+        // volumes. Copy through a flushed temp file and then replace it.
+        await source.copy(temporary.path);
+        await temporary.rename(file.path);
+        await source.delete();
+      }
+    } catch (_) {
+      if (await temporary.exists()) await temporary.delete();
+      if (await file.exists()) await file.delete();
+      rethrow;
+    }
+    return file.uri.toString();
+  }
+
+  /// Removes one attachment previously returned by [persistAttachment] or
+  /// [persistAttachmentFile]. The caller must provide the same account/group
+  /// scope; paths outside that scope are rejected to prevent broad deletion.
+  Future<void> removeAttachment({
+    required String userId,
+    required String groupId,
+    required String uri,
+  }) async {
+    final parsed = Uri.tryParse(uri);
+    if (parsed?.scheme != 'file') {
+      throw ArgumentError('Only local outbox attachments can be removed.');
+    }
+    final file = File.fromUri(parsed!);
+    final groupDirectory = await _groupDirectory(userId, groupId);
+    final groupPath = _normalizedPath(groupDirectory.path);
+    final filePath = _normalizedPath(file.path);
+    if (!filePath.startsWith('$groupPath${Platform.pathSeparator}')) {
+      throw ArgumentError('Attachment is outside the requested outbox.');
+    }
+    if (await file.exists()) await file.delete();
+    final entryDirectory = file.parent;
+    if (await entryDirectory.exists() &&
+        (await entryDirectory.list(followLinks: false).isEmpty)) {
+      await entryDirectory.delete();
+    }
+  }
+
   Future<OutboxMessage> enqueue({
     required String id,
     required String userId,
@@ -830,6 +921,11 @@ class MessageOutboxService {
       throw ArgumentError('Invalid outbox identifier.');
     }
     return value;
+  }
+
+  String _normalizedPath(String path) {
+    final absolute = File(path).absolute.path;
+    return absolute.replaceFirst(RegExp(r'[\\/]+$'), '');
   }
 
   String _directoryName(Directory directory) {

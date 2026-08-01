@@ -6,17 +6,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:uuid/uuid.dart';
 
-class PreparedRecording {
-  final Uint8List bytes;
-  final int durationSeconds;
-  final String localPath;
-
-  const PreparedRecording({
-    required this.bytes,
-    required this.durationSeconds,
-    required this.localPath,
-  });
-}
+const voiceRecordingDiscardedMessage =
+    'The recording could not be saved and was discarded. Record again.';
 
 class AudioService {
   final AudioRecorder _audioRecorder = AudioRecorder();
@@ -44,27 +35,26 @@ class AudioService {
 
   Future<String?> stopRecording() => _audioRecorder.stop();
 
-  Future<PreparedRecording> prepareRecording(String path) async {
-    final file = File(path);
-    if (!await file.exists()) {
-      throw StateError('The recorded audio is no longer available.');
-    }
-
-    final bytes = await file.readAsBytes();
-    final elapsed = _recordingStartTime == null
+  /// Returns the user-visible duration for the current recording without
+  /// reading the temporary file. The file is moved into the durable outbox
+  /// before any optional processing, so a read failure cannot strand it in
+  /// the OS temporary directory.
+  int get recordingDurationSeconds {
+    final startedAt = _recordingStartTime;
+    final elapsed = startedAt == null
         ? 1
-        : DateTime.now().difference(_recordingStartTime!).inSeconds;
-    final duration = elapsed.clamp(1, 300).toInt();
-    return PreparedRecording(
-      bytes: bytes,
-      durationSeconds: duration,
-      localPath: path,
-    );
+        : DateTime.now().difference(startedAt).inSeconds;
+    return elapsed.clamp(1, 300).toInt();
   }
 
-  Future<void> deletePreparedRecording(PreparedRecording recording) async {
-    final file = File(recording.localPath);
+  Future<void> discardRecording(String path) async {
+    final file = File(path);
     if (await file.exists()) await file.delete();
+    _recordingPath = null;
+    _recordingStartTime = null;
+  }
+
+  void releaseRecording() {
     _recordingPath = null;
     _recordingStartTime = null;
   }

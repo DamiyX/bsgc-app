@@ -59,6 +59,9 @@ const {
 const {
   drainPagedJob,
 } = require("./lib/scheduled_jobs");
+const {
+  studyDateRangeIssue,
+} = require("./lib/study_dates");
 
 admin.initializeApp();
 
@@ -368,22 +371,24 @@ exports.createStudyGroup = onCall(highAbuseCallableOptions, async (request) => {
       });
     const startDateMillis = request.data?.startDateMillis;
     const endDateMillis = request.data?.endDateMillis;
+    const dateIssue = studyDateRangeIssue({
+      startDateMillis,
+      endDateMillis,
+      startDateKey: request.data?.startDateKey,
+      endDateKey: request.data?.endDateKey,
+    });
+    if (dateIssue) {
+      throw new HttpsError("invalid-argument", dateIssue.message, {
+        field: "dateRange",
+        reason: dateIssue.reason,
+      });
+    }
     const startDate = Number.isInteger(startDateMillis)
       ? Timestamp.fromMillis(startDateMillis)
       : null;
     const endDate = Number.isInteger(endDateMillis)
       ? Timestamp.fromMillis(endDateMillis)
       : null;
-    if (startDate && endDate && endDate.toMillis() <= startDate.toMillis()) {
-      throw new RangeError("endDate must be after startDate");
-    }
-    if (!startDate || !endDate) {
-      throw new RangeError("startDate and endDate are required");
-    }
-    if (endDate.toMillis() - startDate.toMillis()
-      > 365 * 24 * 60 * 60 * 1000) {
-      throw new RangeError("A study cannot run longer than 365 days");
-    }
     if (groupType === "Bible" && !studyBook) {
       throw new RangeError("studyBook is required for Bible studies");
     }

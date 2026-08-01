@@ -213,6 +213,31 @@ void main() {
     );
   });
 
+  test('study date duration uses calendar days across clock changes', () {
+    final start = DateTime(2026, 3, 28, 23, 30);
+    final end = DateTime(2026, 3, 29, 0, 15);
+
+    expect(StudyDateRangePolicy.calendarDateKey(start), '2026-03-28');
+    expect(StudyDateRangePolicy.calendarDateKey(end), '2026-03-29');
+    expect(StudyDateRangePolicy.calendarDurationDays(start, end), 1);
+    expect(StudyDateRangePolicy.validationMessage(start, end), isNull);
+  });
+
+  test('server date reasons map to stable field-level copy', () {
+    expect(
+      StudyDateRangePolicy.messageForReason('missing'),
+      'Select both a start and an end date.',
+    );
+    expect(
+      StudyDateRangePolicy.messageForReason('end-before-or-same-day'),
+      'Choose an end date after the start date.',
+    );
+    expect(
+      StudyDateRangePolicy.messageForReason('too-long'),
+      'A study can run for at most 365 days.',
+    );
+  });
+
   test('group operation failures expose stable product copy', () {
     expect(
       groupOperationFailureForCode('unavailable').message,
@@ -226,6 +251,21 @@ void main() {
       groupOperationFailureForCode('internal').message,
       'The study could not be saved right now. Try again.',
     );
+  });
+
+  test('date validation details remain field-scoped and stable', () {
+    final failure = groupOperationFailureForCode(
+      'invalid-argument',
+      details: const {
+        'field': 'dateRange',
+        'reason': 'too-long',
+        'message': 'raw server detail should not render',
+      },
+    );
+
+    expect(failure.field, 'dateRange');
+    expect(failure.message, 'A study can run for at most 365 days.');
+    expect(failure.message, isNot(contains('raw server detail')));
   });
 
   test('pending and unknown message timestamps remain stable', () {

@@ -262,7 +262,11 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
         studyBook: _groupType == 'Bible' ? _selectedBook : null,
         totalChapters: _groupType == 'Bible'
             ? _bibleChapters[_selectedBook]!
-            : (_endDate!.difference(_startDate!).inDays + 1),
+            : (StudyDateRangePolicy.calendarDurationDays(
+                    _startDate!,
+                    _endDate!,
+                  ) +
+                  1),
         startDate: _startDate,
         endDate: _endDate,
       );
@@ -280,9 +284,13 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
       }
     } on GroupOperationFailure catch (failure) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(failure.message)));
+        if (failure.field == 'dateRange') {
+          setState(() => _dateError = failure.message);
+        } else {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(failure.message)));
+        }
       }
     } catch (_) {
       if (mounted) {

@@ -9,17 +9,47 @@ DateTime? _groupDate(dynamic value) {
 class StudyDateRangePolicy {
   static const maxDuration = Duration(days: 365);
 
-  static String? validationMessage(DateTime start, DateTime end) {
-    final normalizedStart = DateTime(start.year, start.month, start.day);
-    final normalizedEnd = DateTime(end.year, end.month, end.day);
-    final duration = normalizedEnd.difference(normalizedStart);
-    if (duration <= Duration.zero) {
-      return 'Choose an end date after the start date.';
-    }
-    if (duration > maxDuration) {
-      return 'A study can run for at most 365 days.';
-    }
+  static String calendarDateKey(DateTime date) {
+    final year = date.year.toString().padLeft(4, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
+  }
+
+  /// Returns the number of whole calendar days between two selected dates.
+  ///
+  /// Date pickers produce local-midnight values. Comparing `DateTime`
+  /// durations directly can vary at daylight-saving boundaries, so the
+  /// study contract intentionally compares the date components instead.
+  static int calendarDurationDays(DateTime start, DateTime end) {
+    final startDay = DateTime.utc(start.year, start.month, start.day);
+    final endDay = DateTime.utc(end.year, end.month, end.day);
+    return endDay.difference(startDay).inDays;
+  }
+
+  static String? validationReason(DateTime start, DateTime end) {
+    final durationDays = calendarDurationDays(start, end);
+    if (durationDays <= 0) return 'end-before-or-same-day';
+    if (durationDays > maxDuration.inDays) return 'too-long';
     return null;
+  }
+
+  static String? validationMessage(DateTime start, DateTime end) {
+    final reason = validationReason(start, end);
+    return reason == null ? null : messageForReason(reason);
+  }
+
+  /// Maps server date-validation reasons to stable field-level product copy.
+  ///
+  /// The server message is deliberately not used here: it is an implementation
+  /// detail and may differ between deployed function versions.
+  static String messageForReason(String? reason) {
+    return switch (reason) {
+      'missing' => 'Select both a start and an end date.',
+      'end-before-or-same-day' => 'Choose an end date after the start date.',
+      'too-long' => 'A study can run for at most 365 days.',
+      _ => 'Check the study dates and try again.',
+    };
   }
 }
 

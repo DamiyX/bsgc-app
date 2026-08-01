@@ -46,14 +46,33 @@ class ChatServiceException implements Exception {
 class GroupOperationFailure implements Exception {
   final String code;
   final String message;
+  final String? field;
 
-  const GroupOperationFailure({required this.code, required this.message});
+  const GroupOperationFailure({
+    required this.code,
+    required this.message,
+    this.field,
+  });
 
   @override
   String toString() => message;
 }
 
-GroupOperationFailure groupOperationFailureForCode(String? code) {
+GroupOperationFailure groupOperationFailureForCode(
+  String? code, {
+  Object? details,
+}) {
+  final detailsMap = details is Map ? details : null;
+  final field = detailsMap?['field']?.toString();
+  if (code == 'invalid-argument' && field == 'dateRange') {
+    return GroupOperationFailure(
+      code: code!,
+      field: field,
+      message: StudyDateRangePolicy.messageForReason(
+        detailsMap?['reason']?.toString(),
+      ),
+    );
+  }
   return switch (code) {
     'invalid-argument' => const GroupOperationFailure(
       code: 'invalid-argument',
@@ -259,6 +278,15 @@ class ChatService {
         'totalChapters': totalChapters,
         'startDateMillis': startDate?.millisecondsSinceEpoch,
         'endDateMillis': endDate?.millisecondsSinceEpoch,
+        // Calendar keys keep the server date contract independent of the
+        // device's UTC offset while the millis values preserve lifecycle
+        // scheduling and existing document semantics.
+        'startDateKey': startDate == null
+            ? null
+            : StudyDateRangePolicy.calendarDateKey(startDate),
+        'endDateKey': endDate == null
+            ? null
+            : StudyDateRangePolicy.calendarDateKey(endDate),
       });
       final data = Map<String, dynamic>.from(result.data as Map);
       final groupId = data['groupId']?.toString();
@@ -274,6 +302,7 @@ class ChatService {
     } catch (error) {
       throw groupOperationFailureForCode(
         error is FirebaseFunctionsException ? error.code : null,
+        details: error is FirebaseFunctionsException ? error.details : null,
       );
     }
   }
@@ -449,6 +478,7 @@ class ChatService {
     } catch (error) {
       throw groupOperationFailureForCode(
         error is FirebaseFunctionsException ? error.code : null,
+        details: error is FirebaseFunctionsException ? error.details : null,
       );
     }
   }

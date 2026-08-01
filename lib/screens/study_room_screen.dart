@@ -577,35 +577,75 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
     _recordingTimer?.cancel();
     final path = await _audioService.stopRecording();
     if (mounted) setState(() => _isRecording = false);
-    if (path == null) return;
+    if (path == null) {
+      _audioService.releaseRecording();
+      _showRecordingRecoveryMessage();
+      return;
+    }
+
+    final messageId = _ensureDraftMessageId();
+    String? localUri;
     try {
-      final recording = await _audioService.prepareRecording(path);
-      final localUri = await _outboxService.persistAttachment(
+      // Move the raw file out of the OS temporary directory first. This makes
+      // the recording account/group-scoped before it is referenced by the
+      // draft. Once the draft write completes, it is recoverable after a
+      // restart; the move and draft write are still separate filesystem
+      // operations and the device/process-death matrix must exercise that
+      // boundary.
+      localUri = await _outboxService.persistAttachmentFile(
         userId: _uid,
         groupId: widget.group.id,
-        messageId: _ensureDraftMessageId(),
-        bytes: recording.bytes,
+        messageId: messageId,
+        source: File(path),
         extension: 'm4a',
       );
-      await _audioService.deletePreparedRecording(recording);
+
+      final nextParts = [
+        ..._draftParts,
+        MessagePart(
+          type: MessageType.voice,
+          content: localUri,
+          durationSeconds: _audioService.recordingDurationSeconds,
+        ),
+      ];
+      // Persist before updating only in-memory state. A process death after
+      // this draft write therefore restores the voice part through
+      // DraftService.
+      await _draftService.save(
+        userId: _uid,
+        groupId: widget.group.id,
+        draft: GroupDraft(
+          text: _textController.text,
+          parts: nextParts,
+          space: _selectedSpace.wireName,
+          replyToMessageId: _replyToMessageId,
+          clientMessageId: messageId,
+        ),
+      );
+      _audioService.releaseRecording();
       if (!mounted) return;
       setState(() {
-        _draftParts.add(
-          MessagePart(
-            type: MessageType.voice,
-            content: localUri,
-            durationSeconds: recording.durationSeconds,
-          ),
-        );
+        _draftParts = nextParts;
         _recordingSeconds = 0;
       });
-      _scheduleDraftSave();
     } on OutboxQuotaException catch (error) {
+      await _audioService.discardRecording(path);
       _showMessage(error.message);
     } catch (_) {
-      _showMessage(
-        'The recording is saved locally, but could not be prepared.',
-      );
+      if (localUri != null) {
+        try {
+          await _outboxService.removeAttachment(
+            userId: _uid,
+            groupId: widget.group.id,
+            uri: localUri,
+          );
+        } catch (_) {
+          // The bounded outbox expiry reconciles an orphan if local cleanup
+          // itself is unavailable; do not hide the primary save failure.
+        }
+      }
+      await _audioService.discardRecording(path);
+      _showRecordingRecoveryMessage();
     }
   }
 
@@ -729,6 +769,20 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  void _showRecordingRecoveryMessage() {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: const Text(voiceRecordingDiscardedMessage),
+        action: SnackBarAction(
+          label: 'Record again',
+          onPressed: () => unawaited(_toggleRecording()),
+        ),
+      ),
+    );
   }
 
   @override

@@ -33,6 +33,12 @@ for the explicitly durable local drafts and message outbox below.
 | Notifications/deep links/invites | A stored destination or retryable invite is retained until it can be resolved; content still needs authentication/network. | Already resolved navigation remains normal. | No content write is implied by tapping a notification. | Authentication/network restoration retries resolution. Terminal invite failures are cleared; retryable failures remain dismissible/retryable. | Deleted, unavailable, no-access, invalid, expired, and transient states are distinct. |
 | Sign-out/account switch | Not applicable. | Not applicable. | Before the next account is shown, Braid clears the signing-out account’s drafts, outbox, voice/image caches, pending routes/invites, and selected navigation state. Firestore SDK persistence remains enabled for offline use; a complete cache purge is not currently guaranteed while active listeners exist. Android app-data backup and device transfer are excluded. | The next account starts with its own scoped local directories and keys. Firestore cache isolation still requires the physical/emulator account-switch test and must not be inferred from source tests. | Cleanup failures are logged; no previous account content may be rendered to the next account. Any observed cross-account cached content is a release blocker. |
 
+> Wave 17 voice clarification: a stopped recording is moved into the scoped
+> outbox before it is attached to the group draft, and the draft write is
+> awaited before the composer claims the voice part. A quota or local-write
+> failure uses truthful discard/re-record copy; the move-to-draft process-death
+> boundary still requires the device matrix above.
+
 ## Required airplane-mode verification
 
 Run this matrix on an Android emulator and at least one physical device:
