@@ -710,10 +710,19 @@ class ChatService {
           if (part.durationSeconds != null) {
             throw ArgumentError('Text messages cannot have audio duration.');
           }
+          if (part.caption != null) {
+            throw ArgumentError('Text messages cannot have voice summaries.');
+          }
         case MessageType.voice:
           final duration = part.durationSeconds;
           if (duration == null || duration < 1 || duration > 300) {
             throw ArgumentError('Voice reflections must be 1–300 seconds.');
+          }
+          final caption = part.caption?.trim();
+          if (caption != null && caption.length > voiceCaptionMaxLength) {
+            throw ArgumentError(
+              'Voice summaries must be at most $voiceCaptionMaxLength characters.',
+            );
           }
           if (!part.hasCanonicalManagedIdentity) {
             throw ArgumentError(
@@ -723,6 +732,9 @@ class ChatService {
         case MessageType.image:
           if (part.durationSeconds != null) {
             throw ArgumentError('Images cannot have audio duration.');
+          }
+          if (part.caption != null) {
+            throw ArgumentError('Images cannot have voice summaries.');
           }
           if (!part.hasCanonicalManagedIdentity) {
             throw ArgumentError(

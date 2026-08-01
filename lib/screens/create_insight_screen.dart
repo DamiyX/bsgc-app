@@ -208,9 +208,13 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
             child: TextButton(
               onPressed: _isPublishing ? null : _publishInsight,
               child: _isPublishing
-                  ? const SizedBox.square(
-                      dimension: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                  ? Semantics(
+                      liveRegion: true,
+                      label: 'Sharing reflection',
+                      child: SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
                     )
                   : const Text('Share'),
             ),

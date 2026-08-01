@@ -588,6 +588,53 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
     }
   }
 
+  Future<void> _editVoiceCaption(int index) async {
+    if (index < 0 || index >= _draftParts.length) return;
+    final part = _draftParts[index];
+    final controller = TextEditingController(text: part.caption ?? '');
+    final caption = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Add a text summary'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: voiceCaptionMaxLength,
+          maxLines: 4,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            hintText: 'Give readers the main idea of this voice reflection.',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('Save summary'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (!mounted || caption == null) return;
+    setState(() {
+      _draftParts[index] = MessagePart(
+        type: part.type,
+        content: part.content,
+        assetId: part.assetId,
+        sizeBytes: part.sizeBytes,
+        durationSeconds: part.durationSeconds,
+        caption: caption.isEmpty ? null : caption,
+      );
+    });
+    _scheduleDraftSave();
+  }
+
   Future<void> _cancelRecording() async {
     _recordingTimer?.cancel();
     await _audioService.cancelRecording();
@@ -1097,16 +1144,42 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
                 ),
               if (_draftParts.isNotEmpty)
                 SizedBox(
-                  height: 76,
+                  height: 112,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.only(top: 8),
                     itemCount: _draftParts.length,
                     separatorBuilder: (_, _) => const SizedBox(width: 8),
-                    itemBuilder: (context, index) => _DraftPartPreview(
-                      part: _draftParts[index],
-                      onRemove: () => _removeDraftPart(index),
-                    ),
+                    itemBuilder: (context, index) {
+                      final part = _draftParts[index];
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _DraftPartPreview(
+                            part: part,
+                            onRemove: () => _removeDraftPart(index),
+                          ),
+                          if (part.type == MessageType.voice)
+                            SizedBox(
+                              width: 86,
+                              child: TextButton(
+                                onPressed: () => _editVoiceCaption(index),
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: const Size(86, 40),
+                                ),
+                                child: Text(
+                                  part.caption == null
+                                      ? 'Add summary'
+                                      : 'Edit summary',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               if (_isRecording)
@@ -1490,7 +1563,11 @@ class _MessageCard extends StatelessWidget {
   static String _summary(MessageModel message) {
     for (final part in message.parts) {
       if (part.type == MessageType.text) return part.content;
-      if (part.type == MessageType.voice) return 'Voice reflection';
+      if (part.type == MessageType.voice) {
+        return part.caption?.trim().isNotEmpty == true
+            ? part.caption!.trim()
+            : 'Voice reflection';
+      }
       if (part.type == MessageType.image) return 'Photo';
     }
     return 'Message';
@@ -1543,11 +1620,31 @@ class _MessagePartView extends StatelessWidget {
     if (part.type == MessageType.voice) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: VoiceMessageBubble(
-          audioUrl: 'firebase-storage:///${part.content}',
-          isMe: false,
-          durationSeconds: part.durationSeconds ?? 1,
-          timestamp: DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            VoiceMessageBubble(
+              audioUrl: 'firebase-storage:///${part.content}',
+              isMe: false,
+              durationSeconds: part.durationSeconds ?? 1,
+              timestamp: DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+              child: Semantics(
+                liveRegion: true,
+                label: part.caption?.trim().isNotEmpty == true
+                    ? 'Voice reflection summary: ${part.caption!.trim()}'
+                    : 'No text summary provided for this voice reflection.',
+                child: Text(
+                  part.caption?.trim().isNotEmpty == true
+                      ? 'Summary: ${part.caption!.trim()}'
+                      : 'No text summary provided.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }

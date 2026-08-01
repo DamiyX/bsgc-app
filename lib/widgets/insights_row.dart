@@ -32,6 +32,8 @@ class _InsightsRowState extends State<InsightsRow> {
 
   @override
   Widget build(BuildContext context) {
+    final textScale = MediaQuery.textScalerOf(context).scale(1);
+    final rowHeight = 154.0 + ((textScale - 1).clamp(0.0, 1.0) * 80);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -50,7 +52,7 @@ class _InsightsRowState extends State<InsightsRow> {
             ),
           ),
         SizedBox(
-          height: 154,
+          height: rowHeight,
           child: StreamBuilder<List<InsightModel>>(
             stream: _insightsStream,
             builder: (context, snapshot) {

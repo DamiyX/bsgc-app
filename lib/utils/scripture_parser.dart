@@ -33,6 +33,7 @@ class ScriptureParser {
     required TextStyle defaultStyle,
     required TextStyle linkStyle,
     required Function(ScriptureReference) onReferenceTap,
+    List<TapGestureRecognizer>? recognizerCollector,
   }) {
     List<InlineSpan> spans = [];
     int lastMatchEnd = 0;
@@ -65,13 +66,11 @@ class ScriptureParser {
         endVerse: endVerse,
       );
 
+      final recognizer = TapGestureRecognizer()
+        ..onTap = () => onReferenceTap(reference);
+      recognizerCollector?.add(recognizer);
       spans.add(
-        TextSpan(
-          text: fullMatch,
-          style: linkStyle,
-          recognizer: TapGestureRecognizer()
-            ..onTap = () => onReferenceTap(reference),
-        ),
+        TextSpan(text: fullMatch, style: linkStyle, recognizer: recognizer),
       );
 
       lastMatchEnd = match.end;

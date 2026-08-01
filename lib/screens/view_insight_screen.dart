@@ -38,6 +38,12 @@ int resolveInitialInsightIndex(
   return firstUnseenIndex >= 0 ? firstUnseenIndex : 0;
 }
 
+Duration insightMotionDuration(BuildContext context, Duration normal) {
+  return MediaQuery.maybeOf(context)?.disableAnimations == true
+      ? Duration.zero
+      : normal;
+}
+
 class InsightSeenObserver extends StatefulWidget {
   final String insightId;
   final bool isVisible;
@@ -203,7 +209,7 @@ class _ViewInsightScreenState extends State<ViewInsightScreen> {
       } else {
         if (userIndex < widget.userInsightsGroups.length - 1) {
           _userPageController.nextPage(
-            duration: const Duration(milliseconds: 300),
+            duration: insightMotionDuration(context, AppMotion.standard),
             curve: Curves.easeIn,
           );
         } else {
@@ -220,7 +226,7 @@ class _ViewInsightScreenState extends State<ViewInsightScreen> {
       } else {
         if (userIndex > 0) {
           _userPageController.previousPage(
-            duration: const Duration(milliseconds: 300),
+            duration: insightMotionDuration(context, AppMotion.standard),
             curve: Curves.easeIn,
           );
         }
@@ -365,6 +371,15 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
         parent: _commentsAnimController,
         curve: Curves.easeOutCubic,
       ),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _commentsAnimController.duration = insightMotionDuration(
+      context,
+      AppMotion.standard,
     );
   }
 
@@ -576,11 +591,16 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
 
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
+      final target = _scrollController.position.maxScrollExtent;
+      if (MediaQuery.maybeOf(context)?.disableAnimations == true) {
+        _scrollController.jumpTo(target);
+      } else {
+        _scrollController.animateTo(
+          target,
+          duration: AppMotion.standard,
+          curve: Curves.easeOut,
+        );
+      }
     }
   }
 
@@ -808,25 +828,34 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
           Row(
             children: [
               Expanded(
-                child: GestureDetector(
-                  onTap: _toggleComments,
-                  child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).brightness == Brightness.light
-                          ? Colors.grey[200]
-                          : Theme.of(context).cardColor,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      'Add a comment...',
-                      style: TextStyle(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.54),
+                child: Semantics(
+                  button: true,
+                  label: 'Open comments',
+                  child: InkWell(
+                    onTap: _toggleComments,
+                    child: Container(
+                      constraints: const BoxConstraints(minHeight: 48),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).brightness == Brightness.light
+                            ? Colors.grey[200]
+                            : Theme.of(context).cardColor,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        'Add a comment...',
+                        style: TextStyle(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.54),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
                 ),
@@ -838,70 +867,88 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      IconButton(
-                        icon: Icon(
-                          _isLiked
-                              ? Icons.thumb_up
-                              : Icons.thumb_up_alt_outlined,
-                          color: _isLiked
-                              ? Theme.of(context).colorScheme.onSurface
-                              : Theme.of(context).colorScheme.onSurface,
+                      Semantics(
+                        toggled: _isLiked,
+                        label: _isLiked
+                            ? 'Reflection reaction selected'
+                            : 'Reflection reaction not selected',
+                        child: IconButton(
+                          tooltip: _isLiked
+                              ? 'Remove reaction'
+                              : 'React to reflection',
+                          icon: Icon(
+                            _isLiked
+                                ? Icons.thumb_up
+                                : Icons.thumb_up_alt_outlined,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                          onPressed: _likeController.isPending
+                              ? null
+                              : _toggleInsightLike,
                         ),
-                        onPressed: _likeController.isPending
-                            ? null
-                            : _toggleInsightLike,
-                        padding: EdgeInsets.all(4),
-                        constraints: const BoxConstraints(),
                       ),
                     ],
                   ),
                   SizedBox(width: 8),
-                  IconButton(
-                    tooltip: _isSaved ? 'Remove saved Insight' : 'Save Insight',
-                    icon: _isSavePending
-                        ? const SizedBox.square(
-                            dimension: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Icon(
-                            _isSaved ? Icons.bookmark : Icons.bookmark_border,
-                            color: _isSaved
-                                ? AppColors.gradientEnd
-                                : Theme.of(context).colorScheme.onSurface,
-                          ),
-                    onPressed: _isSavePending ? null : _toggleSavedInsight,
+                  Semantics(
+                    toggled: _isSaved,
+                    label: _isSaved
+                        ? 'Reflection saved'
+                        : 'Reflection not saved',
+                    child: IconButton(
+                      tooltip: _isSaved
+                          ? 'Remove saved reflection'
+                          : 'Save reflection',
+                      icon: _isSavePending
+                          ? const SizedBox.square(
+                              dimension: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              _isSaved ? Icons.bookmark : Icons.bookmark_border,
+                              color: _isSaved
+                                  ? AppColors.gradientEnd
+                                  : Theme.of(context).colorScheme.onSurface,
+                            ),
+                      onPressed: _isSavePending ? null : _toggleSavedInsight,
+                    ),
                   ),
                 ],
               ),
             ],
           ),
-          GestureDetector(
-            onTap: _toggleComments,
-            child: Container(
-              padding: EdgeInsets.only(top: 8, bottom: 4),
-              color: Colors.transparent,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.keyboard_arrow_up,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.45),
-                    size: 20,
-                  ),
-                  if ((_commentCount ?? 0) > 0)
-                    Text(
-                      '${_commentCount!} comments',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 10,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.45),
-                      ),
+          Semantics(
+            button: true,
+            label: _commentsVisible ? 'Hide comments' : 'Show comments',
+            child: InkWell(
+              onTap: _toggleComments,
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 48),
+                padding: const EdgeInsets.only(top: 8, bottom: 4),
+                color: Colors.transparent,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.keyboard_arrow_up,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.45),
+                      size: 20,
                     ),
-                ],
+                    if ((_commentCount ?? 0) > 0)
+                      Text(
+                        '${_commentCount!} comments',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 10,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.45),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1023,52 +1070,52 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                                   false;
                               final isPending = _pendingCommentReactionIds
                                   .contains(comment.id);
-                              return GestureDetector(
-                                onTap: isPending
-                                    ? null
-                                    : () => _toggleCommentReaction(
-                                        comment.id,
-                                        currentUserId,
-                                        reacted,
-                                      ),
-                                child: isPending
-                                    ? const SizedBox.square(
-                                        dimension: 14,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 1.5,
+                              return Semantics(
+                                toggled: reacted,
+                                label: reacted
+                                    ? 'Comment reaction selected'
+                                    : 'Comment reaction not selected',
+                                child: IconButton(
+                                  tooltip: reacted
+                                      ? 'Remove reaction'
+                                      : 'React to comment',
+                                  onPressed: isPending
+                                      ? null
+                                      : () => _toggleCommentReaction(
+                                          comment.id,
+                                          currentUserId,
+                                          reacted,
                                         ),
-                                      )
-                                    : Icon(
-                                        reacted
-                                            ? Icons.thumb_up
-                                            : Icons.thumb_up_alt_outlined,
-                                        size: 14,
-                                        color: reacted
-                                            ? AppColors.primary
-                                            : Theme.of(
-                                                context,
-                                              ).colorScheme.onSurfaceVariant,
-                                      ),
+                                  icon: isPending
+                                      ? const SizedBox.square(
+                                          dimension: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 1.5,
+                                          ),
+                                        )
+                                      : Icon(
+                                          reacted
+                                              ? Icons.thumb_up
+                                              : Icons.thumb_up_alt_outlined,
+                                          size: 18,
+                                          color: reacted
+                                              ? AppColors.primary
+                                              : Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
+                                        ),
+                                ),
                               );
                             },
                           ),
-                          GestureDetector(
-                            onTap: () {
+                          TextButton(
+                            onPressed: () {
                               setState(() => _replyingTo = comment);
                               if (_commentsAnimController.isDismissed) {
                                 _toggleComments();
                               }
                             },
-                            child: Text(
-                              'Reply',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withValues(alpha: 0.54),
-                              ),
-                            ),
+                            child: const Text('Reply'),
                           ),
                         ],
                       ),
@@ -1119,11 +1166,11 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                     ),
                   ),
                   Spacer(),
-                  GestureDetector(
-                    onTap: () => setState(() => _replyingTo = null),
-                    child: Icon(
+                  IconButton(
+                    tooltip: 'Cancel reply',
+                    onPressed: () => setState(() => _replyingTo = null),
+                    icon: Icon(
                       Icons.close,
-                      size: 16,
                       color: Theme.of(
                         context,
                       ).colorScheme.onSurface.withValues(alpha: 0.54),
@@ -1169,9 +1216,10 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                 ),
               ),
               SizedBox(width: 8),
-              GestureDetector(
-                onTap: _isCommentPending ? null : _submitDirectComment,
-                child: _isCommentPending
+              IconButton(
+                tooltip: 'Send comment',
+                onPressed: _isCommentPending ? null : _submitDirectComment,
+                icon: _isCommentPending
                     ? const SizedBox.square(
                         dimension: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
@@ -1337,36 +1385,36 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                         ),
                         if (isMyInsight)
                           Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: GestureDetector(
-                              onTap: () {
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const CreateInsightScreen(),
-                                  ),
-                                );
-                              },
-                              child: Container(
-                                padding: EdgeInsets.all(2),
-                                decoration: BoxDecoration(
-                                  color: AppColors.gradientEnd,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
+                            bottom: -4,
+                            right: -4,
+                            child: Semantics(
+                              button: true,
+                              label: 'Create a reflection',
+                              child: IconButton(
+                                tooltip: 'Create a reflection',
+                                style: IconButton.styleFrom(
+                                  backgroundColor: AppColors.gradientEnd,
+                                  foregroundColor: Theme.of(
+                                    context,
+                                  ).scaffoldBackgroundColor,
+                                  side: BorderSide(
                                     color: Theme.of(
                                       context,
                                     ).scaffoldBackgroundColor,
                                     width: 2,
                                   ),
                                 ),
-                                child: Icon(
-                                  Icons.add,
-                                  color: Theme.of(
+                                iconSize: 16,
+                                onPressed: () {
+                                  Navigator.pushReplacement(
                                     context,
-                                  ).scaffoldBackgroundColor,
-                                  size: 10,
-                                ),
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const CreateInsightScreen(),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.add),
                               ),
                             ),
                           ),
@@ -1405,6 +1453,9 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                       ),
                     ),
                     IconButton(
+                      tooltip: widget.ttsState == TtsState.playing
+                          ? 'Pause reflection reading'
+                          : 'Read reflection aloud',
                       icon: Icon(
                         widget.ttsState == TtsState.playing
                             ? Icons.pause_circle_filled

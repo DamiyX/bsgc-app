@@ -198,9 +198,13 @@ class _CreateNoteScreenState extends State<CreateNoteScreen> {
             child: TextButton(
               onPressed: _isSaving ? null : _saveNote,
               child: _isSaving
-                  ? const SizedBox.square(
-                      dimension: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                  ? Semantics(
+                      liveRegion: true,
+                      label: 'Saving private note',
+                      child: SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
                     )
                   : const Text('Save'),
             ),

@@ -88,6 +88,31 @@ describe("abuse controls", () => {
     assert.equal(message.attachmentCount, 0);
   });
 
+  test("normalizes an optional voice caption without surrounding whitespace", () => {
+    const message = normalizeGroupMessageInput({
+      groupId: "group-a",
+      messageId: "message-voice",
+      parts: [{
+        type: "voice",
+        content: "groups/group-a/messages/message-voice/voice.m4a",
+        assetId: Buffer.from(
+          "groups/group-a/messages/message-voice/voice.m4a",
+        ).toString("base64url"),
+        sizeBytes: 100,
+        durationSeconds: 10,
+        caption: "  A prayer summary  ",
+      }],
+    });
+    assert.equal(message.parts[0].caption, "A prayer summary");
+    assert.throws(() => normalizeGroupMessageInput({
+      ...message,
+      parts: [{
+        ...message.parts[0],
+        caption: "x".repeat(1001),
+      }],
+    }));
+  });
+
   test("maps report types only to canonical target paths", () => {
     assert.equal(
       reportTargetPath({ targetType: "insight", targetId: "i1" }),

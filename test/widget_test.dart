@@ -49,6 +49,17 @@ void main() {
     });
   });
 
+  test('voice message captions round-trip as an optional text equivalent', () {
+    final part = MessagePart.fromMap({
+      'type': 'voice',
+      'content': 'groups/g/messages/m/voice.m4a',
+      'durationSeconds': 42,
+      'caption': 'A short summary',
+    });
+    expect(part.caption, 'A short summary');
+    expect(part.toMap()['caption'], 'A short summary');
+  });
+
   testWidgets('sign-in screen remains usable on a narrow display', (
     tester,
   ) async {

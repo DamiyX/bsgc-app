@@ -144,6 +144,14 @@ function normalizeGroupMessageInput(data) {
         throw new RangeError("voice duration is invalid.");
       }
       normalized.durationSeconds = part.durationSeconds;
+      if (part.caption != null) {
+        if (typeof part.caption !== "string" ||
+            part.caption.trim().length > 1000) {
+          throw new RangeError("voice caption is invalid.");
+        }
+        const caption = part.caption.trim();
+        if (caption) normalized.caption = caption;
+      }
     }
     attachmentCount += 1;
     return normalized;

@@ -55,53 +55,47 @@ class NoteCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: PopupMenuButton<String>(
-                      padding: EdgeInsets.zero,
-                      icon: Icon(
-                        Icons.more_vert,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.54),
-                        size: 20,
-                      ),
-                      onSelected: (val) {
-                        if (val == 'delete') {
-                          onDelete();
-                        }
-                        if (val == 'share') {
-                          onShare?.call();
-                        }
-                      },
-                      itemBuilder: (context) => [
-                        if (onShare != null)
-                          const PopupMenuItem(
-                            value: 'share',
-                            child: Row(
-                              children: [
-                                Icon(Icons.ios_share_outlined),
-                                SizedBox(width: 8),
-                                Text('Share a copy'),
-                              ],
-                            ),
-                          ),
+                  PopupMenuButton<String>(
+                    tooltip: 'Reflection actions',
+                    padding: EdgeInsets.zero,
+                    icon: Icon(
+                      Icons.more_vert,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.54),
+                      size: 20,
+                    ),
+                    onSelected: (val) {
+                      if (val == 'delete') {
+                        onDelete();
+                      }
+                      if (val == 'share') {
+                        onShare?.call();
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      if (onShare != null)
                         const PopupMenuItem(
-                          value: 'delete',
+                          value: 'share',
                           child: Row(
                             children: [
-                              Icon(Icons.delete_outline, color: Colors.red),
+                              Icon(Icons.ios_share_outlined),
                               SizedBox(width: 8),
-                              Text(
-                                'Delete',
-                                style: TextStyle(color: Colors.red),
-                              ),
+                              Text('Share a copy'),
                             ],
                           ),
                         ),
-                      ],
-                    ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete_outline, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text('Delete', style: TextStyle(color: Colors.red)),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

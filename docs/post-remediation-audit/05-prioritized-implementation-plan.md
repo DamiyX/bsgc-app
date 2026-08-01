@@ -73,6 +73,42 @@ for archive read-only behavior, scheduled-only Today state, journal copy
 privacy/expiry, remembered spaces, large text, light/dark themes, and product
 usability screenshots. Final brand asset approval remains a release gate.
 
+## Implementation status — wave 9 accessibility and component slice
+
+**Local status:** implemented locally and verified with static analysis and
+automated tests; device accessibility, large-text, RTL, and contrast review
+remain open.
+
+This bounded wave addresses the testable MVP portion of A11Y-001–007 and
+UXE-001–003:
+
+| Finding | Implemented outcome |
+|---|---|
+| A11Y-001 | Core reflection, comment, save, reply, send, menu, and create actions use semantic labels and platform-sized targets; reaction and saved state expose selected/toggled semantics. |
+| A11Y-002 | Reflection cards grow with the platform text scaler (up to a bounded 2x accommodation); directional alignment is used for composer affordances; long text remains ellipsized with an accessible expansion action. |
+| A11Y-003 | Shared motion tokens are used where the viewer animates; viewer and journal routes honor `disableAnimations`, including comments and scrolling. |
+| A11Y-004 | Voice summaries, download progress, save/share progress, and room summaries are exposed as live regions or explicit status labels. |
+| A11Y-005 | Scripture links use semantic theme focus colors instead of a hard-coded accent; core light/dark surfaces continue to use semantic scheme colors. |
+| A11Y-006 | Voice reflections support an author-written, persisted summary (maximum 1,000 characters) and display an explicit no-summary equivalent when absent. Automatic transcription remains out of MVP scope. |
+| A11Y-007 | Scripture recognizers are owned and disposed by both `ClickableScriptureText` and `ExpandableRichText`; rebuilds dispose old recognizers when text/style/theme changes. |
+| UXE-001–003 | The bounded component work improves isolated scripture parsing, reflection cards, action semantics, and voice-summary boundaries; a full controller extraction of the largest screens remains a follow-up. |
+
+Wave 9 evidence:
+
+- Dart formatting: pass;
+- `flutter analyze`: no issues;
+- Full Flutter tests: 79 passed;
+- Focused insight/journal regression tests: 19 passed;
+- Functions syntax check and tests: 70 passed;
+- Git whitespace validation: pass.
+
+Rules emulator tests were not rerun in this wave because no Rules files
+changed; the last integrated Rules run remains 31 passed. Manual acceptance
+still requires TalkBack/VoiceOver, 200% text, RTL, reduced-motion, light/dark,
+small-screen, and contrast checks on a device or emulator. Automatic
+transcription, a full screen-controller extraction, and production release
+configuration remain outside this bounded wave.
+
 ---
 
 ## Non-negotiable execution contract

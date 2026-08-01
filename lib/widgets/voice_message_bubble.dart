@@ -367,13 +367,19 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
               ],
             ),
             if (_cacheState == VoiceBubbleCacheState.downloading)
-              Padding(
-                padding: const EdgeInsets.only(left: 8, top: 4),
-                child: Text(
-                  _downloadProgress == null
-                      ? 'Downloading...'
-                      : '${(_downloadProgress! * 100).round()}%',
-                  style: Theme.of(context).textTheme.labelSmall,
+              Semantics(
+                liveRegion: true,
+                label: _downloadProgress == null
+                    ? 'Downloading voice reflection'
+                    : 'Downloading voice reflection, ${(_downloadProgress! * 100).round()} percent',
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8, top: 4),
+                  child: Text(
+                    _downloadProgress == null
+                        ? 'Downloading...'
+                        : '${(_downloadProgress! * 100).round()}%',
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
                 ),
               ),
             if (failure != null)

@@ -389,6 +389,8 @@ function normalizeMessageParts(messageId, groupId, message) {
         1,
         300,
       );
+      const caption = cleanString(part?.caption, 1000);
+      if (caption) normalized.caption = caption;
     }
     if (Number.isInteger(part?.sizeBytes)) {
       normalized.sizeBytes = integerInRange(
@@ -710,6 +712,7 @@ function validateCanonicalDocument(kind, data) {
             "content",
             "assetId",
             "durationSeconds",
+            "caption",
             "fileName",
             "sizeBytes",
           ].includes(key))
@@ -717,6 +720,8 @@ function validateCanonicalDocument(kind, data) {
             ? Number.isInteger(part.durationSeconds)
               && part.durationSeconds >= 1
               && part.durationSeconds <= 300
+              && (!('caption' in part)
+                || validString(part.caption, 1, 1000))
             : !("durationSeconds" in part))
           && (part.type === "text"
             ? !("assetId" in part)

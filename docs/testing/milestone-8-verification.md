@@ -54,3 +54,7 @@ data and are intentionally not claimed as automated evidence:
   expansion; this wave proves the private-first/share-a-copy journey without
   widening backend scope.
 - Final logo/wordmark approval and runtime asset cleanup remain release gates.
+
+Milestone 9 adds an author-written voice-summary field and accessibility
+semantics to the room/player. Device testing must confirm the summary is
+announced by TalkBack/VoiceOver and remains visible when audio is unavailable.

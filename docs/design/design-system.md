@@ -44,6 +44,9 @@ Comfortaa is bundled for brand/headings. System text is preferred for long body 
 - Async state: loading, content, empty, cached/offline, recoverable error.
 - Pending outbox row: saved/sending/failed text plus Retry and Discard.
 - Destructive confirmation: specific consequence and non-destructive first action.
+- Voice reflection: an optional author-written text summary (maximum 1,000
+  characters) is shown below the player; when absent, the UI says that no text
+  summary is available. Automatic transcription is not enabled in the MVP.
 
 ## Navigation and icons
 

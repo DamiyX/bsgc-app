@@ -565,6 +565,7 @@ class MessageOutboxService {
             assetId: managedAsset.assetId,
             sizeBytes: managedAsset.sizeBytes,
             durationSeconds: part.durationSeconds,
+            caption: part.caption,
           ),
         );
       }

@@ -188,6 +188,12 @@ class MyInsightsScreen extends StatelessWidget {
                                     secondaryAnimation,
                                     child,
                                   ) {
+                                    if (MediaQuery.maybeOf(
+                                          context,
+                                        )?.disableAnimations ==
+                                        true) {
+                                      return child;
+                                    }
                                     return FadeTransition(
                                       opacity: animation,
                                       child: child,

@@ -29,6 +29,8 @@ MessageTimestamp resolveMessageTimestamp({
 
 enum MessageType { text, voice, hybrid, image, video, document }
 
+const int voiceCaptionMaxLength = 1000;
+
 class MessagePart {
   final MessageType type;
 
@@ -37,6 +39,7 @@ class MessagePart {
   final String? assetId;
   final int? sizeBytes;
   final int? durationSeconds;
+  final String? caption;
 
   MessagePart({
     required this.type,
@@ -44,6 +47,7 @@ class MessagePart {
     this.assetId,
     this.sizeBytes,
     this.durationSeconds,
+    this.caption,
   });
 
   bool get hasCanonicalManagedIdentity {
@@ -82,6 +86,7 @@ class MessagePart {
           ? (data['sizeBytes'] as num).toInt()
           : null,
       durationSeconds: rawDuration is num ? rawDuration.toInt() : null,
+      caption: data['caption']?.toString(),
     );
   }
 
@@ -92,6 +97,7 @@ class MessagePart {
       if (assetId != null) 'assetId': assetId,
       if (sizeBytes != null) 'sizeBytes': sizeBytes,
       if (durationSeconds != null) 'durationSeconds': durationSeconds,
+      if (caption?.trim().isNotEmpty == true) 'caption': caption!.trim(),
     };
   }
 }
@@ -154,6 +160,7 @@ class MessageModel {
           durationSeconds: data['durationSeconds'] is num
               ? (data['durationSeconds'] as num).toInt()
               : null,
+          caption: data['caption']?.toString(),
         ),
       ];
     }
