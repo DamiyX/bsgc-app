@@ -119,6 +119,69 @@ void main() {
     });
   });
 
+  group('notification preference persistence', () {
+    test(
+      'restores earlier switches when one local write is rejected',
+      () async {
+        const previous = NotificationPreferenceState(
+          enabled: false,
+          messages: false,
+          insights: true,
+          previewContent: false,
+        );
+        const next = NotificationPreferenceState(
+          enabled: true,
+          messages: true,
+          insights: true,
+          previewContent: false,
+        );
+        final values = previous.toMap();
+        final writes = <String>[];
+
+        Future<bool> write(String key, bool value) async {
+          writes.add('$key=$value');
+          if (key == 'messages' && value) return false;
+          values[key] = value;
+          return true;
+        }
+
+        await expectLater(
+          persistNotificationPreferenceState(
+            previous: previous,
+            next: next,
+            write: write,
+          ),
+          throwsStateError,
+        );
+
+        expect(values, previous.toMap());
+        expect(writes, contains('enabled=true'));
+        expect(writes, contains('enabled=false'));
+      },
+    );
+
+    test('does not write unchanged switches', () async {
+      const state = NotificationPreferenceState(
+        enabled: true,
+        messages: true,
+        insights: false,
+        previewContent: false,
+      );
+      final writes = <String>[];
+
+      await persistNotificationPreferenceState(
+        previous: state,
+        next: state,
+        write: (key, value) async {
+          writes.add('$key=$value');
+          return true;
+        },
+      );
+
+      expect(writes, isEmpty);
+    });
+  });
+
   group('invite failure disposition', () {
     test('terminal invite errors are discarded instead of retried forever', () {
       for (final code in [

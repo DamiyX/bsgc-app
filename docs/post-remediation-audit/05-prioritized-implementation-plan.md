@@ -369,12 +369,45 @@ no issues, 109 Flutter tests pass, the combined Study Room/voice-cache focused
 run passes 29 tests, the Functions syntax check passes, and the full Functions
 suite passes 78 tests. Rules were not changed in this wave, so the integrated
 31-test Rules Emulator baseline remains the applicable source check. The
-branch remains internal preview/development only. No Wave 20 is opened until
-the source-vs-external remaining-work handoff is reviewed; device/offline
+branch remains internal preview/development only. The pause-point inventory
+was reviewed before opening the next bounded source slice; device/offline
 acceptance, native cache isolation, deployed parity, release artifacts, and
 owner/product gates remain open.
 
 The pause-point handoff is `docs/testing/wave-19-remaining-work-handoff.md`.
+
+## Implementation status — continuation wave 20 source-closure slice
+
+Wave 20 reviewed two concrete source gaps identified during the post-Wave 19
+source-vs-external review. The detailed handoffs are
+`docs/testing/wave-20-media-url-security.md` and
+`docs/testing/wave-20-notification-mutation.md`.
+
+- `SEC-002` / `SEC-005`: legacy Firebase profile-image URLs now require an
+  exact owner-scoped profile object, a narrow legacy query allowlist, HTTPS,
+  no user-info, and no fragment. Nested, traversal-shaped, and prefix-collision
+  objects are rejected. Canonical message media remains the authenticated
+  managed path; legacy HTTPS message values render as explicit external links
+  rather than being downloaded. Storage authorization and bearer-token
+  revocation still require deployed evidence.
+- `REL-012` / `UX-010`: notification switches persist as one logical local
+  record with rollback when a platform write rejects or throws. Device-token,
+  preference, and device-removal writes now wait for the same document's
+  server acknowledgement; token-refresh failures are contained. Ambiguous
+  acknowledgement timeouts restore local state but still require external
+  reconciliation/device proof.
+
+Wave 20 evidence: pinned formatting is clean, `flutter analyze` reports no
+issues, the combined media/notification focused run passes 13 tests, the full
+Flutter suite passes 111 tests, the Functions syntax check passes, and the
+full Functions suite passes 78 tests. No Rules files changed, so the
+integrated 31-test Rules Emulator baseline remains the applicable source
+check. The branch remains internal preview/development only. Device/offline
+acceptance, native Firestore cache isolation, deployed Storage/Functions
+parity, App Check, release artifacts, operations, legal, and product gates
+remain open. No further source wave is justified by the current local
+evidence; reopen a new numbered wave only for a concrete device/deployed
+reproduction or a newly identified source defect.
 
 ---
 

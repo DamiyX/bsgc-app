@@ -1,12 +1,12 @@
 {
   "workflow": "Braid full audit remediation",
   "branch": "codex/bsgc-full-remediation",
-  "current_phase": "Continuation Wave 19 Study Room acknowledgement and voice-cache isolation source-closure slice verified locally; paused for remaining-work checkpoint",
+  "current_phase": "Continuation Wave 20 media URL and notification mutation source-closure slice verified locally; source work paused for external gates",
   "repository_implementation": "in progress against docs/post-remediation-audit/05-prioritized-implementation-plan.md",
   "automated_verification": {
     "flutter_format": "pass",
     "flutter_analyze": "pass",
-    "flutter_tests": "109 passed",
+    "flutter_tests": "111 passed",
     "functions_tests": "78 passed",
     "firebase_rules_tests": "31 passed",
     "functions_check": "pass",
@@ -28,6 +28,9 @@
     "wave_19_study_room_mutation_tests": "19 passed; personal visibility plus acknowledgement boundary for hide/clear/unread state",
     "wave_19_voice_cache_tests": "10 passed; account clear barrier, generation invalidation, cache ownership, and bounded eviction",
     "wave_19_focused_flutter_tests": "29 passed; Study Room reliability and voice-cache isolation",
+    "wave_20_media_url_tests": "2 passed; exact legacy profile URL path/query/fragment allowlist",
+    "wave_20_notification_tests": "11 passed; local preference rollback and notification destination/permission contracts",
+    "wave_20_focused_flutter_tests": "13 passed; media URL and notification mutation tracks",
     "scheduled_over_500_tests": "pass: 1,200 lifecycle writes in 450/450/300 chunks; 800-item deletion path in 450/350 chunks",
     "dependency_audit": "high severity clean after npm audit fix --package-lock-only; 9 moderate nested uuid advisories remain under Google client dependencies",
     "git_diff_check": "pass",
@@ -49,6 +52,6 @@
     "production signing and App/Universal Link verification",
     "legal, store, monitoring, and operational approval"
   ],
-  "next_action": "Pause after Wave 19 and use docs/testing/wave-19-remaining-work-handoff.md with the branch preview guide. Do not open another source wave until a concrete new defect or device evidence justifies it. Keep the media reconciliation boundary, move-to-draft crash window, Firestore native-cache/account-switch, App Check project/enforcement, Android/device QA, signed AAB/size, migration/backup, links, legal, and operations as explicit gates.",
-  "updated_at": "2026-08-01T11:15:10+01:00"
+  "next_action": "Use docs/testing/branch-preview-guide.md and the Wave 20 handoffs for the external gates. Do not open another source wave unless device/deployed evidence or a new audit produces a concrete defect. Keep media bearer-token/Storage authorization, voice move-to-draft process-death, Firestore native-cache/account-switch, App Check, Android/device QA, signed AAB/size, migration/backup, links, legal, and operations as explicit gates.",
+  "updated_at": "2026-08-01T13:20:00+01:00"
 }

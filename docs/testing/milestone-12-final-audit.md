@@ -458,3 +458,31 @@ open. No further continuation wave is being opened in this checkpoint.
 
 The detailed pause-point inventory is
 `docs/testing/wave-19-remaining-work-handoff.md`.
+
+## Continuation verification — Wave 20 source closure
+
+Wave 20 reviewed two concrete source gaps found while checking the Wave 19
+pause-point inventory. The detailed evidence is
+`docs/testing/wave-20-media-url-security.md` and
+`docs/testing/wave-20-notification-mutation.md`.
+
+- `SEC-002` / `SEC-005`: legacy Firebase profile URLs now match one exact
+  owner-scoped profile object and a narrow legacy query shape. Fragments,
+  traversal/nested objects, prefix collisions, and unexpected query keys are
+  rejected. Legacy HTTPS message media remains text-only; canonical managed
+  media still uses the authenticated cache path.
+- `REL-012` / `UX-010`: notification preference writes have a tested local
+  rollback boundary, and device-token/preference/delete mutations wait for
+  Firestore acknowledgement. Token-refresh failures are contained and logged
+  only in debug builds.
+
+Wave 20 source evidence is 111 passing Flutter tests, 13 focused media and
+notification tests, 78 passing Functions tests, clean `flutter analyze`, clean
+pinned formatting, a passing Functions syntax check, and the unchanged
+31-test Rules Emulator baseline. This remains source evidence only. Firebase
+Storage/bearer-token behavior, FCM permission and delivery behavior,
+Firestore native cache isolation, Android/device accessibility/offline review,
+CI Android compilation, signed artifacts, App Check, staging/production
+operations, migration, legal, and product gates remain open. A new source wave
+should be opened only if device/deployed evidence or a new source audit
+produces a concrete defect.

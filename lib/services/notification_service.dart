@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../firebase_options.dart';
+import 'firestore_commit_service.dart';
 import 'notification_destination_store.dart';
 
 export 'notification_destination_store.dart';
@@ -50,6 +51,73 @@ NotificationPreferenceDecision resolveNotificationPreference({
     shouldOpenSystemSettings:
         requestedEnabled && permission == DeviceNotificationPermission.denied,
   );
+}
+
+/// The four local notification switches are one logical preference record.
+///
+/// SharedPreferences exposes a per-key write API, so a platform/storage
+/// failure can otherwise leave a partially updated set of switches. Keeping
+/// the previous state here gives the settings screen a truthful rollback
+/// boundary and makes the behavior testable without booting Firebase.
+class NotificationPreferenceState {
+  final bool enabled;
+  final bool messages;
+  final bool insights;
+  final bool previewContent;
+
+  const NotificationPreferenceState({
+    required this.enabled,
+    required this.messages,
+    required this.insights,
+    required this.previewContent,
+  });
+
+  Map<String, bool> toMap() => {
+    'enabled': enabled,
+    'messages': messages,
+    'insights': insights,
+    'preview': previewContent,
+  };
+}
+
+typedef NotificationPreferenceWriter =
+    Future<bool> Function(String key, bool value);
+
+/// Persists the complete local notification preference as one logical
+/// mutation. If any individual key rejects the write, restore the keys that
+/// changed and rethrow the original failure so callers can show retry copy.
+Future<void> persistNotificationPreferenceState({
+  required NotificationPreferenceState previous,
+  required NotificationPreferenceState next,
+  required NotificationPreferenceWriter write,
+}) async {
+  final previousValues = previous.toMap();
+  final nextValues = next.toMap();
+  final changedKeys = <String>[];
+  try {
+    for (final entry in nextValues.entries) {
+      if (entry.value == previousValues[entry.key]) continue;
+      // Track the key before invoking the platform writer. A writer can
+      // mutate storage and then throw while reporting its result.
+      changedKeys.add(entry.key);
+      final persisted = await write(entry.key, entry.value);
+      if (!persisted) {
+        throw StateError(
+          'Notification preference storage rejected ${entry.key}.',
+        );
+      }
+    }
+  } catch (error, stackTrace) {
+    for (final key in changedKeys.reversed) {
+      try {
+        await write(key, previousValues[key]!);
+      } catch (_) {
+        // Preserve the original error. The next settings load will expose
+        // the storage failure and the user can retry the whole record.
+      }
+    }
+    Error.throwWithStackTrace(error, stackTrace);
+  }
 }
 
 class NotificationService {
@@ -139,7 +207,16 @@ class NotificationService {
     final initialMessage = await _messaging.getInitialMessage();
     if (initialMessage != null) _routeRemoteMessage(initialMessage);
 
-    _messaging.onTokenRefresh.listen(_writeDeviceToken);
+    _messaging.onTokenRefresh.listen((token) {
+      unawaited(
+        _writeDeviceToken(token).catchError((error, stackTrace) {
+          if (kDebugMode) {
+            debugPrint('Notification token registration failed: $error');
+            debugPrintStack(stackTrace: stackTrace);
+          }
+        }),
+      );
+    });
   }
 
   Future<DeviceNotificationPermission> registerCurrentDevice({
@@ -230,36 +307,80 @@ class NotificationService {
       permission: permission,
     );
     final preferences = await SharedPreferences.getInstance();
-    await Future.wait([
-      preferences.setBool(_enabledKey, decision.enabled),
-      preferences.setBool(_messagesEnabledKey, messages),
-      preferences.setBool(_insightsEnabledKey, insights),
-      preferences.setBool(_previewContentKey, previewContent),
-    ]);
-    if (!decision.enabled) {
-      await unregisterCurrentDevice();
-      return decision;
-    }
+    final previous = NotificationPreferenceState(
+      enabled: preferences.getBool(_enabledKey) ?? false,
+      messages: preferences.getBool(_messagesEnabledKey) ?? true,
+      insights: preferences.getBool(_insightsEnabledKey) ?? true,
+      previewContent: preferences.getBool(_previewContentKey) ?? false,
+    );
+    final next = NotificationPreferenceState(
+      enabled: decision.enabled,
+      messages: messages,
+      insights: insights,
+      previewContent: previewContent,
+    );
+    await persistNotificationPreferenceState(
+      previous: previous,
+      next: next,
+      write: (key, value) => preferences.setBool(switch (key) {
+        'enabled' => _enabledKey,
+        'messages' => _messagesEnabledKey,
+        'insights' => _insightsEnabledKey,
+        'preview' => _previewContentKey,
+        _ => throw StateError('Unknown notification preference key: $key'),
+      }, value),
+    );
 
-    final token = await _messaging.getToken();
-    if (token != null && token.isNotEmpty) await _writeDeviceToken(token);
-    final user = FirebaseAuth.instance.currentUser;
-    final deviceId = preferences.getString(_deviceIdKey);
-    if (user == null || deviceId == null) return decision;
-    final deviceReference = _firestore
-        .collection('users')
-        .doc(user.uid)
-        .collection('devices')
-        .doc(deviceId);
-    if (!(await deviceReference.get()).exists) return decision;
-    await deviceReference.update({
-      'notificationsEnabled': decision.enabled,
-      'messageNotifications': messages,
-      'insightNotifications': insights,
-      'previewContent': previewContent,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-    return decision;
+    try {
+      if (!decision.enabled) {
+        await unregisterCurrentDevice();
+        return decision;
+      }
+
+      final token = await _messaging.getToken();
+      if (token != null && token.isNotEmpty) await _writeDeviceToken(token);
+      final user = FirebaseAuth.instance.currentUser;
+      final deviceId = preferences.getString(_deviceIdKey);
+      if (user == null || deviceId == null) return decision;
+      final deviceReference = _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('devices')
+          .doc(deviceId);
+      if (!(await deviceReference.get()).exists) return decision;
+      await deviceReference.update({
+        'notificationsEnabled': decision.enabled,
+        'messageNotifications': messages,
+        'insightNotifications': insights,
+        'previewContent': previewContent,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      await waitForDocumentCommit(deviceReference);
+      return decision;
+    } catch (error, stackTrace) {
+      await _restoreLocalNotificationPreferences(preferences, previous);
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+
+  Future<void> _restoreLocalNotificationPreferences(
+    SharedPreferences preferences,
+    NotificationPreferenceState state,
+  ) async {
+    final values = {
+      _enabledKey: state.enabled,
+      _messagesEnabledKey: state.messages,
+      _insightsEnabledKey: state.insights,
+      _previewContentKey: state.previewContent,
+    };
+    for (final entry in values.entries) {
+      try {
+        await preferences.setBool(entry.key, entry.value);
+      } catch (_) {
+        // Keep the original remote failure as the user-facing error. A later
+        // settings load can retry the complete preference record.
+      }
+    }
   }
 
   Future<void> _persistEnabledPreference(bool enabled) async {
@@ -296,6 +417,7 @@ class NotificationService {
       if (!existingDevice.exists) 'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+    await waitForDocumentCommit(deviceReference);
   }
 
   Future<void> unregisterCurrentDevice() async {
@@ -305,12 +427,13 @@ class NotificationService {
     final preferences = await SharedPreferences.getInstance();
     final deviceId = preferences.getString(_deviceIdKey);
     if (deviceId != null) {
-      await _firestore
+      final deviceReference = _firestore
           .collection('users')
           .doc(user.uid)
           .collection('devices')
-          .doc(deviceId)
-          .delete();
+          .doc(deviceId);
+      await deviceReference.delete();
+      await waitForDocumentCommit(deviceReference);
     }
     try {
       await _messaging.deleteToken();
