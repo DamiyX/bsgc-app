@@ -1,12 +1,12 @@
 {
   "workflow": "Braid full audit remediation",
   "branch": "codex/bsgc-full-remediation",
-  "current_phase": "Remediation Wave 2 (historical continuation Wave 21) Insight and notification/deep-link source-closure slice verified locally; external gates remain open",
+  "current_phase": "Remediation Wave 3 (historical continuation Wave 22) deletion-semantics and timestamp source-closure slice verified locally; external gates remain open",
   "repository_implementation": "in progress against docs/post-remediation-audit/05-prioritized-implementation-plan.md",
   "automated_verification": {
     "flutter_format": "pass",
     "flutter_analyze": "pass",
-    "flutter_tests": "115 passed",
+    "flutter_tests": "121 passed",
     "functions_tests": "78 passed",
     "firebase_rules_tests": "31 passed",
     "functions_check": "pass",
@@ -34,6 +34,10 @@
     "wave_2_insight_tests": "25 passed; bounded comment/reaction/save mutations and newest compatibility ordering",
     "wave_2_notification_tests": "12 passed; destination serialization, invite persistence, and notification contracts",
     "wave_2_focused_flutter_tests": "37 passed across Insight and notification/invite tracks",
+    "wave_3_insight_tests": "13 passed; truthful removal lifecycle and acknowledged Insight deletion",
+    "wave_3_deletion_semantics_tests": "2 passed; source, account, message, and bookmark retention copy",
+    "wave_3_timestamp_tests": "4 passed; stable epoch and known-state compatibility readers",
+    "wave_3_focused_flutter_tests": "19 passed across deletion and timestamp tracks",
     "scheduled_over_500_tests": "pass: 1,200 lifecycle writes in 450/450/300 chunks; 800-item deletion path in 450/350 chunks",
     "dependency_audit": "high severity clean after npm audit fix --package-lock-only; 9 moderate nested uuid advisories remain under Google client dependencies",
     "git_diff_check": "pass",
@@ -55,6 +59,6 @@
     "production signing and App/Universal Link verification",
     "legal, store, monitoring, and operational approval"
   ],
-  "next_action": "Commit the verified Remediation Wave 2 source/docs checkpoint locally, then open only the next evidence-backed source wave with at most two tracks. Use docs/testing/remediation-wave-2-remaining-work-handoff.md and docs/testing/branch-preview-guide.md for the external gates; do not conflate device/deployed/release acceptance with source closure.",
-  "updated_at": "2026-08-01T15:00:00+01:00"
+  "next_action": "Commit the verified Remediation Wave 3 source/docs checkpoint locally, then open only the next evidence-backed source wave with at most two tracks. Use docs/testing/remediation-wave-3-remaining-work-handoff.md and docs/testing/branch-preview-guide.md for the external gates; do not conflate device/deployed/release acceptance with source closure.",
+  "updated_at": "2026-08-01T16:00:00+01:00"
 }

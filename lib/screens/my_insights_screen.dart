@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../models/insight_model.dart';
+import '../services/deletion_semantics.dart';
 import '../services/insight_service.dart';
 import 'create_insight_screen.dart';
 import 'view_insight_screen.dart';
@@ -56,8 +57,8 @@ class MyInsightsScreen extends StatelessWidget {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Delete reflection?'),
-        content: Text('This will permanently delete this reflection.'),
+        title: const Text(insightDeletionDialogTitle),
+        content: const Text(insightDeletionDialogBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -66,7 +67,7 @@ class MyInsightsScreen extends StatelessWidget {
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text(
-              'Delete',
+              insightDeletionActionLabel,
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ),
@@ -81,7 +82,7 @@ class MyInsightsScreen extends StatelessWidget {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text("Couldn't delete this reflection. Try again."),
+              content: Text("Couldn't remove this reflection. Try again."),
             ),
           );
         }
@@ -91,7 +92,7 @@ class MyInsightsScreen extends StatelessWidget {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Reflection deleted'),
+            content: const Text(insightDeletionSuccessMessage),
             behavior: SnackBarBehavior.floating,
             elevation: 0,
             duration: const Duration(seconds: 3),

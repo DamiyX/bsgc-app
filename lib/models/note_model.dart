@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'timestamp_contract.dart';
+
 const int noteTitleMaxLength = 160;
 const int noteBodyMaxLength = 50000;
 
@@ -30,6 +32,8 @@ class NoteModel {
   final String themeId;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final bool hasKnownCreatedAt;
+  final bool hasKnownUpdatedAt;
 
   NoteModel({
     required this.id,
@@ -40,6 +44,8 @@ class NoteModel {
     required this.themeId,
     required this.createdAt,
     required this.updatedAt,
+    this.hasKnownCreatedAt = true,
+    this.hasKnownUpdatedAt = true,
   });
 
   factory NoteModel.fromFirestore(DocumentSnapshot doc) {
@@ -47,10 +53,14 @@ class NoteModel {
     final data = rawData is Map<String, dynamic>
         ? rawData
         : const <String, dynamic>{};
-    final createdAt = data['createdAt'];
-    final updatedAt = data['updatedAt'];
+    return NoteModel.fromMap(doc.id, data);
+  }
+
+  factory NoteModel.fromMap(String id, Map<String, dynamic> data) {
+    final created = resolveFirestoreTimestamp(data['createdAt']);
+    final updated = resolveFirestoreTimestamp(data['updatedAt']);
     return NoteModel(
-      id: doc.id,
+      id: id,
       schemaVersion: data['schemaVersion'] is int
           ? data['schemaVersion'] as int
           : 1,
@@ -60,12 +70,10 @@ class NoteModel {
       themeId: data['themeId'] is String
           ? data['themeId'] as String
           : 'theme_0',
-      createdAt: createdAt is Timestamp ? createdAt.toDate() : DateTime.now(),
-      updatedAt: updatedAt is Timestamp
-          ? updatedAt.toDate()
-          : createdAt is Timestamp
-          ? createdAt.toDate()
-          : DateTime.now(),
+      createdAt: created.value,
+      updatedAt: updated.isKnown ? updated.value : created.value,
+      hasKnownCreatedAt: created.isKnown,
+      hasKnownUpdatedAt: updated.isKnown,
     );
   }
 

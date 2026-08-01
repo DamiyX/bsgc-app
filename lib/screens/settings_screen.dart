@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/theme_provider.dart';
 import '../services/account_service.dart';
 import '../services/auth_service.dart';
+import '../services/deletion_semantics.dart';
 import '../services/device_settings_service.dart';
 import '../services/notification_service.dart';
 import '../services/user_facing_error_copy.dart';
@@ -200,12 +201,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'This starts a durable deletion process for your profile, '
-              'private notes, saved items, reflections, and account media. '
-              'It cannot be undone after processing begins.\n\n'
-              'You must transfer ownership of shared studies first.',
-            ),
+            const Text(accountDeletionDialogBody),
             const SizedBox(height: 16),
             TextField(
               controller: controller,
@@ -476,7 +472,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               _isDeletingAccount ? 'Deleting account…' : 'Delete account',
               style: TextStyle(color: colorScheme.error),
             ),
-            subtitle: const Text('Permanent and irreversible'),
+            subtitle: const Text(accountDeletionSubtitle),
             onTap: _isDeletingAccount ? null : _deleteAccount,
           ),
           if (_appVersion.isNotEmpty)

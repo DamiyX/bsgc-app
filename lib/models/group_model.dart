@@ -1,9 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'timestamp_contract.dart';
+
 DateTime? _groupDate(dynamic value) {
-  if (value is Timestamp) return value.toDate();
-  if (value is DateTime) return value;
-  return null;
+  final resolved = resolveFirestoreTimestamp(value);
+  return resolved.isKnown ? resolved.value : null;
 }
 
 class StudyDateRangePolicy {
@@ -65,6 +66,7 @@ class GroupModel {
   String description;
   String? photoUrl;
   final DateTime createdAt;
+  final bool hasKnownCreatedAt;
   final String? studyBook;
   final int totalChapters;
   final Map<String, List<int>> userCompletedChapters;
@@ -91,6 +93,7 @@ class GroupModel {
     this.description = '',
     this.photoUrl,
     required this.createdAt,
+    this.hasKnownCreatedAt = true,
     this.studyBook,
     this.totalChapters = 0,
     this.userCompletedChapters = const {},
@@ -113,6 +116,10 @@ class GroupModel {
         ? rawData
         : const <String, dynamic>{};
 
+    return GroupModel.fromMap(doc.id, data);
+  }
+
+  factory GroupModel.fromMap(String id, Map<String, dynamic> data) {
     // Parse readingProgress safely
     Map<String, double> parsedProgress = {};
     if (data['readingProgress'] is Map) {
@@ -155,7 +162,7 @@ class GroupModel {
         ? (data['members'] as List).whereType<String>().toList()
         : <String>[];
     return GroupModel(
-      id: doc.id,
+      id: id,
       schemaVersion: data['schemaVersion'] is int ? data['schemaVersion'] : 1,
       ownerId:
           data['ownerId']?.toString() ??
@@ -166,9 +173,8 @@ class GroupModel {
       pinnedScripture: data['pinnedScripture']?.toString() ?? '',
       description: data['description']?.toString() ?? '',
       photoUrl: data['photoUrl']?.toString(),
-      createdAt:
-          _groupDate(data['createdAt']) ??
-          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      createdAt: resolveFirestoreTimestamp(data['createdAt']).value,
+      hasKnownCreatedAt: resolveFirestoreTimestamp(data['createdAt']).isKnown,
       studyBook: data['studyBook']?.toString(),
       totalChapters: data['totalChapters'] is num
           ? (data['totalChapters'] as num).toInt()

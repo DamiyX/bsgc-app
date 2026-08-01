@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/insight_model.dart';
 import '../screens/view_insight_screen.dart';
+import '../services/deletion_semantics.dart';
 import 'clickable_scripture_text.dart';
 
 class SavedInsightCard extends StatelessWidget {
@@ -82,7 +83,10 @@ class SavedInsightCard extends StatelessWidget {
                           children: [
                             Icon(Icons.delete_outline, color: Colors.red),
                             SizedBox(width: 8),
-                            Text('Delete', style: TextStyle(color: Colors.red)),
+                            Text(
+                              savedInsightRemovalLabel,
+                              style: TextStyle(color: Colors.red),
+                            ),
                           ],
                         ),
                       ),

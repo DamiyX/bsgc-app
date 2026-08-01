@@ -128,7 +128,7 @@ Expected result:
 
 - formatting check succeeds;
 - analyzer reports no issues;
-- 115 Flutter tests pass at the remediation Wave 2 checkpoint (historical repository continuation Wave 21). Record the command output and commit; the count may increase with later test-only additions.
+- 121 Flutter tests pass at the remediation Wave 3 checkpoint (historical repository continuation Wave 22). Record the command output and commit; the count may increase with later test-only additions.
 
 Optional backend/security verification:
 

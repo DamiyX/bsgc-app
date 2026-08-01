@@ -15,6 +15,7 @@ import '../models/group_model.dart';
 import '../models/message_model.dart';
 import '../services/audio_service.dart';
 import '../services/chat_service.dart';
+import '../services/deletion_semantics.dart';
 import '../services/draft_service.dart';
 import '../services/message_outbox_service.dart';
 import '../services/voice_cache_service.dart';
@@ -1377,7 +1378,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
                 minTileHeight: 56,
                 leading: Icon(Icons.delete_outline, color: colorScheme.error),
                 title: Text(
-                  'Delete for everyone',
+                  'Remove for everyone',
                   style: TextStyle(color: colorScheme.error),
                 ),
                 onTap: () {
@@ -1584,13 +1585,15 @@ class _MessageCard extends StatelessWidget {
                       const Padding(
                         padding: EdgeInsets.fromLTRB(14, 10, 14, 12),
                         child: Row(
-                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Icon(Icons.block, size: 16),
                             SizedBox(width: 6),
-                            Text(
-                              'This message was deleted',
-                              style: TextStyle(fontStyle: FontStyle.italic),
+                            Flexible(
+                              child: Text(
+                                messageRemovedForEveryoneLabel,
+                                style: TextStyle(fontStyle: FontStyle.italic),
+                              ),
                             ),
                           ],
                         ),

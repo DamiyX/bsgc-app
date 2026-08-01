@@ -177,12 +177,16 @@ void main() {
       await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Delete reflection?'), findsOneWidget);
-      await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+      expect(find.text('Remove reflection?'), findsOneWidget);
+      expect(
+        find.textContaining('Braid keeps a deletion status'),
+        findsOneWidget,
+      );
+      await tester.tap(find.widgetWithText(TextButton, 'Remove'));
       await tester.pumpAndSettle();
 
       expect(source.deletedIds, ['insight-1']);
-      expect(find.text('Reflection deleted'), findsOneWidget);
+      expect(find.text('Reflection no longer shared.'), findsOneWidget);
       expect(find.text('UNDO'), findsNothing);
     });
 
@@ -207,16 +211,16 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+      await tester.tap(find.widgetWithText(TextButton, 'Remove'));
       await tester.pump();
 
       expect(source.deletedIds, ['insight-1']);
-      expect(find.text('Reflection deleted'), findsNothing);
+      expect(find.text('Reflection no longer shared.'), findsNothing);
 
       deletion.complete();
       await tester.pumpAndSettle();
 
-      expect(find.text('Reflection deleted'), findsOneWidget);
+      expect(find.text('Reflection no longer shared.'), findsOneWidget);
     });
   });
 

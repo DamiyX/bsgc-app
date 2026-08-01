@@ -510,3 +510,24 @@ tests, 115 passing Flutter tests, 78 passing Functions tests, clean formatting,
 clean analysis, and the unchanged 31-test Rules baseline. This is not device,
 deployed-backend, release, legal, or product acceptance; those gates remain
 open and are listed in the consolidated handoff.
+
+## Remediation Wave 3 / historical continuation Wave 22 verification
+
+The next normalized source wave started from `ae824b7` and closed two concrete
+findings:
+
+- `SEC-011`: reflection, account, message, and saved-bookmark copy now names
+  the actual status/tombstone/retention lifecycle instead of promising
+  immediate physical erasure.
+- `REL-028`: compatibility readers use one stable epoch for missing or
+  malformed historical timestamps and expose whether each timestamp is known;
+  current MessageModel precedence is covered by the contract tests.
+
+Wave 3 source evidence is 13 Insight reliability tests, 2 deletion semantics
+tests, 4 timestamp tests, 121 passing Flutter tests, 78 passing Functions
+tests, clean analysis/formatting, and the unchanged 31-test Rules baseline.
+This remains source evidence only. Existing-row timestamp repair, retention
+and legal approval, device/offline/accessibility review, deployed parity,
+release artifacts, App Check, operations, and product gates remain open. See
+`docs/testing/remediation-wave-3-remaining-work-handoff.md` for the full
+boundary and next-wave rule.

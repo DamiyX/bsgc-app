@@ -1,10 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-DateTime _dateFrom(dynamic value, {DateTime? fallback}) {
-  if (value is Timestamp) return value.toDate();
-  if (value is DateTime) return value;
-  return fallback ?? DateTime.fromMillisecondsSinceEpoch(0);
-}
+import 'timestamp_contract.dart';
 
 List<String> _stringList(dynamic value) {
   if (value is! List) return const [];
@@ -27,6 +23,9 @@ class InsightModel {
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime expiresAt;
+  final bool hasKnownCreatedAt;
+  final bool hasKnownUpdatedAt;
+  final bool hasKnownExpiresAt;
 
   const InsightModel({
     required this.id,
@@ -44,6 +43,9 @@ class InsightModel {
     required this.createdAt,
     required this.updatedAt,
     required this.expiresAt,
+    this.hasKnownCreatedAt = true,
+    this.hasKnownUpdatedAt = true,
+    this.hasKnownExpiresAt = true,
   });
 
   factory InsightModel.fromFirestore(DocumentSnapshot doc) {
@@ -53,7 +55,9 @@ class InsightModel {
   }
 
   factory InsightModel.fromMap(String id, Map<String, dynamic> data) {
-    final createdAt = _dateFrom(data['createdAt'], fallback: DateTime.now());
+    final created = resolveFirestoreTimestamp(data['createdAt']);
+    final updated = resolveFirestoreTimestamp(data['updatedAt']);
+    final expires = resolveFirestoreTimestamp(data['expiresAt']);
     return InsightModel(
       id: id,
       schemaVersion: data['schemaVersion'] is int
@@ -76,12 +80,14 @@ class InsightModel {
       // in per-user documents instead of growing arrays.
       seenBy: _stringList(data['seenBy']),
       likedBy: _stringList(data['likedBy']),
-      createdAt: createdAt,
-      updatedAt: _dateFrom(data['updatedAt'], fallback: createdAt),
-      expiresAt: _dateFrom(
-        data['expiresAt'],
-        fallback: createdAt.add(const Duration(days: 3)),
-      ),
+      createdAt: created.value,
+      updatedAt: updated.isKnown ? updated.value : created.value,
+      expiresAt: expires.isKnown
+          ? expires.value
+          : created.value.add(const Duration(days: 3)),
+      hasKnownCreatedAt: created.isKnown,
+      hasKnownUpdatedAt: updated.isKnown,
+      hasKnownExpiresAt: expires.isKnown,
     );
   }
 }
@@ -98,6 +104,7 @@ class InsightCommentModel {
   final String? replyToName;
   final List<String> likedBy;
   final DateTime createdAt;
+  final bool hasKnownCreatedAt;
 
   const InsightCommentModel({
     required this.id,
@@ -111,13 +118,19 @@ class InsightCommentModel {
     this.replyToName,
     this.likedBy = const [],
     required this.createdAt,
+    this.hasKnownCreatedAt = true,
   });
 
   factory InsightCommentModel.fromFirestore(DocumentSnapshot doc) {
     final raw = doc.data();
     final data = raw is Map<String, dynamic> ? raw : const <String, dynamic>{};
+    return InsightCommentModel.fromMap(doc.id, data);
+  }
+
+  factory InsightCommentModel.fromMap(String id, Map<String, dynamic> data) {
+    final created = resolveFirestoreTimestamp(data['createdAt']);
     return InsightCommentModel(
-      id: doc.id,
+      id: id,
       schemaVersion: data['schemaVersion'] is int
           ? data['schemaVersion'] as int
           : 1,
@@ -131,7 +144,8 @@ class InsightCommentModel {
       replyToId: data['replyToId']?.toString(),
       replyToName: data['replyToName']?.toString(),
       likedBy: _stringList(data['likedBy']),
-      createdAt: _dateFrom(data['createdAt'], fallback: DateTime.now()),
+      createdAt: created.value,
+      hasKnownCreatedAt: created.isKnown,
     );
   }
 }

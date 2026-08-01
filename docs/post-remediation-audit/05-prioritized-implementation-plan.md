@@ -445,6 +445,33 @@ review, native Firestore cache/account-switch proof, deployed parity,
 App Check, Android CI compilation, signed AAB and size analysis, migration,
 operations, legal, and product gates remain open.
 
+## Implementation status — remediation Wave 3 / repository continuation wave 22
+
+The detailed handoffs are `docs/testing/wave-22-deletion-semantics.md`,
+`docs/testing/wave-22-timestamps.md`, and the consolidated record
+`docs/testing/remediation-wave-3-remaining-work-handoff.md`.
+
+This wave started from source checkpoint `ae824b7` and closed two more
+source-controlled findings:
+
+- `SEC-011`: destructive copy now matches the actual lifecycle. Reflection
+  removal, account deletion, message removal, and saved-bookmark removal are
+  distinct; status/tombstone and retention boundaries are visible instead of
+  promising immediate physical erasure.
+- `REL-028`: Note, Insight/comment, and Group compatibility readers now use a
+  stable epoch for missing or malformed historical timestamps and expose
+  known-state flags. Existing MessageModel precedence and unknown handling are
+  covered by the same contract tests.
+
+Wave 3 evidence is 13 passing Insight reliability tests, 2 deletion semantics
+tests, 4 timestamp-contract tests, 121 passing Flutter tests, 78 passing
+Functions tests, clean pinned formatting, `flutter analyze` with no issues,
+and `git diff --check` with no errors. No Functions or Rules files changed;
+the integrated 31-test Rules Emulator baseline remains the applicable Rules
+evidence. Existing Firestore rows still need an approved repair/migration
+process where authoritative timestamps can be recovered, and retention/legal,
+device, deployed, release, operations, and product gates remain open.
+
 ---
 
 ## Non-negotiable execution contract
