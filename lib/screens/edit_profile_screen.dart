@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../services/storage_service.dart';
 import '../services/firestore_commit_service.dart';
+import '../services/current_profile_repository.dart';
 import '../widgets/current_user_avatar.dart';
 
 const profilePicturePendingMessage =
@@ -101,6 +102,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
       );
       await waitForDocumentCommit(reference);
+      CurrentProfileRepository.instance.invalidate(user.uid);
       _showMessage('Profile picture updated.');
     } on TimeoutException {
       _showMessage(profilePicturePendingMessage);
@@ -130,6 +132,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
       await waitForDocumentCommit(reference);
+      CurrentProfileRepository.instance.invalidate(user.uid);
       if (user.displayName != displayName) {
         try {
           await user.updateDisplayName(displayName);

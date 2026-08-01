@@ -11,6 +11,7 @@ import 'deep_link_service.dart';
 import 'draft_service.dart';
 import 'message_outbox_service.dart';
 import 'voice_cache_service.dart';
+import 'current_profile_repository.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -109,6 +110,7 @@ class AuthService {
       if (kDebugMode) debugPrint('Google sign-out failed: $error');
     } finally {
       await _auth.signOut();
+      CurrentProfileRepository.instance.clear();
       if (signingOutUid != null) {
         final cleanupOperations =
             <({String name, Future<void> Function() run})>[

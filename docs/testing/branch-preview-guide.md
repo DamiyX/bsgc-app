@@ -128,7 +128,7 @@ Expected result:
 
 - formatting check succeeds;
 - analyzer reports no issues;
-- 121 Flutter tests pass at the remediation Wave 3 checkpoint (historical repository continuation Wave 22). Record the command output and commit; the count may increase with later test-only additions.
+- 125 Flutter tests pass at the remediation Wave 4 checkpoint (historical repository continuation Wave 23). Record the command output and commit; the count may increase with later test-only additions.
 
 Optional backend/security verification:
 
@@ -142,8 +142,8 @@ npm run test:rules
 
 Expected result:
 
-- 78 Functions tests pass;
-- 31 Firestore/Storage rules tests pass.
+- 82 Functions tests pass;
+- 32 Firestore/Storage rules tests pass.
 
 Rules tests intentionally run serially because both integration-test files share and clear one emulator project.
 

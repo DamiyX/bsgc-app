@@ -1,14 +1,14 @@
 {
   "workflow": "Braid full audit remediation",
   "branch": "codex/bsgc-full-remediation",
-  "current_phase": "Remediation Wave 3 (historical continuation Wave 22) deletion-semantics and timestamp source-closure slice verified locally; external gates remain open",
+  "current_phase": "Remediation Wave 4 (historical continuation Wave 23) canonical-identity and lifecycle-timing source-closure slice verified locally; external gates remain open",
   "repository_implementation": "in progress against docs/post-remediation-audit/05-prioritized-implementation-plan.md",
   "automated_verification": {
     "flutter_format": "pass",
     "flutter_analyze": "pass",
-    "flutter_tests": "121 passed",
-    "functions_tests": "78 passed",
-    "firebase_rules_tests": "31 passed",
+    "flutter_tests": "125 passed",
+    "functions_tests": "82 passed",
+    "firebase_rules_tests": "32 passed",
     "functions_check": "pass",
     "migration_rehearsal": "pass",
     "wave_13_account_session_tests": "3 passed; auth subtree epoch boundary integrated",
@@ -38,6 +38,11 @@
     "wave_3_deletion_semantics_tests": "2 passed; source, account, message, and bookmark retention copy",
     "wave_3_timestamp_tests": "4 passed; stable epoch and known-state compatibility readers",
     "wave_3_focused_flutter_tests": "19 passed across deletion and timestamp tracks",
+    "wave_4_identity_tests": "4 passed; canonical public identity, UID isolation, coalescing, and source-boundary checks",
+    "wave_4_lifecycle_tests": "4 passed; active, stale-end, future-start, and legacy-date policy checks",
+    "wave_4_focused_flutter_tests": "4 passed for canonical identity",
+    "wave_4_focused_functions_tests": "4 passed for lifecycle timing policy",
+    "wave_4_rules_regressions": "pass; member progress rejects stale, scheduled, and completed lifecycle windows",
     "scheduled_over_500_tests": "pass: 1,200 lifecycle writes in 450/450/300 chunks; 800-item deletion path in 450/350 chunks",
     "dependency_audit": "high severity clean after npm audit fix --package-lock-only; 9 moderate nested uuid advisories remain under Google client dependencies",
     "git_diff_check": "pass",
@@ -59,6 +64,6 @@
     "production signing and App/Universal Link verification",
     "legal, store, monitoring, and operational approval"
   ],
-  "next_action": "Commit the verified Remediation Wave 3 source/docs checkpoint locally, then open only the next evidence-backed source wave with at most two tracks. Use docs/testing/remediation-wave-3-remaining-work-handoff.md and docs/testing/branch-preview-guide.md for the external gates; do not conflate device/deployed/release acceptance with source closure.",
-  "updated_at": "2026-08-01T16:00:00+01:00"
+  "next_action": "Run the external device/offline, deployed, CI/release, and acceptance gates documented in docs/testing/remediation-wave-4-remaining-work-handoff.md. Open a Wave 5 only if one of those checks produces a concrete reproducible source defect.",
+  "updated_at": "2026-08-01T16:45:00+01:00"
 }

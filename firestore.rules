@@ -39,6 +39,20 @@ service cloud.firestore {
         && groupData(groupId).ownerId == request.auth.uid;
     }
 
+    // The hourly lifecycle scheduler is deliberately approximate. Member
+    // progress writes must still stop at the source-of-truth date boundary so
+    // a stale `active` document cannot remain writable after completion.
+    function groupAcceptsMemberActivity(groupId) {
+      let group = groupData(groupId);
+      return group.lifecycle == 'active'
+        && (!group.keys().hasAny(['startDate'])
+          || (group.startDate is timestamp
+            && group.startDate <= request.time))
+        && (!group.keys().hasAny(['endDate'])
+          || (group.endDate is timestamp
+            && request.time < group.endDate));
+    }
+
     function isAcceptedConnection(authorUid, viewerUid) {
       return exists(
           /databases/$(database)/documents/users/$(authorUid)/connections/$(viewerUid)
@@ -767,7 +781,9 @@ service cloud.firestore {
       // Group creation is server-only so the group and owner-member record are
       // created atomically and rate/capacity policy cannot be bypassed.
       allow create: if false;
-      allow update: if isGroupMember(groupId) && memberChangedOnlyOwnState();
+      allow update: if isGroupMember(groupId)
+        && groupAcceptsMemberActivity(groupId)
+        && memberChangedOnlyOwnState();
       allow delete: if false;
 
       match /members/{uid} {

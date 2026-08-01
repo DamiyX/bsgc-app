@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/chat_service.dart';
+import '../services/current_profile_repository.dart';
 import '../services/deep_link_service.dart';
 import '../theme.dart';
 import 'main_hall_screen.dart';
@@ -76,6 +77,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
       await batch.commit();
+      CurrentProfileRepository.instance.invalidate(user.uid);
       if (user.displayName != displayName) {
         await user.updateDisplayName(displayName);
       }

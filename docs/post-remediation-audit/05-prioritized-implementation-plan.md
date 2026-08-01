@@ -472,6 +472,31 @@ evidence. Existing Firestore rows still need an approved repair/migration
 process where authoritative timestamps can be recovered, and retention/legal,
 device, deployed, release, operations, and product gates remain open.
 
+## Implementation status - remediation Wave 4 / repository continuation wave 23
+
+Wave 4 started from source checkpoint `2105d1e` and closes two concrete gaps
+found during the continuation audit. The detailed track records are
+`docs/testing/wave-23-identity-consistency.md`,
+`docs/testing/wave-23-lifecycle-timing.md`, and the consolidated handoff
+`docs/testing/remediation-wave-4-remaining-work-handoff.md`.
+
+- `REL-017`: authored Insights and comments now load the UID-keyed canonical
+  public profile. Profile edits, onboarding, account changes, and sign-out
+  invalidate or clear the process-local value; concurrent reads are coalesced
+  and a wrong-UID source response is rejected.
+- `REL-025`: callable group messages and member-owned progress writes now
+  enforce `startDate`/`endDate` boundaries as well as the persisted lifecycle,
+  closing the stale-active window between scheduler runs.
+
+Wave 4 evidence is 4 identity tests, 4 lifecycle-policy tests, 125 passing
+Flutter tests, 82 passing Functions tests, 32 passing Rules Emulator tests,
+clean pinned formatting, `flutter analyze` with no issues, and a clean diff
+check. The historical labels Wave 20 through Wave 23 map to normalized Waves
+1 through 4; they are not 23 separate waves. There is no automatic Wave 5.
+Open device/offline, deployed, CI/release, App Check, migration, operations,
+legal, and product gates remain external acceptance work, as listed in the
+Wave 4 handoff.
+
 ---
 
 ## Non-negotiable execution contract

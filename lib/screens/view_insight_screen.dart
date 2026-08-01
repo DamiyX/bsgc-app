@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:intl/intl.dart';
 import '../models/insight_model.dart';
+import '../services/current_profile_repository.dart';
 import '../services/insight_action_controller.dart';
 import '../services/insight_service.dart';
 import '../services/notification_service.dart';
@@ -316,6 +317,8 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _commentController = TextEditingController();
   final InsightService _insightService = InsightService();
+  final CurrentProfileRepository _profileRepository =
+      CurrentProfileRepository.instance;
   late final ReversibleToggleController _likeController;
   late final ReversibleToggleController _saveController;
   final Map<String, bool> _commentReactionOverrides = {};
@@ -685,26 +688,27 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-
-    final comment = InsightCommentModel(
-      id: const Uuid().v4(),
-      insightId: widget.insight.id,
-      authorUid: user.uid,
-      authorName: user.displayName ?? 'Believer',
-      authorPhotoUrl: user.photoURL,
-      body: text,
-      replyToId: _replyingTo?.id,
-      replyToName: _replyingTo == null
-          ? null
-          : ContactCacheService().getContactName(
-              _replyingTo!.authorUid,
-              _replyingTo!.authorName,
-            ),
-      createdAt: DateTime.now(),
-    );
+    final reply = _replyingTo;
 
     setState(() => _isCommentPending = true);
     try {
+      final identity = await _profileRepository.load(user.uid);
+      final comment = InsightCommentModel(
+        id: const Uuid().v4(),
+        insightId: widget.insight.id,
+        authorUid: user.uid,
+        authorName: identity.displayName,
+        authorPhotoUrl: identity.photoUrl,
+        body: text,
+        replyToId: reply?.id,
+        replyToName: reply == null
+            ? null
+            : ContactCacheService().getContactName(
+                reply.authorUid,
+                reply.authorName,
+              ),
+        createdAt: DateTime.now(),
+      );
       final succeeded = await persistCommentText(
         _commentController,
         (_) => _insightService.addComment(widget.insight.id, comment),
@@ -723,6 +727,16 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
       setState(() => _replyingTo = null);
       await _loadComments(reset: true);
       _scrollToBottom();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              "Couldn't load your current profile. Your comment is still here. Try again.",
+            ),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isCommentPending = false);
     }

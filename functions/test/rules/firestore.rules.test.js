@@ -369,6 +369,38 @@ describe("group ownership and membership integrity", () => {
       }),
     );
   });
+
+  test("member progress stops at lifecycle and date boundaries", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await Promise.all([
+        setDoc(
+          doc(db, "groups/stale-active-group"),
+          groupData({
+            endDate: Timestamp.fromDate(new Date(Date.now() - 60_000)),
+          }),
+        ),
+        setDoc(
+          doc(db, "groups/future-active-group"),
+          groupData({
+            startDate: Timestamp.fromDate(new Date(Date.now() + 60_000)),
+          }),
+        ),
+      ]);
+    });
+    const db = testEnv.authenticatedContext("member").firestore();
+
+    await assertFails(
+      updateDoc(doc(db, "groups/stale-active-group"), {
+        "readingProgress.member": 0.5,
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(db, "groups/future-active-group"), {
+        "readingProgress.member": 0.5,
+      }),
+    );
+  });
 });
 
 describe("messages", () => {
@@ -483,6 +515,16 @@ describe("messages", () => {
     );
     await assertFails(
       setDoc(doc(db, "groups/completed-group/messages/message-a"), message),
+    );
+    await assertFails(
+      updateDoc(doc(db, "groups/scheduled-group"), {
+        "readingProgress.member": 0.5,
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(db, "groups/completed-group"), {
+        "readingProgress.member": 0.5,
+      }),
     );
   });
 

@@ -21,9 +21,15 @@ class FirestoreCanonicalIdentitySource implements CanonicalIdentitySource {
 
   FirestoreCanonicalIdentitySource(this._firestore);
 
+  static FirestoreCanonicalIdentitySource get defaultInstance =>
+      FirestoreCanonicalIdentitySource(FirebaseFirestore.instance);
+
   @override
   Future<CanonicalPublicIdentity> load(String uid) async {
-    final snapshot = await _firestore.collection('users_public').doc(uid).get();
+    final snapshot = await _firestore
+        .collection('users_public')
+        .doc(uid)
+        .get(const GetOptions(source: Source.serverAndCache));
     final data = snapshot.data();
     final displayName = data?['displayName']?.toString().trim();
     if (!snapshot.exists || displayName == null || displayName.isEmpty) {

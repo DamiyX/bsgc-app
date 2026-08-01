@@ -62,6 +62,9 @@ const {
 const {
   studyDateRangeIssue,
 } = require("./lib/study_dates");
+const {
+  isGroupEffectivelyActive,
+} = require("./lib/lifecycle_policy");
 
 admin.initializeApp();
 
@@ -591,7 +594,7 @@ exports.sendGroupMessage = onCall(
         if (
           !Array.isArray(group.members) ||
           !group.members.includes(uid) ||
-          group.lifecycle !== "active"
+          !isGroupEffectivelyActive(group, now.toMillis())
         ) {
           throw new HttpsError(
             "permission-denied",
@@ -681,7 +684,7 @@ exports.editGroupMessage = onCall(
         const group = groupSnapshot.data();
         const message = messageSnapshot.data();
         if (!Array.isArray(group.members) || !group.members.includes(uid) ||
-            group.lifecycle !== "active") {
+            !isGroupEffectivelyActive(group, now.toMillis())) {
           throw new HttpsError(
             "permission-denied",
             "This study is not accepting message edits.",

@@ -7,13 +7,20 @@ import 'package:uuid/uuid.dart';
 import '../models/insight_model.dart';
 import '../services/draft_service.dart';
 import '../services/insight_service.dart';
+import '../services/current_profile_repository.dart';
 import '../theme.dart';
 
 class CreateInsightScreen extends StatefulWidget {
   final String? initialTitle;
   final String? initialBody;
+  final CurrentProfileRepository? profileRepository;
 
-  const CreateInsightScreen({super.key, this.initialTitle, this.initialBody});
+  const CreateInsightScreen({
+    super.key,
+    this.initialTitle,
+    this.initialBody,
+    this.profileRepository,
+  });
 
   @override
   State<CreateInsightScreen> createState() => _CreateInsightScreenState();
@@ -25,6 +32,7 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
   final _bodyController = TextEditingController();
   final InsightService _insightService = InsightService();
   final DraftService _draftService = DraftService();
+  late final CurrentProfileRepository _profileRepository;
   Timer? _draftTimer;
   String? _draftUserId;
   bool _isRestoringDraft = false;
@@ -35,6 +43,8 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
   @override
   void initState() {
     super.initState();
+    _profileRepository =
+        widget.profileRepository ?? CurrentProfileRepository.instance;
     _titleController.addListener(_scheduleDraftSave);
     _bodyController.addListener(_scheduleDraftSave);
     if (widget.initialTitle != null || widget.initialBody != null) {
@@ -157,13 +167,14 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
 
     setState(() => _isPublishing = true);
     try {
+      final identity = await _profileRepository.load(user.uid);
       final now = DateTime.now();
       await _insightService.createInsight(
         InsightModel(
           id: const Uuid().v4(),
           authorUid: user.uid,
-          authorName: user.displayName ?? 'Braid member',
-          authorPhotoUrl: user.photoURL,
+          authorName: identity.displayName,
+          authorPhotoUrl: identity.photoUrl,
           title: _titleController.text.trim(),
           body: _bodyController.text.trim(),
           themeId: 'theme_0',

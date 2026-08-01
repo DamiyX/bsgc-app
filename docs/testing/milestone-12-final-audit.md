@@ -531,3 +531,23 @@ and legal approval, device/offline/accessibility review, deployed parity,
 release artifacts, App Check, operations, and product gates remain open. See
 `docs/testing/remediation-wave-3-remaining-work-handoff.md` for the full
 boundary and next-wave rule.
+
+## Remediation Wave 4 / historical continuation Wave 23 verification
+
+Wave 4 started from `2105d1e` and closed two further source findings:
+
+- `REL-017`: authored Insights/comments now use the UID-keyed canonical public
+  profile, with account-isolated caching, concurrent-read coalescing, and
+  invalidation after profile writes and sign-out.
+- `REL-025`: callable group messages and member-owned progress writes now
+  enforce lifecycle start/end timestamps, so stale scheduled state cannot keep
+  a group writable between scheduler runs.
+
+Wave 4 evidence is 4 identity tests, 4 lifecycle-policy tests, 125 passing
+Flutter tests, 82 passing Functions tests, 32 passing Rules Emulator tests,
+clean formatting, no analyzer issues, and a clean diff check. The repository
+source waves are normalized as Wave 1 (historical Wave 20) through Wave 4
+(historical Wave 23); historical labels do not create additional waves. No
+automatic Wave 5 is planned. Device/offline, deployed parity, CI/release,
+App Check, migration, operations, legal, and product gates remain external;
+see `docs/testing/remediation-wave-4-remaining-work-handoff.md`.
