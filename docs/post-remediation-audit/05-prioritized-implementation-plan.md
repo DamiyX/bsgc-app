@@ -374,6 +374,8 @@ the source-vs-external remaining-work handoff is reviewed; device/offline
 acceptance, native cache isolation, deployed parity, release artifacts, and
 owner/product gates remain open.
 
+The pause-point handoff is `docs/testing/wave-19-remaining-work-handoff.md`.
+
 ---
 
 ## Non-negotiable execution contract

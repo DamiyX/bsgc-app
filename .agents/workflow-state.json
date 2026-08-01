@@ -49,6 +49,6 @@
     "production signing and App/Universal Link verification",
     "legal, store, monitoring, and operational approval"
   ],
-  "next_action": "Pause after the Wave 19 local commit and produce the remaining-work handoff. Do not open another source wave until the remaining source gaps and external gates are reviewed. Keep the media reconciliation boundary, move-to-draft crash window, Firestore native-cache/account-switch, App Check project/enforcement, Android/device QA, signed AAB/size, migration/backup, links, legal, and operations as explicit gates.",
+  "next_action": "Pause after Wave 19 and use docs/testing/wave-19-remaining-work-handoff.md with the branch preview guide. Do not open another source wave until a concrete new defect or device evidence justifies it. Keep the media reconciliation boundary, move-to-draft crash window, Firestore native-cache/account-switch, App Check project/enforcement, Android/device QA, signed AAB/size, migration/backup, links, legal, and operations as explicit gates.",
   "updated_at": "2026-08-01T11:15:10+01:00"
 }

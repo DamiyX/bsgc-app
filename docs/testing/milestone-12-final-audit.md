@@ -455,3 +455,6 @@ applicable source check. This remains source evidence only: device/offline
 and process-death review, Firestore native-cache isolation, deployed parity,
 App Check, release artifacts, operations, legal, and product approval remain
 open. No further continuation wave is being opened in this checkpoint.
+
+The detailed pause-point inventory is
+`docs/testing/wave-19-remaining-work-handoff.md`.
