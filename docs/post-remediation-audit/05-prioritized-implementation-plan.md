@@ -317,6 +317,35 @@ compile, signed artifacts, device/offline/accessibility review, deployed
 Function parity, Firestore cache isolation, App Check rollout, staging
 deployment, migration/operations, legal, and product gates remain open.
 
+## Implementation status — continuation wave 18 source-closure slice
+
+The detailed handoffs are `docs/testing/wave-18-security-media.md` and
+`docs/testing/wave-18-ux-mutation.md`. This wave closes two bounded
+source-controlled gaps without treating client behavior as deployed or
+device-proven:
+
+- `SEC-003` / `SEC-012`: profile-photo and study-cover reference writes now
+  classify failures before cleanup. A deterministic permission/validation
+  failure best-effort deletes the newly uploaded object only after a canonical,
+  account/group-scoped path check. Ambiguous network, timeout, and internal
+  failures leave the pending managed asset for server reconciliation because a
+  remote reference may already have committed. The managed-assets reconciler,
+  Storage rules, and production orphan backlog still require external proof.
+- `UX-010`: the per-study notification mute switch now has an explicit pending
+  state, blocks racing toggles, waits for Firestore server acknowledgement, and
+  rolls back with retry copy on failure. The pending state is exposed to
+  assistive technology. This closes the reviewed mute path only; the complete
+  mutation inventory and device/offline acceptance matrix remain open.
+
+Wave 18 evidence: pinned Dart formatting is clean, `flutter analyze` reports
+no issues, 107 Flutter tests pass, the combined media/mutation focused run
+passes 13 tests, the Functions syntax check passes, and the full Functions
+suite passes 78 tests. Rules were not changed in this wave, so the last
+integrated Rules Emulator evidence remains 31 passing tests. The branch is
+still internal preview/development only; native Firestore acknowledgement,
+Storage cleanup, device accessibility/offline behavior, deployed parity,
+release artifacts, and owner/product gates remain open.
+
 ---
 
 ## Non-negotiable execution contract

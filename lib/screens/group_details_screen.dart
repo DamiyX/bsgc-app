@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 
 import '../models/group_model.dart';
 import '../services/chat_service.dart';
+import '../services/insight_action_controller.dart';
 import '../services/safety_service.dart';
 import '../services/storage_service.dart';
 import '../widgets/add_member_sheet.dart';
@@ -32,7 +33,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
   List<Map<String, dynamic>> _members = const [];
   bool _membersLoading = true;
   bool _memberLoadFailed = false;
-  bool _isMuted = false;
+  late final ReversibleToggleController _muteController;
   bool _coverBusy = false;
   bool _actionBusy = false;
 
@@ -47,6 +48,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
   void initState() {
     super.initState();
     _group = widget.group;
+    _muteController = ReversibleToggleController(initialValue: false);
     _groupSubscription = FirebaseFirestore.instance
         .collection('groups')
         .doc(_group.id)
@@ -104,21 +106,22 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
   Future<void> _loadMuteState() async {
     try {
       final muted = await _chatService.isGroupMuted(_group.id);
-      if (mounted) setState(() => _isMuted = muted);
+      if (mounted) _muteController.replaceValue(muted);
     } catch (_) {
       // The user can retry by toggling the setting.
     }
   }
 
   Future<void> _setMuted(bool value) async {
-    final previous = _isMuted;
-    setState(() => _isMuted = value);
-    try {
-      await _chatService.setGroupMuted(_group.id, value);
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _isMuted = previous);
-      _showMessage('The notification setting could not be saved.');
+    if (_muteController.value == value || _muteController.isPending) return;
+    final saved = await _muteController.setValue(
+      value,
+      (nextValue) => _chatService.setGroupMuted(_group.id, nextValue),
+    );
+    if (!saved && mounted) {
+      _showMessage(
+        'The notification setting could not be saved. Check your connection and retry.',
+      );
     }
   }
 
@@ -173,12 +176,23 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
         groupId: _group.id,
         ownerId: user.uid,
       );
-      await _chatService.editGroup(
-        _group.id,
-        _group.name,
-        _group.pinnedScripture,
-        description: _group.description,
-        photoUrl: url,
+      await StorageService.commitReferenceOrCleanup(
+        commit: () => _chatService.editGroup(
+          _group.id,
+          _group.name,
+          _group.pinnedScripture,
+          description: _group.description,
+          photoUrl: url,
+        ),
+        cleanup: () => StorageService.deleteUncommittedAsset(
+          storagePath: url,
+          ownerId: user.uid,
+          groupId: _group.id,
+        ),
+        shouldCleanup: (error) =>
+            StorageService.shouldCleanupAfterReferenceFailure(
+              error is GroupOperationFailure ? error.code : null,
+            ),
       );
       if (mounted) _showMessage('Study cover updated.');
     } catch (_) {
@@ -467,12 +481,27 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
           ),
           const SizedBox(height: 12),
           Card(
-            child: SwitchListTile(
-              secondary: const Icon(Icons.notifications_outlined),
-              title: const Text('Message notifications'),
-              subtitle: const Text('This setting applies only to this study'),
-              value: _isMuted == false,
-              onChanged: (enabled) => _setMuted(!enabled),
+            child: AnimatedBuilder(
+              animation: _muteController,
+              builder: (context, _) {
+                final isPending = _muteController.isPending;
+                return Semantics(
+                  liveRegion: isPending,
+                  child: SwitchListTile(
+                    secondary: const Icon(Icons.notifications_outlined),
+                    title: const Text('Message notifications'),
+                    subtitle: Text(
+                      isPending
+                          ? 'Saving notification setting…'
+                          : 'This setting applies only to this study',
+                    ),
+                    value: !_muteController.value,
+                    onChanged: isPending
+                        ? null
+                        : (enabled) => _setMuted(!enabled),
+                  ),
+                );
+              },
             ),
           ),
           const SizedBox(height: 24),
@@ -639,6 +668,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
   @override
   void dispose() {
     _groupSubscription?.cancel();
+    _muteController.dispose();
     super.dispose();
   }
 }

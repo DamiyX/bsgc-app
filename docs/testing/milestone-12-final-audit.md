@@ -402,3 +402,30 @@ Flutter tests. The branch remains **internal preview/development only**; the
 full mutation inventory, device/offline matrix, native Firestore cache
 isolation, App Check project/enforcement, signed artifacts, operations, and
 legal/product approval remain open.
+
+## Continuation verification — Wave 18 source closure
+
+Wave 18 reviewed the next bounded source gaps against the original finding
+ledger and the implementation plan. The detailed evidence is
+`docs/testing/wave-18-security-media.md` and
+`docs/testing/wave-18-ux-mutation.md`.
+
+- `SEC-003` / `SEC-012`: profile-photo and study-cover reference writes now
+  use an explicit deterministic-versus-ambiguous failure boundary. A
+  canonical account/group-scoped object is deleted only for a known
+  definitive reference failure; unknown, timeout, and network failures leave
+  the pending managed asset for the existing server reconciler. Cleanup is
+  best-effort and idempotent for an already-missing object.
+- `UX-010`: the study-details notification mute mutation now disables repeat
+  toggles while pending, waits for Firestore acknowledgement, rolls back on a
+  failure, and exposes a live saving status. The focused controller tests
+  cover pending/repeat blocking/rollback and acknowledged success.
+
+Wave 18 source evidence is 107 passing Flutter tests, 13 focused media/mute
+tests, 78 passing Functions tests, clean `flutter analyze`, clean pinned
+formatting, and a passing Functions syntax check. No Rules files changed, so
+the integrated 31-test Rules Emulator baseline remains the applicable source
+check. This remains source evidence only: deployed Storage/Functions parity,
+native Firestore offline acknowledgement, physical-device media and
+accessibility review, cache isolation, App Check, release artifacts,
+operations, legal, and product approval remain open.

@@ -1,12 +1,12 @@
 {
   "workflow": "Braid full audit remediation",
   "branch": "codex/bsgc-full-remediation",
-  "current_phase": "Continuation Wave 17 voice/date source-closure slice verified locally; native Firestore cache and release/device gates remain open",
+  "current_phase": "Continuation Wave 18 media-cleanup and mute-acknowledgement source-closure slice verified locally; native Firestore cache and release/device gates remain open",
   "repository_implementation": "in progress against docs/post-remediation-audit/05-prioritized-implementation-plan.md",
   "automated_verification": {
     "flutter_format": "pass",
     "flutter_analyze": "pass",
-    "flutter_tests": "101 passed",
+    "flutter_tests": "107 passed",
     "functions_tests": "78 passed",
     "firebase_rules_tests": "31 passed",
     "functions_check": "pass",
@@ -22,6 +22,9 @@
     "wave_16_study_mutation_tests": "2 passed; sound preference and draft/outbox cleanup failure boundaries",
     "wave_17_voice_recovery_tests": "4 passed; scoped recording move/discard, draft reload, ownership guard, and truthful missing-file copy",
     "wave_17_date_contract_tests": "8 Functions tests plus 3 Dart reliability/copy tests; calendar keys, boundaries, field-level mapping, and timezone-shift handling",
+    "wave_18_media_cleanup_tests": "5 passed; deterministic reference-failure cleanup, ambiguous-failure deferral, scoped path guards, and idempotent missing-object handling",
+    "wave_18_mute_mutation_tests": "2 passed; pending/repeat blocking/rollback and acknowledged success",
+    "wave_18_focused_flutter_tests": "13 passed; media policy, managed cleanup, and study mute semantics",
     "scheduled_over_500_tests": "pass: 1,200 lifecycle writes in 450/450/300 chunks; 800-item deletion path in 450/350 chunks",
     "dependency_audit": "high severity clean after npm audit fix --package-lock-only; 9 moderate nested uuid advisories remain under Google client dependencies",
     "git_diff_check": "pass",
@@ -43,6 +46,6 @@
     "production signing and App/Universal Link verification",
     "legal, store, monitoring, and operational approval"
   ],
-  "next_action": "Commit Wave 17 locally, then continue with the next bounded source-closure wave. Keep the move-to-draft crash window, full mutation inventory, Firestore native-cache/account-switch, App Check project/enforcement, Android/device QA, signed AAB/size, migration/backup, links, legal, and operations as explicit gates.",
-  "updated_at": "2026-08-01T18:00:00+01:00"
+  "next_action": "Commit Wave 18 locally, then review the next bounded source-controlled plan cluster. Keep the media reconciliation boundary, full mutation inventory, move-to-draft crash window, Firestore native-cache/account-switch, App Check project/enforcement, Android/device QA, signed AAB/size, migration/backup, links, legal, and operations as explicit gates.",
+  "updated_at": "2026-08-01T11:01:24+01:00"
 }

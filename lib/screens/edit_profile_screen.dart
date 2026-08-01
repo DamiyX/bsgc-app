@@ -86,10 +86,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final reference = FirebaseFirestore.instance
           .collection('users_public')
           .doc(user.uid);
-      await reference.update({
-        'photoUrl': storagePath,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      await StorageService.commitReferenceOrCleanup(
+        commit: () => reference.update({
+          'photoUrl': storagePath,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }),
+        cleanup: () => StorageService.deleteUncommittedAsset(
+          storagePath: storagePath,
+          ownerId: user.uid,
+        ),
+        shouldCleanup: (error) =>
+            StorageService.shouldCleanupAfterReferenceFailure(
+              error is FirebaseException ? error.code : null,
+            ),
+      );
       await waitForDocumentCommit(reference);
       _showMessage('Profile picture updated.');
     } on TimeoutException {

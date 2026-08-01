@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:uuid/uuid.dart';
 
+import 'media_reference_policy.dart';
+
 class ManagedMediaAsset {
   final String assetId;
   final String storagePath;
@@ -24,6 +26,71 @@ class StorageService {
   static final FirebaseStorage _storage = FirebaseStorage.instance;
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static const Uuid _uuid = Uuid();
+
+  /// Runs a reference write and removes a newly uploaded object only when the
+  /// write fails deterministically. Ambiguous network failures leave the
+  /// pending asset for the server-side reconciler; deleting it here could
+  /// race a write that was accepted remotely. The caller must provide the
+  /// failure classifier so an unrecognized error fails closed.
+  static Future<void> commitReferenceOrCleanup({
+    required Future<void> Function() commit,
+    required Future<void> Function() cleanup,
+    required bool Function(Object error) shouldCleanup,
+  }) async {
+    try {
+      await commit();
+    } catch (error) {
+      if (shouldCleanup(error)) {
+        try {
+          await cleanup();
+        } catch (_) {
+          // The original reference error is more actionable. The pending
+          // managed asset remains eligible for the scheduled reconciler.
+        }
+      }
+      rethrow;
+    }
+  }
+
+  /// Deletes an uploaded profile/cover object that has not been committed to
+  /// its owning Firestore document. The path must be canonical and scoped to
+  /// the authenticated account/group before a destructive call is made.
+  static Future<void> deleteUncommittedAsset({
+    required String storagePath,
+    required String ownerId,
+    String? groupId,
+  }) async {
+    final isProfilePhoto = isCanonicalProfilePhotoPath(storagePath, ownerId);
+    final isGroupCover =
+        groupId != null && isCanonicalGroupCoverPath(storagePath, groupId);
+    if (!isProfilePhoto && !isGroupCover) {
+      throw ArgumentError.value(
+        storagePath,
+        'storagePath',
+        'Only an account/group-scoped managed asset can be discarded.',
+      );
+    }
+
+    try {
+      await _storage.ref().child(storagePath).delete();
+    } on FirebaseException catch (error) {
+      if (error.code != 'object-not-found') rethrow;
+    }
+  }
+
+  /// Returns false for failures where a callable/write may have committed
+  /// remotely even though the client did not receive an acknowledgement.
+  static bool shouldCleanupAfterReferenceFailure(String? errorCode) {
+    return !const {
+      'aborted',
+      'cancelled',
+      'deadline-exceeded',
+      'internal',
+      'network-request-failed',
+      'unavailable',
+      'unknown',
+    }.contains(errorCode);
+  }
 
   static Future<String> uploadProfileImage({
     required Uint8List bytes,

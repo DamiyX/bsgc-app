@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:bsgc_app/screens/settings_screen.dart';
 import 'package:bsgc_app/services/draft_service.dart';
+import 'package:bsgc_app/services/insight_action_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -33,6 +36,42 @@ void main() {
         ),
         isFalse,
       );
+    },
+  );
+
+  test(
+    'study notification mute stays pending, blocks repeats, and rolls back',
+    () async {
+      final acknowledgement = Completer<void>();
+      final mute = ReversibleToggleController(initialValue: false);
+
+      final save = mute.setValue(true, (_) => acknowledgement.future);
+
+      expect(mute.value, isTrue);
+      expect(mute.isPending, isTrue);
+      expect(
+        await mute.setValue(false, (_) async {}),
+        isFalse,
+        reason: 'A second toggle must not race the pending server write.',
+      );
+
+      acknowledgement.completeError(StateError('offline'));
+      expect(await save, isFalse);
+      expect(mute.value, isFalse);
+      expect(mute.isPending, isFalse);
+      expect(mute.lastError, isNotNull);
+    },
+  );
+
+  test(
+    'study notification mute remains changed after acknowledgement',
+    () async {
+      final mute = ReversibleToggleController(initialValue: false);
+
+      expect(await mute.setValue(true, (_) async {}), isTrue);
+      expect(mute.value, isTrue);
+      expect(mute.isPending, isFalse);
+      expect(mute.lastError, isNull);
     },
   );
 }

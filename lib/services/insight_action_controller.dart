@@ -21,25 +21,33 @@ class ReversibleToggleController extends ChangeNotifier {
   bool _value;
   bool _isPending = false;
   Object? _lastError;
+  bool _disposed = false;
 
   bool get value => _value;
   bool get isPending => _isPending;
   Object? get lastError => _lastError;
 
+  void _notifyListenersSafely() {
+    if (!_disposed) notifyListeners();
+  }
+
   void replaceValue(bool value) {
     if (_isPending || _value == value) return;
     _value = value;
     _lastError = null;
-    notifyListeners();
+    _notifyListenersSafely();
   }
 
-  Future<bool> toggle(Future<void> Function(bool nextValue) persist) async {
-    if (_isPending) return false;
+  Future<bool> setValue(
+    bool nextValue,
+    Future<void> Function(bool nextValue) persist,
+  ) async {
+    if (_isPending || _value == nextValue) return false;
     final previousValue = _value;
-    _value = !previousValue;
+    _value = nextValue;
     _isPending = true;
     _lastError = null;
-    notifyListeners();
+    _notifyListenersSafely();
     try {
       await persist(_value);
       return true;
@@ -49,7 +57,17 @@ class ReversibleToggleController extends ChangeNotifier {
       return false;
     } finally {
       _isPending = false;
-      notifyListeners();
+      _notifyListenersSafely();
     }
+  }
+
+  Future<bool> toggle(Future<void> Function(bool nextValue) persist) {
+    return setValue(!_value, persist);
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }

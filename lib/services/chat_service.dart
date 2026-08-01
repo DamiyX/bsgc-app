@@ -705,21 +705,25 @@ class ChatService {
 
   Future<void> setGroupMuted(String groupId, bool muted) async {
     final user = _requireUser();
-    await _firestore
+    final reference = _firestore
         .collection('users')
         .doc(user.uid)
         .collection('group_state')
-        .doc(groupId)
-        .set({
-          'groupId': groupId,
-          if (muted)
-            'mutedUntil': Timestamp.fromDate(
-              DateTime.now().add(const Duration(days: 365)),
-            )
-          else
-            'mutedUntil': FieldValue.delete(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        .doc(groupId);
+    await reference.set({
+      'groupId': groupId,
+      if (muted)
+        'mutedUntil': Timestamp.fromDate(
+          DateTime.now().add(const Duration(days: 365)),
+        )
+      else
+        'mutedUntil': FieldValue.delete(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    // Firestore resolves an offline write locally. Do not let the study
+    // details switch present a durable preference until the server has
+    // acknowledged this account-scoped mutation.
+    await waitForDocumentCommit(reference);
   }
 
   Future<bool> isGroupMuted(String groupId) async {
