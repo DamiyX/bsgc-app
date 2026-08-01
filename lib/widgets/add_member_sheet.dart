@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -5,6 +6,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../services/chat_service.dart';
+import '../services/user_facing_error_copy.dart';
 
 class AddMemberSheet extends StatefulWidget {
   final String groupId;
@@ -38,10 +40,14 @@ class _AddMemberSheetState extends State<AddMemberSheet> {
       );
       if (!mounted) return;
       setState(() => _invite = invite);
-    } catch (error) {
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('Group invitation creation failed (${error.runtimeType}).');
+        debugPrintStack(stackTrace: stackTrace);
+      }
       if (!mounted) return;
       setState(() {
-        _errorMessage = error.toString().replaceFirst('Exception: ', '');
+        _errorMessage = groupInviteErrorCopy(error);
       });
     } finally {
       if (mounted) setState(() => _isCreating = false);

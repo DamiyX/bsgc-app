@@ -27,5 +27,4 @@ void main() {
     expect(activated, same(plan));
     expect(plan.environment, BraidEnvironment.staging);
   });
-
 }

@@ -331,3 +331,27 @@ handoff and workflow state. It remains source evidence only: the branch is
 still **internal preview/development only**, and device, native Firestore cache
 isolation, Firebase App Check registration/enforcement, signed artifacts,
 production operations, legal approval, and release decision remain open.
+
+## Continuation verification — Wave 15 source closure
+
+Wave 15 checked the next source-adjacent items without reopening the accepted
+boundaries or treating device evidence as implied:
+
+- `REL-027` and the scoped `UX-010` paths now map account-deletion and
+  group-invite failures from typed backend codes to stable actionable copy.
+  Raw exception/plugin messages are not rendered; debug diagnostics omit the
+  raw message. Profile-edit commit acknowledgement from Wave 14 remains in
+  force.
+- `REL-026` is improved for those callable paths because their server codes are
+  mapped instead of displayed. The broader date-picker/time-zone contract is
+  still a separate review item.
+- `REL-020` was re-verified rather than changed: the earlier Wave 2
+  `GroupStreamRetryController` creates a fresh stream and the existing test
+  proves the stream identity changes. Its device visual/error acceptance gate
+  remains open.
+
+The Wave 15 handoff records clean analysis, 20 focused tests, and 90 full
+Flutter tests. The branch remains **internal preview/development only**; the
+full mutation inventory, device/offline matrix, native Firestore cache
+isolation, App Check project/enforcement, signed artifacts, operations, and
+legal/product approval remain open.

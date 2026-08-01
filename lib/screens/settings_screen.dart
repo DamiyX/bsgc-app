@@ -10,6 +10,7 @@ import '../services/account_service.dart';
 import '../services/auth_service.dart';
 import '../services/device_settings_service.dart';
 import '../services/notification_service.dart';
+import '../services/user_facing_error_copy.dart';
 import '../theme.dart';
 import 'about_platform_screen.dart';
 import 'edit_profile_screen.dart';
@@ -240,11 +241,15 @@ class _SettingsScreenState extends State<SettingsScreen>
       );
       await AuthService().signOut();
       if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
-    } catch (error) {
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('Account deletion request failed (${error.runtimeType}).');
+        debugPrintStack(stackTrace: stackTrace);
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(error.toString())));
+      ).showSnackBar(SnackBar(content: Text(accountDeletionErrorCopy(error))));
     } finally {
       if (mounted) setState(() => _isDeletingAccount = false);
     }

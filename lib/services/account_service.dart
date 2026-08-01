@@ -19,6 +19,7 @@ class AccountService {
     } on FirebaseFunctionsException catch (error) {
       throw AccountDeletionException(
         error.message ?? 'Your account could not be deleted.',
+        code: error.code,
       );
     }
   }
@@ -33,8 +34,9 @@ class AccountDeletionRequest {
 
 class AccountDeletionException implements Exception {
   final String message;
+  final String code;
 
-  const AccountDeletionException(this.message);
+  const AccountDeletionException(this.message, {this.code = 'unknown'});
 
   @override
   String toString() => message;

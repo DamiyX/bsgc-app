@@ -248,6 +248,27 @@ acceptance. Native Firestore cache isolation, App Check project setup and
 enforcement, CI/device review, signed artifacts, links, migration/backup,
 moderation operations, and legal/product approval remain open gates.
 
+## Implementation status — continuation wave 15 source-closure slice
+
+The detailed handoff is `docs/testing/wave-15-source-closure.md`.
+
+This wave closes a bounded part of the remaining error-trust surface:
+
+- `REL-027`/`UX-010`: account deletion and group-invite failures now preserve
+  typed backend codes and render stable, actionable product copy. Raw callable
+  or plugin exception messages are not rendered; debug diagnostics omit the
+  raw message. The full mutation inventory remains open.
+- `REL-026`: the scoped account/invite paths no longer expose raw server error
+  text. The broader date-picker/time-zone contract still needs its own review.
+- `REL-020`: verification found the source fix already present from Wave 2;
+  `GroupStreamRetryController.retry()` creates a fresh stream and its focused
+  test proves the replacement. No duplicate source change was made.
+
+The pinned Flutter toolchain reports clean formatting and analysis, 20 focused
+tests, and 90 full Flutter tests. This is source evidence only; device failure
+states, native cache isolation, release artifacts, App Check project setup,
+and owner/product gates remain open.
+
 ---
 
 ## Non-negotiable execution contract
