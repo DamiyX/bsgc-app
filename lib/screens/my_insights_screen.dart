@@ -9,7 +9,7 @@ import 'view_insight_screen.dart';
 import '../widgets/braid_media.dart';
 
 const myInsightsPrivacyNotice =
-    'Visible only to the people you choose while each Insight is active. '
+    'Visible only to the people you choose while each reflection is active. '
     'Braid stores and processes this content to provide the service.';
 
 ViewInsightScreen buildSelectedInsightViewer(
@@ -56,8 +56,8 @@ class MyInsightsScreen extends StatelessWidget {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Delete Insight?'),
-        content: Text('This will permanently delete this insight.'),
+        title: Text('Delete reflection?'),
+        content: Text('This will permanently delete this reflection.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -65,7 +65,10 @@ class MyInsightsScreen extends StatelessWidget {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Delete', style: TextStyle(color: Colors.red)),
+            child: Text(
+              'Delete',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           ),
         ],
       ),
@@ -78,7 +81,7 @@ class MyInsightsScreen extends StatelessWidget {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text("Couldn't delete this Insight. Try again."),
+              content: Text("Couldn't delete this reflection. Try again."),
             ),
           );
         }
@@ -88,18 +91,12 @@ class MyInsightsScreen extends StatelessWidget {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Insight deleted',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            content: const Text('Reflection deleted'),
             behavior: SnackBarBehavior.floating,
             elevation: 0,
             duration: const Duration(seconds: 3),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppRadii.medium),
             ),
           ),
         );
@@ -109,6 +106,7 @@ class MyInsightsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
@@ -120,7 +118,7 @@ class MyInsightsScreen extends StatelessWidget {
           ).colorScheme.onSurface.withValues(alpha: 0.87),
         ),
         title: Text(
-          'My Insights',
+          'Shared reflections',
           style: TextStyle(
             color: Theme.of(
               context,
@@ -137,20 +135,20 @@ class MyInsightsScreen extends StatelessWidget {
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return Center(
-                      child: CircularProgressIndicator(
-                        color: AppColors.gradientEnd,
-                      ),
+                      child: CircularProgressIndicator(color: scheme.primary),
                     );
                   }
                   if (snapshot.hasError) {
-                    return Center(child: Text('Error loading insights'));
+                    return const Center(
+                      child: Text('Reflections are unavailable'),
+                    );
                   }
                   final insights = snapshot.data ?? [];
 
                   if (insights.isEmpty) {
                     return Center(
                       child: Text(
-                        'You have no active notes.',
+                        'You have no active reflections.',
                         style: TextStyle(
                           color: Theme.of(
                             context,
@@ -199,24 +197,16 @@ class MyInsightsScreen extends StatelessWidget {
                           );
                         },
                         leading: Container(
-                          padding: EdgeInsets.all(4),
+                          padding: const EdgeInsets.all(AppSpacing.xxs),
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            gradient: SweepGradient(
-                              colors: [
-                                AppColors.gradientEnd,
-                                AppColors.gradientStart,
-                                AppColors.gradientEnd,
-                                AppColors.gradientStart,
-                                AppColors.gradientEnd,
-                              ],
-                            ),
+                            color: scheme.primaryContainer,
                           ),
                           child: Container(
-                            padding: EdgeInsets.all(2),
+                            padding: const EdgeInsets.all(AppSpacing.xxs / 2),
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: Colors.white,
+                              color: scheme.surface,
                             ),
                             child: BraidAvatar(
                               identity: _currentUserId,
@@ -267,10 +257,7 @@ class MyInsightsScreen extends StatelessWidget {
                           itemBuilder: (context) => [
                             const PopupMenuItem(
                               value: 'delete',
-                              child: Text(
-                                'Delete',
-                                style: TextStyle(color: Colors.red),
-                              ),
+                              child: Text('Delete'),
                             ),
                           ],
                         ),
@@ -282,15 +269,11 @@ class MyInsightsScreen extends StatelessWidget {
             ),
             Container(
               padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-              color: Colors.white,
+              color: scheme.surfaceContainerLow,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    Icons.group_outlined,
-                    size: 14,
-                    color: AppColors.gradientEnd,
-                  ),
+                  Icon(Icons.group_outlined, size: 14, color: scheme.primary),
                   SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -311,14 +294,15 @@ class MyInsightsScreen extends StatelessWidget {
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.gradientEnd,
+        backgroundColor: scheme.primary,
         onPressed: () {
           Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const CreateInsightScreen()),
           );
         },
-        child: Icon(Icons.edit, color: Colors.white),
+        foregroundColor: scheme.onPrimary,
+        child: const Icon(Icons.edit),
       ),
     );
   }

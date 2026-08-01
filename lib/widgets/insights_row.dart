@@ -39,7 +39,7 @@ class _InsightsRowState extends State<InsightsRow> {
           Padding(
             padding: EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
             child: Text(
-              'Insights',
+              'Reflections',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -50,12 +50,12 @@ class _InsightsRowState extends State<InsightsRow> {
             ),
           ),
         SizedBox(
-          height: 130,
+          height: 154,
           child: StreamBuilder<List<InsightModel>>(
             stream: _insightsStream,
             builder: (context, snapshot) {
               if (snapshot.hasError) {
-                return Center(child: Text('Error loading insights'));
+                return const Center(child: Text('Reflections are unavailable'));
               }
 
               final insights = snapshot.data ?? [];
@@ -109,7 +109,7 @@ class _InsightsRowState extends State<InsightsRow> {
                 builder: (context, seenSnapshot) {
                   if (seenSnapshot.hasError) {
                     return const Center(
-                      child: Text("Couldn't load Insight read status"),
+                      child: Text("Couldn't load reflection read status"),
                     );
                   }
                   final seenInsightIds = seenSnapshot.data ?? const <String>{};
@@ -156,136 +156,44 @@ class _InsightsRowState extends State<InsightsRow> {
     Set<String> seenInsightIds,
   ) {
     final user = FirebaseAuth.instance.currentUser;
-    int unseenCount = 0;
-    if (hasMyInsights && user != null) {
-      unseenCount = globalGroupedList.first
-          .where((insight) => !seenInsightIds.contains(insight.id))
-          .length;
-    }
-    bool hasUnseen = unseenCount > 0;
+    final reflections = hasMyInsights ? globalGroupedList.first : const [];
+    final unreadCount = reflections
+        .where((insight) => !seenInsightIds.contains(insight.id))
+        .length;
 
-    return Container(
-      margin: EdgeInsets.only(right: 16),
-      child: Column(
-        children: [
-          Stack(
-            children: [
-              GestureDetector(
-                onTap: () {
-                  if (hasMyInsights) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ViewInsightScreen(
-                          userInsightsGroups: globalGroupedList,
-                          initialUserIndex: 0,
-                          seenInsightIds: seenInsightIds,
-                        ),
-                      ),
-                    );
-                  } else {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const CreateInsightScreen(),
-                      ),
-                    );
-                  }
-                },
-                child: Container(
-                  padding: EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: (hasMyInsights && hasUnseen)
-                        ? SweepGradient(
-                            colors: [
-                              AppColors.gradientEnd,
-                              AppColors.gradientStart,
-                              AppColors.gradientEnd,
-                              AppColors.gradientStart,
-                              AppColors.gradientEnd,
-                            ],
-                          )
-                        : null,
-                    color: (hasMyInsights && hasUnseen)
-                        ? null
-                        : Theme.of(context).dividerColor,
-                  ),
-                  child: Container(
-                    padding: EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Theme.of(context).scaffoldBackgroundColor,
-                    ),
-                    child: CurrentUserAvatar(
-                      userId: user?.uid ?? '',
-                      fallbackDisplayName: user?.displayName ?? 'You',
-                      fallbackPhotoUrl: user?.photoURL,
-                      radius: 40,
-                    ),
-                  ),
-                ),
-              ),
-              if (!hasMyInsights)
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const CreateInsightScreen(),
-                        ),
-                      );
-                    },
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.gradientEnd,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                      padding: EdgeInsets.all(2),
-                      child: Icon(Icons.add, color: Colors.white, size: 16),
-                    ),
-                  ),
-                )
-              else if (hasUnseen)
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.gradientEnd,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
-                    padding: EdgeInsets.all(4),
-                    child: Text(
-                      unseenCount.toString(),
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          SizedBox(height: 6),
-          Text(
-            hasMyInsights ? 'My Insight' : 'Add Insight',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.87),
-            ),
-          ),
-        ],
+    return _ReflectionCard(
+      title: hasMyInsights ? 'Your reflections' : 'Start a reflection',
+      subtitle: hasMyInsights
+          ? '${reflections.length} active reflection${reflections.length == 1 ? '' : 's'}${unreadCount == 0 ? '' : ' • $unreadCount to read'}'
+          : 'Keep a thought private, or choose people to share it with.',
+      avatar: CurrentUserAvatar(
+        userId: user?.uid ?? '',
+        fallbackDisplayName: user?.displayName ?? 'You',
+        fallbackPhotoUrl: user?.photoURL,
+        radius: 24,
       ),
+      icon: hasMyInsights
+          ? Icons.auto_stories_outlined
+          : Icons.add_circle_outline_rounded,
+      onTap: () {
+        if (hasMyInsights) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ViewInsightScreen(
+                userInsightsGroups: globalGroupedList,
+                initialUserIndex: 0,
+                seenInsightIds: seenInsightIds,
+              ),
+            ),
+          );
+        } else {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const CreateInsightScreen()),
+          );
+        }
+      },
     );
   }
 
@@ -302,16 +210,21 @@ class _InsightsRowState extends State<InsightsRow> {
     );
     final authorPhotoUrl = userInsights.first.authorPhotoUrl;
 
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-    int unseenCount = 0;
-    if (currentUserId != null) {
-      unseenCount = userInsights
-          .where((insight) => !seenInsightIds.contains(insight.id))
-          .length;
-    }
-    bool hasUnseen = unseenCount > 0;
+    final unreadCount = userInsights
+        .where((insight) => !seenInsightIds.contains(insight.id))
+        .length;
 
-    return GestureDetector(
+    return _ReflectionCard(
+      title: authorName.split(' ').first,
+      subtitle:
+          '${userInsights.length} reflection${userInsights.length == 1 ? '' : 's'}${unreadCount == 0 ? '' : ' • $unreadCount to read'}',
+      avatar: BraidAvatar(
+        identity: userInsights.first.authorUid,
+        displayName: authorName,
+        imageUrl: authorPhotoUrl,
+        radius: 24,
+      ),
+      icon: Icons.arrow_forward_rounded,
       onTap: () {
         Navigator.push(
           context,
@@ -324,84 +237,64 @@ class _InsightsRowState extends State<InsightsRow> {
           ),
         );
       },
-      child: Container(
-        margin: EdgeInsets.only(right: 16),
-        child: Column(
-          children: [
-            Stack(
+    );
+  }
+}
+
+class _ReflectionCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final Widget avatar;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _ReflectionCard({
+    required this.title,
+    required this.subtitle,
+    required this.avatar,
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: 216,
+      child: Card(
+        elevation: 0,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.sm),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: hasUnseen
-                        ? SweepGradient(
-                            colors: [
-                              AppColors.gradientEnd,
-                              AppColors.gradientStart,
-                              AppColors.gradientEnd,
-                              AppColors.gradientStart,
-                              AppColors.gradientEnd,
-                            ],
-                          )
-                        : null,
-                    color: hasUnseen ? null : Theme.of(context).dividerColor,
-                  ),
-                  child: Container(
-                    padding: EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Theme.of(context).scaffoldBackgroundColor,
-                    ),
-                    child: BraidAvatar(
-                      identity: userInsights.first.authorUid,
-                      displayName: authorName,
-                      imageUrl: authorPhotoUrl,
-                      radius: 40,
-                    ),
-                  ),
+                Row(
+                  children: [
+                    avatar,
+                    const Spacer(),
+                    Icon(icon, size: 20, color: scheme.primary),
+                  ],
                 ),
-                if (hasUnseen)
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.gradientEnd,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                      padding: EdgeInsets.all(4),
-                      child: Text(
-                        unseenCount.toString(),
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: scheme.onSurfaceVariant),
+                ),
               ],
             ),
-            SizedBox(height: 6),
-            SizedBox(
-              width: 90,
-              child: Text(
-                authorName.split(' ').first,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: hasUnseen ? FontWeight.w600 : FontWeight.normal,
-                  color: hasUnseen
-                      ? Theme.of(context).colorScheme.onSurface
-                      : Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

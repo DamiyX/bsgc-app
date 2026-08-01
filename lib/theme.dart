@@ -13,6 +13,38 @@ class AppColors {
   static const Color calendarSoftPurple = Color(0xFFF2EAF4);
 }
 
+/// Shared layout tokens for the product surfaces.
+///
+/// Keeping these values in one place makes the core journey easier to tune
+/// without introducing screen-specific spacing or radius dialects.
+class AppSpacing {
+  AppSpacing._();
+
+  static const double xxs = 4;
+  static const double xs = 8;
+  static const double sm = 12;
+  static const double md = 16;
+  static const double lg = 20;
+  static const double xl = 24;
+  static const double xxl = 32;
+}
+
+class AppRadii {
+  AppRadii._();
+
+  static const double small = 10;
+  static const double medium = 14;
+  static const double large = 18;
+  static const double pill = 999;
+}
+
+class AppMotion {
+  AppMotion._();
+
+  static const Duration quick = Duration(milliseconds: 150);
+  static const Duration standard = Duration(milliseconds: 220);
+}
+
 @immutable
 class BraidSemanticColors extends ThemeExtension<BraidSemanticColors> {
   final Color scriptureSurface;
@@ -160,15 +192,15 @@ ThemeData _buildTheme(Brightness brightness) {
       filled: true,
       fillColor: scheme.surfaceContainerLow,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppRadii.medium),
         borderSide: BorderSide(color: scheme.outlineVariant),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppRadii.medium),
         borderSide: BorderSide(color: scheme.outlineVariant),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppRadii.medium),
         borderSide: BorderSide(color: scheme.primary, width: 2),
       ),
       floatingLabelStyle: TextStyle(color: scheme.primary),
@@ -195,7 +227,9 @@ ThemeData _buildTheme(Brightness brightness) {
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         minimumSize: const Size(48, 48),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.medium),
+        ),
       ),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
@@ -204,7 +238,9 @@ ThemeData _buildTheme(Brightness brightness) {
         foregroundColor: scheme.onPrimary,
         minimumSize: const Size(48, 48),
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.medium),
+        ),
       ),
     ),
     iconButtonTheme: IconButtonThemeData(

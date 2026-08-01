@@ -44,6 +44,35 @@ requires approved deployment and emulator/device verification.
 
 Everything not listed above remains open under the milestones below.
 
+## Implementation status — wave 8 UX slice
+
+**Local status:** implemented locally and verified by static analysis and
+focused/full Flutter tests; device/emulator visual verification remains open.
+
+This bounded product wave addresses the safe MVP portion of Milestone 8:
+
+| Finding | Implemented outcome |
+|---|---|
+| UX-001, UX-003 | Journal cards can open a reviewed, prefilled contacts-reflection copy; the private note is not mutated. The existing audience entry sheet remains the adapter boundary for private, contact, and group destinations. |
+| UX-002 | Today only selects an active study and says “Continue a study”; it does not claim schedule-aware “Next study” behavior. |
+| UX-004 | Groups exposes a separately loaded Archived studies route with read-only room access. |
+| UX-006 | Contact reflections use calm labeled cards instead of story-ring urgency gradients or tap-third presentation. |
+| UX-007, UX-008, REL-024 | Group reflection entry opens the Reflections space, and the last non-plan space is remembered per account and group. |
+| UX-012, UX-014, UX-016 | Public copy prefers “reflection”; shared spacing/radius/motion tokens and semantic light/dark surfaces are documented and applied to core surfaces. |
+
+Wave 8 evidence:
+
+- Dart formatting: pass;
+- Flutter analysis: no issues;
+- Full Flutter tests: 78 passed;
+- Focused product-journey tests: 3 passed;
+- Git whitespace validation: pass.
+
+Still required before Milestone 8 acceptance: emulator/physical-device checks
+for archive read-only behavior, scheduled-only Today state, journal copy
+privacy/expiry, remembered spaces, large text, light/dark themes, and product
+usability screenshots. Final brand asset approval remains a release gate.
+
 ---
 
 ## Non-negotiable execution contract

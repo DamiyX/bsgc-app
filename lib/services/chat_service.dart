@@ -198,6 +198,18 @@ class ChatService {
         });
   }
 
+  static List<GroupModel> sortArchivedGroups(Iterable<GroupModel> source) {
+    final groups = source
+        .where((group) => group.lifecycle == 'archived')
+        .toList();
+    groups.sort((a, b) {
+      final aTime = a.endDate ?? a.lastMessageTime ?? a.createdAt;
+      final bTime = b.endDate ?? b.lastMessageTime ?? b.createdAt;
+      return bTime.compareTo(aTime);
+    });
+    return groups;
+  }
+
   Future<GroupModel> createGroup({
     required String name,
     required String description,
@@ -236,6 +248,19 @@ class ChatService {
         error is FirebaseFunctionsException ? error.code : null,
       );
     }
+  }
+
+  /// Loads archived studies separately so the active study stream stays
+  /// bounded to the groups that can receive new activity.
+  Future<List<GroupModel>> getArchivedGroups() async {
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return const [];
+
+    final snapshot = await _firestore
+        .collection('groups')
+        .where('members', arrayContains: userId)
+        .get();
+    return sortArchivedGroups(snapshot.docs.map(GroupModel.fromFirestore));
   }
 
   Future<GroupInvite> createGroupInvite(

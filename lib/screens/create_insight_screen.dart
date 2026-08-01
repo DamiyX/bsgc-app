@@ -10,7 +10,10 @@ import '../services/insight_service.dart';
 import '../theme.dart';
 
 class CreateInsightScreen extends StatefulWidget {
-  const CreateInsightScreen({super.key});
+  final String? initialTitle;
+  final String? initialBody;
+
+  const CreateInsightScreen({super.key, this.initialTitle, this.initialBody});
 
   @override
   State<CreateInsightScreen> createState() => _CreateInsightScreenState();
@@ -34,7 +37,14 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
     super.initState();
     _titleController.addListener(_scheduleDraftSave);
     _bodyController.addListener(_scheduleDraftSave);
-    _restoreDraft();
+    if (widget.initialTitle != null || widget.initialBody != null) {
+      _isRestoringDraft = true;
+      _titleController.text = widget.initialTitle ?? '';
+      _bodyController.text = widget.initialBody ?? '';
+      _isRestoringDraft = false;
+    } else {
+      _restoreDraft();
+    }
   }
 
   Future<void> _restoreDraft() async {
@@ -94,7 +104,9 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Discard draft?'),
-          content: const Text('Your unsent contact Insight will be removed.'),
+          content: const Text(
+            'Your unsent contact reflection will be removed.',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -126,7 +138,7 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sign in before sharing an Insight.')),
+        const SnackBar(content: Text('Sign in before sharing a reflection.')),
       );
       return;
     }
@@ -165,7 +177,7 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'This Insight could not be published. Check your connection and '
+              'This reflection could not be shared. Check your connection and '
               'try again.',
             ),
           ),
@@ -180,9 +192,11 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final semantic = theme.extension<BraidSemanticColors>()!;
+    final isJournalCopy =
+        widget.initialTitle != null || widget.initialBody != null;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Share an Insight'),
+        title: const Text('Share a reflection'),
         actions: [
           IconButton(
             tooltip: 'Discard draft',
@@ -198,7 +212,7 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
                       dimension: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Publish'),
+                  : const Text('Share'),
             ),
           ),
         ],
@@ -217,10 +231,13 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
                     Icons.people_outline_rounded,
                     color: semantic.contactsAudience,
                   ),
-                  title: const Text('Study contacts'),
-                  subtitle: const Text(
-                    'Visible for 3 days to people connected through an '
-                    'accepted study invitation. Publishing needs internet.',
+                  title: Text(
+                    isJournalCopy ? 'Review a journal copy' : 'Study contacts',
+                  ),
+                  subtitle: Text(
+                    isJournalCopy
+                        ? 'This copy stays private until you choose to share it. Shared reflections are visible for 3 days and need internet.'
+                        : 'Visible for 3 days to people connected through an accepted study invitation. Sharing needs internet.',
                   ),
                 ),
               ),
@@ -238,7 +255,9 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
                 ),
                 validator: (value) {
                   final text = value?.trim() ?? '';
-                  if (text.isEmpty) return 'Give this Insight a short title.';
+                  if (text.isEmpty) {
+                    return 'Give this reflection a short title.';
+                  }
                   if (text.length > 160) {
                     return 'Use no more than 160 characters.';
                   }

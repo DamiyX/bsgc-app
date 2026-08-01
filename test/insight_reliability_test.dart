@@ -127,12 +127,12 @@ void main() {
       await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Delete Insight?'), findsOneWidget);
+      expect(find.text('Delete reflection?'), findsOneWidget);
       await tester.tap(find.widgetWithText(TextButton, 'Delete'));
       await tester.pumpAndSettle();
 
       expect(source.deletedIds, ['insight-1']);
-      expect(find.text('Insight deleted'), findsOneWidget);
+      expect(find.text('Reflection deleted'), findsOneWidget);
       expect(find.text('UNDO'), findsNothing);
     });
   });

@@ -12,9 +12,9 @@ Braid is not a WhatsApp clone or a popularity feed. It helps a person move throu
 
 ## Primary navigation
 
-- **Today:** next study step, recent eligible contacts Insights, and private reflection entry.
+- **Today:** continue an active study, recent eligible contact reflections, and private reflection entry. Schedule-specific language is deferred until a schedule service exists.
 - **Groups:** study circles and lifecycle/progress state.
-- **Journal:** private searchable reflections and saved material.
+- **Journal:** private searchable reflections, with an explicit reviewed-copy action when the author chooses to share one.
 - **Me:** identity, safety, privacy, notification, storage, legal, and account controls.
 
 ## Study-room spaces
@@ -33,6 +33,9 @@ Braid is not a WhatsApp clone or a popularity feed. It helps a person move throu
 No control may use “public” for a contacts-scoped Insight.
 
 ## Healthy engagement
+
+Public-facing copy uses **reflection**. `Insight` remains an internal/backend
+compatibility term until a separate migration is approved.
 
 Measure completed study steps, accepted invitees who participate, substantive comments, and private reflections deliberately shared. Do not rank by likes, follower counts, referral-tree size, or post volume.
 

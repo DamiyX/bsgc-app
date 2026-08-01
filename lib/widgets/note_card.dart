@@ -7,12 +7,14 @@ import 'clickable_scripture_text.dart';
 class NoteCard extends StatelessWidget {
   final NoteModel note;
   final VoidCallback onDelete;
+  final VoidCallback? onShare;
   final bool isGrid;
 
   const NoteCard({
     super.key,
     required this.note,
     required this.onDelete,
+    this.onShare,
     this.isGrid = false,
   });
 
@@ -69,8 +71,22 @@ class NoteCard extends StatelessWidget {
                         if (val == 'delete') {
                           onDelete();
                         }
+                        if (val == 'share') {
+                          onShare?.call();
+                        }
                       },
                       itemBuilder: (context) => [
+                        if (onShare != null)
+                          const PopupMenuItem(
+                            value: 'share',
+                            child: Row(
+                              children: [
+                                Icon(Icons.ios_share_outlined),
+                                SizedBox(width: 8),
+                                Text('Share a copy'),
+                              ],
+                            ),
+                          ),
                         const PopupMenuItem(
                           value: 'delete',
                           child: Row(

@@ -20,6 +20,7 @@ import '../widgets/note_card.dart';
 import 'create_group_screen.dart';
 import 'create_insight_screen.dart';
 import 'create_note_screen.dart';
+import 'archived_studies_screen.dart';
 import 'profile_screen.dart';
 import 'safety_center_screen.dart';
 import 'settings_screen.dart';
@@ -31,6 +32,13 @@ class MainHallScreen extends StatefulWidget {
 
   @override
   State<MainHallScreen> createState() => _MainHallScreenState();
+}
+
+GroupModel? selectTodayStudy(Iterable<GroupModel> groups) {
+  for (final group in groups) {
+    if (group.lifecycle == 'active') return group;
+  }
+  return null;
 }
 
 class _MainHallScreenState extends State<MainHallScreen> {
@@ -305,6 +313,7 @@ class _MainHallScreenState extends State<MainHallScreen> {
   Future<void> _openGroup(
     GroupModel group, {
     NotificationDestination? destination,
+    String? initialSpace,
   }) async {
     unawaited(_chatService.resetUnreadCount(group.id));
     await Navigator.push(
@@ -312,7 +321,7 @@ class _MainHallScreenState extends State<MainHallScreen> {
       MaterialPageRoute(
         builder: (_) => StudyRoomScreen(
           group: group,
-          initialSpace: destination?.space,
+          initialSpace: destination?.space ?? initialSpace,
           targetMessageId: destination?.messageId,
           onTargetResolved: destination == null
               ? null
@@ -321,6 +330,13 @@ class _MainHallScreenState extends State<MainHallScreen> {
                 ),
         ),
       ),
+    );
+  }
+
+  Future<void> _openArchivedStudies() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ArchivedStudiesScreen()),
     );
   }
 
@@ -378,7 +394,7 @@ class _MainHallScreenState extends State<MainHallScreen> {
                 icon: Icons.people_outline_rounded,
                 title: 'Study contacts',
                 description:
-                    'Share an Insight with people you have intentionally connected with.',
+                    'Share a reflection with people you have intentionally connected with.',
                 onTap: () {
                   Navigator.pop(sheetContext);
                   Navigator.push(
@@ -399,7 +415,9 @@ class _MainHallScreenState extends State<MainHallScreen> {
                 onTap: () async {
                   Navigator.pop(sheetContext);
                   final selected = await _chooseGroup(activeGroups);
-                  if (selected != null && mounted) await _openGroup(selected);
+                  if (selected != null && mounted) {
+                    await _openGroup(selected, initialSpace: 'reflection');
+                  }
                 },
               ),
             ],
@@ -576,15 +594,9 @@ class _MainHallScreenState extends State<MainHallScreen> {
 
   Widget _buildToday(List<GroupModel> groups, bool showingCachedData) {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    final activeGroups = groups
-        .where((group) => group.lifecycle == 'active')
-        .toList();
-    final scheduledGroups = groups
-        .where((group) => group.lifecycle == 'scheduled')
-        .toList();
-    final nextGroup = activeGroups.isNotEmpty
-        ? activeGroups.first
-        : (scheduledGroups.isNotEmpty ? scheduledGroups.first : null);
+    // There is no schedule/progression service yet, so do not imply that the
+    // first returned group is the user's next scheduled study.
+    final nextGroup = selectTodayStudy(groups);
 
     return ListView(
       key: const PageStorageKey('today'),
@@ -646,7 +658,7 @@ class _MainHallScreenState extends State<MainHallScreen> {
                     const SizedBox(height: 4),
                     Text(
                       'Enable private-by-default alerts for group messages and '
-                      'contacts’ Insights. Message text stays hidden on the '
+                      'contacts’ reflections. Message text stays hidden on the '
                       'lock screen unless you choose otherwise.',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -685,7 +697,7 @@ class _MainHallScreenState extends State<MainHallScreen> {
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 22, 20, 4),
           child: Text(
-            'From your study contacts',
+            'Reflections from your study contacts',
             style: Theme.of(
               context,
             ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
@@ -705,16 +717,20 @@ class _MainHallScreenState extends State<MainHallScreen> {
   }
 
   Widget _buildGroups(List<GroupModel> groups) {
-    if (groups.isEmpty) {
-      return _EmptyGroups(onCreate: _createGroup);
-    }
     return ListView.separated(
       key: const PageStorageKey('groups'),
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 112),
-      itemCount: groups.length,
+      itemCount: groups.length + (groups.isEmpty ? 2 : 1),
       separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
-        final group = groups[index];
+        if (groups.isEmpty && index == 0) {
+          return _EmptyGroups(onCreate: _createGroup);
+        }
+        final archiveIndex = groups.isEmpty ? 1 : groups.length;
+        if (index == archiveIndex) {
+          return _ArchivedStudiesEntry(onTap: _openArchivedStudies);
+        }
+        final group = groups[groups.isEmpty ? index - 1 : index];
         return _GroupCard(group: group, onTap: () => _openGroup(group));
       },
     );
@@ -784,12 +800,25 @@ class _MainHallScreenState extends State<MainHallScreen> {
                 itemBuilder: (context, index) => NoteCard(
                   note: notes[index],
                   onDelete: () => _confirmDeleteNote(uid, notes[index]),
+                  onShare: () => _shareNoteCopy(notes[index]),
                 ),
               );
             },
           ),
         ),
       ],
+    );
+  }
+
+  Future<void> _shareNoteCopy(NoteModel note) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CreateInsightScreen(
+          initialTitle: note.title,
+          initialBody: note.body,
+        ),
+      ),
     );
   }
 
@@ -856,8 +885,8 @@ class _MainHallScreenState extends State<MainHallScreen> {
         const SizedBox(height: 28),
         _MeDestination(
           icon: Icons.person_outline_rounded,
-          title: 'Profile and saved items',
-          description: 'Edit your identity and revisit saved Insights.',
+          title: 'Profile and saved reflections',
+          description: 'Edit your identity and revisit saved reflections.',
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const ProfileScreen()),
@@ -959,9 +988,7 @@ class _NextStudyCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        group.lifecycle == 'scheduled'
-                            ? 'Your next study'
-                            : 'Continue your study',
+                        'Continue a study',
                         style: Theme.of(context).textTheme.labelLarge?.copyWith(
                           color: scheme.onPrimaryContainer,
                         ),
@@ -1080,6 +1107,30 @@ class _GroupCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ArchivedStudiesEntry extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _ArchivedStudiesEntry({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      child: ListTile(
+        minTileHeight: 64,
+        leading: const Icon(Icons.archive_outlined),
+        title: const Text(
+          'Archived studies',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        subtitle: const Text('Revisit completed studies in read-only mode.'),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: onTap,
       ),
     );
   }

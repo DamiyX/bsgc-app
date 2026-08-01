@@ -8,6 +8,7 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../controllers/study_room_controller.dart';
 import '../models/group_model.dart';
@@ -83,6 +84,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
 
   late final StudyRoomController _controller;
   StudySpace _selectedSpace = StudySpace.discussion;
+  bool _spaceWasChosen = false;
   List<MessagePart> _draftParts = [];
   String? _draftMessageId;
   String? _replyToMessageId;
@@ -117,6 +119,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
     );
     _controller.addListener(_handleControllerUpdate);
     _controller.initialize();
+    unawaited(_restoreLastSpace());
     _textController.addListener(_scheduleDraftSave);
     _messageScrollController.addListener(_handleMessageScroll);
     unawaited(_restoreDraft());
@@ -126,6 +129,36 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _showAddMembers();
       });
+    }
+  }
+
+  String get _spacePreferenceKey => 'study_space_${_uid}_${widget.group.id}';
+
+  Future<void> _restoreLastSpace() async {
+    if (_uid.isEmpty || widget.initialSpace != null) return;
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final saved = preferences.getString(_spacePreferenceKey);
+      final restored = StudySpace.values.firstWhere(
+        (space) => space.wireName == saved && space != StudySpace.plan,
+        orElse: () => StudySpace.discussion,
+      );
+      if (!mounted || _spaceWasChosen || saved == null) return;
+      setState(() => _selectedSpace = restored);
+      unawaited(_revealTargetMessage());
+    } catch (_) {
+      // The room remains usable with the discussion default when preferences
+      // are unavailable.
+    }
+  }
+
+  Future<void> _persistLastSpace(StudySpace space) async {
+    if (_uid.isEmpty || space == StudySpace.plan) return;
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(_spacePreferenceKey, space.wireName);
+    } catch (_) {
+      // Space memory is a convenience, not a reason to block room usage.
     }
   }
 
@@ -297,7 +330,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
 
   void _selectSpace(StudySpace space) {
     if (_selectedSpace == space) return;
+    _spaceWasChosen = true;
     setState(() => _selectedSpace = space);
+    unawaited(_persistLastSpace(space));
     _scheduleDraftSave();
     unawaited(_revealTargetMessage());
   }

@@ -1,7 +1,7 @@
 {
   "workflow": "Braid full audit remediation",
   "branch": "codex/bsgc-full-remediation",
-  "current_phase": "Post-remediation implementation wave 5 verified; awaiting local commit",
+  "current_phase": "Post-remediation implementation wave 8 UX slice verified locally",
   "repository_implementation": "in progress against docs/post-remediation-audit/05-prioritized-implementation-plan.md",
   "automated_verification": {
     "flutter_format": "pass",
@@ -22,6 +22,6 @@
     "production signing and App/Universal Link verification",
     "legal, store, monitoring, and operational approval"
   ],
-  "next_action": "Commit verified Wave 5, then implement Milestones 8-12; keep App Check package activation as an explicit owner-approved gate.",
-  "updated_at": "2026-08-01T07:35:00+01:00"
+  "next_action": "Commit the verified Milestone 8 UX slice locally, then continue Milestones 9-12; keep App Check package activation as an explicit owner-approved gate.",
+  "updated_at": "2026-08-01T08:20:00+01:00"
 }
