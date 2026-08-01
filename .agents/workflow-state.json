@@ -1,16 +1,18 @@
 {
   "workflow": "Braid full audit remediation",
   "branch": "codex/bsgc-full-remediation",
-  "current_phase": "Milestone 12 final regression audit reconciled against post-remediation-audit/00–05; source verification is complete, release gates remain open",
+  "current_phase": "Continuation Wave 13 source-closure slice verified locally; native Firestore cache and release/device gates remain open",
   "repository_implementation": "in progress against docs/post-remediation-audit/05-prioritized-implementation-plan.md",
   "automated_verification": {
     "flutter_format": "pass",
     "flutter_analyze": "pass",
-    "flutter_tests": "80 passed",
+    "flutter_tests": "83 passed",
     "functions_tests": "70 passed",
     "firebase_rules_tests": "31 passed",
     "functions_check": "pass",
     "migration_rehearsal": "pass",
+    "wave_13_account_session_tests": "3 passed; auth subtree epoch boundary integrated",
+    "wave_13_theme_checks": "pass: scoped theme bypasses removed; QR/transparent structural colors retained",
     "scheduled_over_500_tests": "pass: 1,200 lifecycle writes in 450/450/300 chunks; 800-item deletion path in 450/350 chunks",
     "dependency_audit": "high severity clean after npm audit fix --package-lock-only; 9 moderate nested uuid advisories remain under Google client dependencies",
     "git_diff_check": "pass",
@@ -32,6 +34,6 @@
     "production signing and App/Universal Link verification",
     "legal, store, monitoring, and operational approval"
   ],
-  "next_action": "Record the Milestone 12 final audit, run the final local checks, and commit without pushing. Do not merge or release until Android/device evidence, Firestore account isolation, App Check, signed AAB/size, production migration/backup, link, legal, and operational gates are reviewed.",
-  "updated_at": "2026-08-01T12:00:00+01:00"
+  "next_action": "Commit Wave 13 locally, then continue with the next bounded source-closure wave. Keep Firestore native-cache/account-switch, App Check provider activation, Android/device QA, signed AAB/size, migration/backup, links, legal, and operations as explicit gates.",
+  "updated_at": "2026-08-01T13:30:00+01:00"
 }

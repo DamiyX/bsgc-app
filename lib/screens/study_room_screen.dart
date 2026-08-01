@@ -1254,6 +1254,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
   }
 
   Future<void> _showMessageActions(MessageModel message) async {
+    final colorScheme = Theme.of(context).colorScheme;
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -1299,10 +1300,10 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
             if (message.senderId == _uid)
               ListTile(
                 minTileHeight: 56,
-                leading: const Icon(Icons.delete_outline, color: Colors.red),
-                title: const Text(
+                leading: Icon(Icons.delete_outline, color: colorScheme.error),
+                title: Text(
                   'Delete for everyone',
-                  style: TextStyle(color: Colors.red),
+                  style: TextStyle(color: colorScheme.error),
                 ),
                 onTap: () {
                   Navigator.pop(sheetContext);
@@ -1841,6 +1842,7 @@ class _RecordingBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final duration =
         '${(seconds ~/ 60).toString().padLeft(2, '0')}:'
         '${(seconds % 60).toString().padLeft(2, '0')}';
@@ -1849,7 +1851,7 @@ class _RecordingBar extends StatelessWidget {
       label: 'Recording voice reflection, $duration',
       child: Row(
         children: [
-          const Icon(Icons.mic_rounded, color: Colors.red),
+          Icon(Icons.mic_rounded, color: colorScheme.error),
           const SizedBox(width: 8),
           Text(duration, style: const TextStyle(fontWeight: FontWeight.w800)),
           const Spacer(),

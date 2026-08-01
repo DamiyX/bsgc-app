@@ -5,7 +5,6 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../services/chat_service.dart';
-import '../theme.dart';
 
 class AddMemberSheet extends StatefulWidget {
   final String groupId;
@@ -178,14 +177,15 @@ class _AddMemberSheetState extends State<AddMemberSheet> {
                   child: FilledButton.icon(
                     onPressed: _isCreating ? null : _createInvite,
                     style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.gradientEnd,
+                      backgroundColor: colorScheme.primary,
+                      foregroundColor: colorScheme.onPrimary,
                     ),
                     icon: _isCreating
-                        ? const SizedBox.square(
+                        ? SizedBox.square(
                             dimension: 20,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Colors.white,
+                              color: colorScheme.onPrimary,
                             ),
                           )
                         : const Icon(Icons.lock_outline),
@@ -204,6 +204,8 @@ class _AddMemberSheetState extends State<AddMemberSheet> {
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
+                        // QR modules need a stable, high-contrast substrate;
+                        // they intentionally do not follow app theme surfaces.
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(20),
                       ),
@@ -211,13 +213,16 @@ class _AddMemberSheetState extends State<AddMemberSheet> {
                         data: invite.joinUrl,
                         version: QrVersions.auto,
                         size: 210,
+                        // Keep the QR background white for scanner contrast.
                         backgroundColor: Colors.white,
                         eyeStyle: const QrEyeStyle(
                           eyeShape: QrEyeShape.square,
+                          // Keep QR ink dark and theme-independent.
                           color: Color(0xFF4B2A6B),
                         ),
                         dataModuleStyle: const QrDataModuleStyle(
                           dataModuleShape: QrDataModuleShape.square,
+                          // Keep QR ink dark and theme-independent.
                           color: Color(0xFF4B2A6B),
                         ),
                       ),
@@ -253,7 +258,8 @@ class _AddMemberSheetState extends State<AddMemberSheet> {
                       child: FilledButton.icon(
                         onPressed: _shareInvite,
                         style: FilledButton.styleFrom(
-                          backgroundColor: AppColors.gradientEnd,
+                          backgroundColor: colorScheme.primary,
+                          foregroundColor: colorScheme.onPrimary,
                         ),
                         icon: const Icon(Icons.share_outlined),
                         label: const Text('Share'),

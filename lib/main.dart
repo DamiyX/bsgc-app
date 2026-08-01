@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:bsgc_app/services/auth_service.dart';
 import 'package:bsgc_app/services/deep_link_service.dart';
 import 'package:bsgc_app/services/startup_service.dart';
+import 'package:bsgc_app/services/account_session_boundary.dart';
 import 'package:bsgc_app/screens/foyer_screen.dart';
 import 'package:bsgc_app/widgets/user_data_wrapper.dart';
 import 'package:bsgc_app/theme.dart';
@@ -207,6 +208,7 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
+  final _sessionBoundary = AccountSessionBoundary();
   late Stream<User?> _authStream;
   Timer? _authTimeout;
   bool _hasReceivedData = false;
@@ -253,16 +255,22 @@ class _AuthWrapperState extends State<AuthWrapper> {
           _authError = snapshot.error;
         }
         if (snapshot.hasData || snapshot.data != null) {
+          final user = snapshot.data;
+          final session = _sessionBoundary.observe(user?.uid);
           _authTimeout?.cancel();
           _authError = null;
           _hasReceivedData = true;
-          _lastScreen = const UserDataWrapper();
+          // A new key disposes every account-owned descendant before the next
+          // account can render. This prevents stale screen state or an
+          // in-flight profile result from crossing an auth transition.
+          _lastScreen = UserDataWrapper(key: ValueKey<int>(session.widgetKey));
         } else if (snapshot.connectionState == ConnectionState.active &&
             !snapshot.hasData) {
+          final session = _sessionBoundary.observe(null);
           _authTimeout?.cancel();
           _authError = null;
           _hasReceivedData = true;
-          _lastScreen = const FoyerScreen();
+          _lastScreen = FoyerScreen(key: ValueKey<int>(session.widgetKey));
         }
 
         if (_authError != null) {

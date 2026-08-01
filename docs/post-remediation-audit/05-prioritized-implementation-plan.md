@@ -200,6 +200,27 @@ explicit gates. The offline capability matrix and Legal screen were corrected
 so they no longer claim that Firestore persistence is disabled; the SDK cache
 purge/account-switch behavior still requires device evidence.
 
+## Implementation status — continuation wave 13 source-closure slice
+
+The detailed handoff is `docs/testing/wave-13-source-closure.md`.
+
+This wave closes two source-level gaps found during the Milestone 12 review:
+
+- SEC-006 now has an in-process account-session epoch and keyed auth subtree,
+  so stale account-owned widgets are disposed across A/B switches and same-UID
+  reauthentication. It deliberately does not call Firestore `terminate()` or
+  `clearPersistence()` from live sign-out; native cache isolation remains a
+  device acceptance gate.
+- UX-016 residual feature colors in Insight, Study Room, and invitation flows
+  now use `ColorScheme`/semantic theme values. Transparent structural layers
+  and scanner-critical QR colors remain intentional.
+
+The pinned Flutter toolchain reports 87 formatted files, clean analysis, and
+83 passing Flutter tests. This is a source-closure slice, not release
+acceptance: account-switch/offline/process-death, accessibility/contrast,
+App Check, signed artifact, link, production migration, and legal/operations
+gates remain open.
+
 ---
 
 ## Non-negotiable execution contract

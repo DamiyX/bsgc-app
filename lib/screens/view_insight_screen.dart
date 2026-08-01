@@ -441,10 +441,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
           SnackBar(
             content: const Text(
               'Saved while this Insight is active.',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
             behavior: SnackBarBehavior.floating,
             elevation: 0,
@@ -808,6 +805,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
   }
 
   Widget _buildFloatingBottomBar() {
+    final colorScheme = Theme.of(context).colorScheme;
     return Container(
       padding: EdgeInsets.only(left: 16, right: 16, bottom: 8, top: 32),
       decoration: BoxDecoration(
@@ -840,9 +838,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                         vertical: 10,
                       ),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).brightness == Brightness.light
-                            ? Colors.grey[200]
-                            : Theme.of(context).cardColor,
+                        color: colorScheme.surfaceContainerLow,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       alignment: AlignmentDirectional.centerStart,
@@ -907,8 +903,8 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                           : Icon(
                               _isSaved ? Icons.bookmark : Icons.bookmark_border,
                               color: _isSaved
-                                  ? AppColors.gradientEnd
-                                  : Theme.of(context).colorScheme.onSurface,
+                                  ? colorScheme.primary
+                                  : colorScheme.onSurface,
                             ),
                       onPressed: _isSavePending ? null : _toggleSavedInsight,
                     ),
@@ -962,6 +958,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
     List<InsightCommentModel> allComments,
     int depth,
   ) {
+    final colorScheme = Theme.of(context).colorScheme;
     final replies = allComments
         .where((c) => c.replyToId == comment.id)
         .toList();
@@ -1099,10 +1096,8 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                                               : Icons.thumb_up_alt_outlined,
                                           size: 18,
                                           color: reacted
-                                              ? AppColors.primary
-                                              : Theme.of(
-                                                  context,
-                                                ).colorScheme.onSurfaceVariant,
+                                              ? colorScheme.primary
+                                              : colorScheme.onSurfaceVariant,
                                         ),
                                 ),
                               );
@@ -1136,6 +1131,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
   }
 
   Widget _buildCommentInputArea() {
+    final colorScheme = Theme.of(context).colorScheme;
     return Container(
       padding: EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 12),
       decoration: BoxDecoration(
@@ -1209,9 +1205,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                       borderSide: BorderSide.none,
                     ),
                     filled: true,
-                    fillColor: Theme.of(context).brightness == Brightness.light
-                        ? Colors.grey[200]
-                        : Theme.of(context).cardColor,
+                    fillColor: colorScheme.surfaceContainerLow,
                   ),
                 ),
               ),
@@ -1224,7 +1218,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                         dimension: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Icon(Icons.send, color: AppColors.gradientEnd),
+                    : Icon(Icons.send, color: colorScheme.primary),
               ),
             ],
           ),
@@ -1337,6 +1331,7 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final isMyInsight =
         widget.insight.authorUid == FirebaseAuth.instance.currentUser?.uid;
 
@@ -1360,8 +1355,8 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                         height: 3,
                         decoration: BoxDecoration(
                           color: idx <= widget.insightIndex
-                              ? AppColors.gradientEnd
-                              : Colors.grey.withValues(alpha: 0.3),
+                              ? colorScheme.primary
+                              : colorScheme.onSurface.withValues(alpha: 0.3),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -1393,14 +1388,10 @@ class _ViewInsightPageState extends State<_ViewInsightPage>
                               child: IconButton(
                                 tooltip: 'Create a reflection',
                                 style: IconButton.styleFrom(
-                                  backgroundColor: AppColors.gradientEnd,
-                                  foregroundColor: Theme.of(
-                                    context,
-                                  ).scaffoldBackgroundColor,
+                                  backgroundColor: colorScheme.primary,
+                                  foregroundColor: colorScheme.onPrimary,
                                   side: BorderSide(
-                                    color: Theme.of(
-                                      context,
-                                    ).scaffoldBackgroundColor,
+                                    color: colorScheme.surface,
                                     width: 2,
                                   ),
                                 ),
