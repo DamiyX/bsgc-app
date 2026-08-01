@@ -1,12 +1,12 @@
 {
   "workflow": "Braid full audit remediation",
   "branch": "codex/bsgc-full-remediation",
-  "current_phase": "Continuation Wave 15 source-closure slice verified locally; native Firestore cache and release/device gates remain open",
+  "current_phase": "Continuation Wave 16 source-closure slice verified locally; native Firestore cache and release/device gates remain open",
   "repository_implementation": "in progress against docs/post-remediation-audit/05-prioritized-implementation-plan.md",
   "automated_verification": {
     "flutter_format": "pass",
     "flutter_analyze": "pass",
-    "flutter_tests": "90 passed",
+    "flutter_tests": "93 passed",
     "functions_tests": "70 passed",
     "firebase_rules_tests": "31 passed",
     "functions_check": "pass",
@@ -18,6 +18,8 @@
     "wave_14_navigation_check": "pass: Me tab retains one Settings destination",
     "wave_15_error_copy_tests": "4 passed; account deletion and group invitation backend-code redaction",
     "wave_15_group_retry_check": "pass by prior Wave 2 implementation/test; fresh stream identity confirmed",
+    "wave_16_reflection_mutation_tests": "1 new deletion-acknowledgement widget test; reflection reliability focused suite passed",
+    "wave_16_study_mutation_tests": "2 passed; sound preference and draft/outbox cleanup failure boundaries",
     "scheduled_over_500_tests": "pass: 1,200 lifecycle writes in 450/450/300 chunks; 800-item deletion path in 450/350 chunks",
     "dependency_audit": "high severity clean after npm audit fix --package-lock-only; 9 moderate nested uuid advisories remain under Google client dependencies",
     "git_diff_check": "pass",
@@ -39,6 +41,6 @@
     "production signing and App/Universal Link verification",
     "legal, store, monitoring, and operational approval"
   ],
-  "next_action": "Commit Wave 15 locally, then continue with the next bounded source-closure wave. Keep the full mutation inventory, Firestore native-cache/account-switch, App Check project/enforcement, Android/device QA, signed AAB/size, migration/backup, links, legal, and operations as explicit gates.",
-  "updated_at": "2026-08-01T15:00:00+01:00"
+  "next_action": "Commit Wave 16 locally, then continue with the next bounded source-closure wave. Keep the full mutation inventory, Firestore native-cache/account-switch, App Check project/enforcement, Android/device QA, signed AAB/size, migration/backup, links, legal, and operations as explicit gates.",
+  "updated_at": "2026-08-01T16:00:00+01:00"
 }

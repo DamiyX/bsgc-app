@@ -19,6 +19,19 @@ import 'tts_settings_screen.dart';
 import 'safety_center_screen.dart';
 import 'legal_screen.dart';
 
+Future<bool> persistMuteAppSoundsPreference(
+  bool value, {
+  Future<SharedPreferences> Function()? loadPreferences,
+}) async {
+  try {
+    final preferences =
+        await (loadPreferences ?? SharedPreferences.getInstance)();
+    return await preferences.setBool('mute_app_sounds', value);
+  } catch (_) {
+    return false;
+  }
+}
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -164,9 +177,17 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Future<void> _toggleMuteAppSounds(bool value) async {
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setBool('mute_app_sounds', value);
+    final previous = _muteAppSounds;
     if (mounted) setState(() => _muteAppSounds = value);
+    if (!await persistMuteAppSoundsPreference(value)) {
+      if (!mounted) return;
+      setState(() => _muteAppSounds = previous);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sound settings could not be saved. Try again.'),
+        ),
+      );
+    }
   }
 
   Future<void> _deleteAccount() async {

@@ -269,6 +269,26 @@ tests, and 90 full Flutter tests. This is source evidence only; device failure
 states, native cache isolation, release artifacts, App Check project setup,
 and owner/product gates remain open.
 
+## Implementation status — continuation wave 16 source-closure slice
+
+The detailed handoff is `docs/testing/wave-16-source-closure.md`.
+
+This wave advances the UX-010 mutation contract in two bounded tracks:
+
+- Reflection deletion now waits for Firestore server acknowledgement before
+  showing confirmed deletion; a widget test proves the success copy stays
+  hidden while persistence is pending.
+- Local draft/outbox cleanup failures are explicit instead of uncaught. Draft
+  discard preserves the editor, outbox discard reports a retryable failure, and
+  a queued outbox entry remains authoritative if local draft cleanup cannot
+  complete. Sound-preference persistence rolls back a failed optimistic toggle
+  and shows stable copy.
+
+The pinned Flutter toolchain reports clean formatting, analysis, 26 focused
+tests, and 93 full Flutter tests. Remaining mutation paths, device/offline
+behavior, native Firestore cache isolation, release evidence, and owner/product
+gates remain open.
+
 ---
 
 ## Non-negotiable execution contract

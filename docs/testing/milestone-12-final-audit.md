@@ -332,6 +332,24 @@ still **internal preview/development only**, and device, native Firestore cache
 isolation, Firebase App Check registration/enforcement, signed artifacts,
 production operations, legal approval, and release decision remain open.
 
+## Continuation verification — Wave 16 source closure
+
+Wave 16 continued the UX-010 audit with two focused source tracks:
+
+- Reflection deletion now waits for Firestore's server acknowledgement before
+  `MyInsightsScreen` shows confirmed deletion. The previous replacement-record
+  “UNDO” behavior remains absent, and a widget test proves success is withheld
+  while persistence is pending.
+- Draft, outbox, and sound-preference failures now have bounded local cleanup
+  handling: draft discard preserves text, outbox cleanup reports a retryable
+  failure, queued outbox data remains authoritative when draft cleanup fails,
+  and a failed sound-preference write rolls back the toggle.
+
+The Wave 16 handoff records clean analysis, 26 focused tests, and 93 full
+Flutter tests. This remains source evidence only; the mutation device matrix,
+native Firestore cache isolation, App Check project/enforcement, signed
+artifacts, operations, legal, and product gates remain open.
+
 ## Continuation verification — Wave 15 source closure
 
 Wave 15 checked the next source-adjacent items without reopening the accepted

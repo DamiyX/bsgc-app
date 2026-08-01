@@ -205,10 +205,14 @@ class InsightService implements MyInsightsDataSource {
 
   @override
   Future<void> deleteInsight(String insightId) async {
-    await _firestore.collection('insights').doc(insightId).update({
+    final reference = _firestore.collection('insights').doc(insightId);
+    await reference.update({
       'status': 'deleted',
       'updatedAt': FieldValue.serverTimestamp(),
     });
+    // Firestore resolves an offline write locally. Do not let the UI present
+    // a durable deletion success until the server has acknowledged it.
+    await waitForDocumentCommit(reference);
   }
 
   Future<void> markAsSeen(String insightId, String userId) async {

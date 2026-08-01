@@ -135,6 +135,39 @@ void main() {
       expect(find.text('Reflection deleted'), findsOneWidget);
       expect(find.text('UNDO'), findsNothing);
     });
+
+    testWidgets('reports deletion success only after persistence completes', (
+      tester,
+    ) async {
+      final deletion = Completer<void>();
+      final source = _FakeMyInsightsDataSource([
+        _insight(),
+      ], onDelete: (_) => deletion.future);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MyInsightsScreen(
+            dataSource: source,
+            currentUserId: 'current-user',
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.more_vert));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+      await tester.pump();
+
+      expect(source.deletedIds, ['insight-1']);
+      expect(find.text('Reflection deleted'), findsNothing);
+
+      deletion.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Reflection deleted'), findsOneWidget);
+    });
   });
 
   group('account-scoped composer drafts', () {
@@ -241,14 +274,17 @@ void main() {
 }
 
 class _FakeMyInsightsDataSource implements MyInsightsDataSource {
-  _FakeMyInsightsDataSource(List<InsightModel> insights) : _insights = insights;
+  _FakeMyInsightsDataSource(List<InsightModel> insights, {this.onDelete})
+    : _insights = insights;
 
   final List<InsightModel> _insights;
+  final Future<void> Function(String insightId)? onDelete;
   final List<String> deletedIds = [];
 
   @override
   Future<void> deleteInsight(String insightId) async {
     deletedIds.add(insightId);
+    await onDelete?.call(insightId);
   }
 
   @override

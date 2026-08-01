@@ -123,11 +123,23 @@ class _CreateInsightScreenState extends State<CreateInsightScreen> {
     }
     _draftTimer?.cancel();
     final userId = _draftUserId ?? FirebaseAuth.instance.currentUser?.uid;
-    if (userId != null) {
-      await _draftService.clearComposerDraft(
-        userId: userId,
-        audience: ComposerDraftAudience.contacts,
-      );
+    if (userId != null &&
+        !await tryClearComposerDraft(
+          draftService: _draftService,
+          userId: userId,
+          audience: ComposerDraftAudience.contacts,
+        )) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              "Couldn't discard this draft from the device. Keep editing "
+              'or try again.',
+            ),
+          ),
+        );
+      }
+      return;
     }
     _titleController.clear();
     _bodyController.clear();

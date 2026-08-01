@@ -426,8 +426,16 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
       ),
     );
     if (confirmed != true) return;
-    await _outboxService.remove(entry);
-    await _reloadOutbox();
+    try {
+      await _outboxService.remove(entry);
+      await _reloadOutbox();
+    } catch (_) {
+      if (mounted) {
+        _showMessage(
+          'That saved reflection could not be discarded. Try again.',
+        );
+      }
+    }
   }
 
   Future<void> _sendDraft() async {
@@ -471,7 +479,20 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
       _replyToMessage = null;
     });
     _restoringDraft = false;
-    await _draftService.clear(userId: _uid, groupId: widget.group.id);
+    final draftCleared = await tryClearGroupDraft(
+      draftService: _draftService,
+      userId: _uid,
+      groupId: widget.group.id,
+    );
+    if (!draftCleared) {
+      // The outbox entry is authoritative now; retain it even if local draft
+      // cleanup is temporarily unavailable, and tell the user why a stale
+      // draft may be shown again after a restart.
+      _showMessage(
+        'Your reflection is queued, but its local draft could not be cleared. '
+        'Try again after reconnecting.',
+      );
+    }
     await _reloadOutbox();
     await _attemptOutbox(entry);
   }

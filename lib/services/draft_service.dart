@@ -240,3 +240,33 @@ class DraftService {
     return value;
   }
 }
+
+/// Attempts local composer cleanup without turning a successful remote
+/// mutation into a false failure. Callers can keep their durable result while
+/// deciding how to explain that stale local draft data may remain.
+Future<bool> tryClearComposerDraft({
+  required DraftService draftService,
+  required String userId,
+  required ComposerDraftAudience audience,
+}) async {
+  try {
+    await draftService.clearComposerDraft(userId: userId, audience: audience);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// The group-room equivalent of [tryClearComposerDraft].
+Future<bool> tryClearGroupDraft({
+  required DraftService draftService,
+  required String userId,
+  required String groupId,
+}) async {
+  try {
+    await draftService.clear(userId: userId, groupId: groupId);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
