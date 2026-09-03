@@ -90,7 +90,7 @@ class StudyRoomController extends ChangeNotifier {
 
   final Map<String, GroupMessagePager> _pagers = {};
   final Map<String, StreamSubscription<List<MessageModel>>>
-  _messageSubscriptions = {};
+      _messageSubscriptions = {};
   final Map<String, List<MessageModel>> _messagesBySpace = {
     for (final space in messageSpaces) space: const [],
   };
@@ -113,9 +113,9 @@ class StudyRoomController extends ChangeNotifier {
     required this.group,
     FirebaseFirestore? firestore,
     ChatService? chatService,
-  }) : groupId = group.id,
-       firestore = firestore ?? FirebaseFirestore.instance,
-       chatService = chatService ?? ChatService();
+  })  : groupId = group.id,
+        firestore = firestore ?? FirebaseFirestore.instance,
+        chatService = chatService ?? ChatService();
 
   List<MessageModel> messagesFor(String space, {required String userId}) {
     final visibilityState = _visibilityState;
@@ -158,21 +158,20 @@ class StudyRoomController extends ChangeNotifier {
       }
     });
 
-    _visibilitySubscription = chatService
-        .watchMessageVisibility(groupId)
-        .listen(
-          (state) {
-            _visibilityState = state;
-            _visibilityError = null;
-            _loadingVisibility = false;
-            _notify();
-          },
-          onError: (Object error) {
-            _visibilityError = error;
-            _loadingVisibility = false;
-            _notify();
-          },
-        );
+    _visibilitySubscription =
+        chatService.watchMessageVisibility(groupId).listen(
+      (state) {
+        _visibilityState = state;
+        _visibilityError = null;
+        _loadingVisibility = false;
+        _notify();
+      },
+      onError: (Object error) {
+        _visibilityError = error;
+        _loadingVisibility = false;
+        _notify();
+      },
+    );
 
     for (final space in messageSpaces) {
       final pager = chatService.createMessagePager(groupId, space: space);
@@ -219,6 +218,25 @@ class StudyRoomController extends ChangeNotifier {
     _loadingSpaces.add(space);
     _notify();
     try {
+      if (_visibilityError != null) {
+        _visibilityError = null;
+        _loadingVisibility = true;
+        await _visibilitySubscription?.cancel();
+        _visibilitySubscription =
+            chatService.watchMessageVisibility(groupId).listen(
+          (state) {
+            _visibilityState = state;
+            _visibilityError = null;
+            _loadingVisibility = false;
+            _notify();
+          },
+          onError: (Object error) {
+            _visibilityError = error;
+            _loadingVisibility = false;
+            _notify();
+          },
+        );
+      }
       await pager.retry();
     } catch (error) {
       _messageErrors[space] = error;

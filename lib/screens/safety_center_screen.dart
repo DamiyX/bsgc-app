@@ -38,7 +38,7 @@ class SafetyCenterScreen extends StatelessWidget {
           return ListView.separated(
             padding: const EdgeInsets.symmetric(vertical: 12),
             itemCount: blockedIds.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
+            separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, index) {
               final uid = blockedIds[index];
               return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(

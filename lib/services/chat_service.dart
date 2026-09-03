@@ -89,25 +89,25 @@ GroupOperationFailure groupOperationFailureForCode(
   }
   return switch (code) {
     'invalid-argument' => const GroupOperationFailure(
-      code: 'invalid-argument',
-      message: 'Check the study details and try again.',
-    ),
+        code: 'invalid-argument',
+        message: 'Check the study details and try again.',
+      ),
     'unauthenticated' => const GroupOperationFailure(
-      code: 'unauthenticated',
-      message: 'Sign in again to save this study.',
-    ),
+        code: 'unauthenticated',
+        message: 'Sign in again to save this study.',
+      ),
     'permission-denied' => const GroupOperationFailure(
-      code: 'permission-denied',
-      message: 'You do not have permission to change this study.',
-    ),
+        code: 'permission-denied',
+        message: 'You do not have permission to change this study.',
+      ),
     'unavailable' || 'deadline-exceeded' => GroupOperationFailure(
-      code: code!,
-      message: 'Check your connection and try again.',
-    ),
+        code: code!,
+        message: 'Check your connection and try again.',
+      ),
     _ => const GroupOperationFailure(
-      code: 'unknown',
-      message: 'The study could not be saved right now. Try again.',
-    ),
+        code: 'unknown',
+        message: 'The study could not be saved right now. Try again.',
+      ),
   };
 }
 
@@ -128,9 +128,8 @@ class ChapterProgressMutation {
     if (totalChapters <= 0 || chapter < 1 || chapter > totalChapters) {
       throw ArgumentError.value(chapter, 'chapter', 'Unknown chapter.');
     }
-    final updated = current
-        .where((value) => value >= 1 && value <= totalChapters)
-        .toSet();
+    final updated =
+        current.where((value) => value >= 1 && value <= totalChapters).toSet();
     if (!updated.add(chapter)) updated.remove(chapter);
     final sorted = updated.toList()..sort();
     return ChapterProgressMutation(
@@ -180,10 +179,10 @@ class ChatService {
     FirebaseAuth? auth,
     FirebaseFunctions? functions,
     Uuid? uuid,
-  }) : _firestore = firestore ?? FirebaseFirestore.instance,
-       _auth = auth ?? FirebaseAuth.instance,
-       _functions = functions ?? FirebaseFunctions.instance,
-       _uuid = uuid ?? const Uuid();
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _auth = auth ?? FirebaseAuth.instance,
+        _functions = functions ?? FirebaseFunctions.instance,
+        _uuid = uuid ?? const Uuid();
 
   User _requireUser() {
     final user = _auth.currentUser;
@@ -260,9 +259,8 @@ class ChatService {
   }
 
   static List<GroupModel> sortArchivedGroups(Iterable<GroupModel> source) {
-    final groups = source
-        .where((group) => group.lifecycle == 'archived')
-        .toList();
+    final groups =
+        source.where((group) => group.lifecycle == 'archived').toList();
     groups.sort((a, b) {
       final aTime = a.endDate ?? a.lastMessageTime ?? a.createdAt;
       final bTime = b.endDate ?? b.lastMessageTime ?? b.createdAt;
@@ -487,7 +485,7 @@ class ChatService {
         'name': name.trim(),
         'pinnedScripture': scripture.trim(),
         'description': description?.trim() ?? '',
-        'photoUrl': ?photoUrl,
+        if (photoUrl != null) 'photoUrl': photoUrl,
       });
     } catch (error) {
       throw groupOperationFailureForCode(
@@ -505,10 +503,8 @@ class ChatService {
     return Future.wait(
       memberIds.map((uid) async {
         try {
-          final document = await _firestore
-              .collection('users_public')
-              .doc(uid)
-              .get();
+          final document =
+              await _firestore.collection('users_public').doc(uid).get();
           final data = document.data();
           return {
             'uid': uid,
@@ -578,9 +574,9 @@ class ChatService {
     );
 
     StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
-    groupStateSubscription;
+        groupStateSubscription;
     StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
-    hiddenMessagesSubscription;
+        hiddenMessagesSubscription;
     var hasGroupState = false;
     var hasHiddenMessages = false;
     DateTime? clearedBefore;
@@ -603,17 +599,15 @@ class ChatService {
           snapshot,
         ) {
           final rawClearedBefore = snapshot.data()?['clearedBefore'];
-          clearedBefore = rawClearedBefore is Timestamp
-              ? rawClearedBefore.toDate()
-              : null;
+          clearedBefore =
+              rawClearedBefore is Timestamp ? rawClearedBefore.toDate() : null;
           hasGroupState = true;
           emitWhenReady();
         }, onError: controller.addError);
         hiddenMessagesSubscription = hiddenMessagesReference.snapshots().listen(
           (snapshot) {
-            hiddenMessageIds = snapshot.docs
-                .map((document) => document.id)
-                .toSet();
+            hiddenMessageIds =
+                snapshot.docs.map((document) => document.id).toSet();
             hasHiddenMessages = true;
             emitWhenReady();
           },
@@ -971,8 +965,8 @@ class FirestoreGroupMessagePageSource implements GroupMessagePageSource {
       sortMillis: timestamp is Timestamp
           ? timestamp.millisecondsSinceEpoch
           : clientCreatedAt is Timestamp
-          ? clientCreatedAt.millisecondsSinceEpoch
-          : 0,
+              ? clientCreatedAt.millisecondsSinceEpoch
+              : 0,
     );
   }
 }
@@ -1027,19 +1021,25 @@ class GroupMessagePager {
     _liveSubscription = _pageSource
         .watchLatest(groupId: groupId, space: space, pageSize: pageSize)
         .listen((page) {
-          for (final item in page.items) {
-            _items[item.message.id] = item;
-          }
-          _oldestCursor ??= page.oldestCursor;
-          if (!page.hasMore) hasMore = false;
-          _emit();
-        }, onError: _controller.addError);
+      for (final item in page.items) {
+        _items[item.message.id] = item;
+      }
+      if (_oldestCursor == null || _oldestCursor == page.oldestCursor) {
+        _oldestCursor = page.oldestCursor;
+        hasMore = page.hasMore;
+      } else if (!page.hasMore && _items.length < pageSize) {
+        hasMore = false;
+      }
+      _emit();
+    }, onError: _controller.addError);
   }
 
   Future<void> retry() async {
     await _liveSubscription?.cancel();
     _liveSubscription = null;
     _started = false;
+    _oldestCursor = null;
+    hasMore = true;
     _start();
   }
 

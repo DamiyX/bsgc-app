@@ -329,7 +329,7 @@ void main() {
 
 class _FakeMyInsightsDataSource implements MyInsightsDataSource {
   _FakeMyInsightsDataSource(List<InsightModel> insights, {this.onDelete})
-    : _insights = insights;
+      : _insights = insights;
 
   final List<InsightModel> _insights;
   final Future<void> Function(String insightId)? onDelete;
@@ -344,6 +344,11 @@ class _FakeMyInsightsDataSource implements MyInsightsDataSource {
   @override
   Stream<List<InsightModel>> getActiveInsightsForUser(String userId) {
     return Stream.value(_insights);
+  }
+
+  @override
+  Stream<Set<String>> getSeenInsightIds() {
+    return Stream.value(const {});
   }
 }
 

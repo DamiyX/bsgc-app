@@ -48,8 +48,8 @@ class BraidAvatar extends StatelessWidget {
                 fit: BoxFit.cover,
                 memCacheWidth: (radius * 4).round(),
                 memCacheHeight: (radius * 4).round(),
-                placeholder: (_, _) => fallback,
-                errorWidget: (_, _, _) => fallback,
+                placeholder: (_, __) => fallback,
+                errorWidget: (_, __, ___) => fallback,
                 fadeInDuration: const Duration(milliseconds: 120),
               )
             : fallback,

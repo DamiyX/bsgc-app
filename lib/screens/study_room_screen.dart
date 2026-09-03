@@ -31,25 +31,25 @@ enum StudySpace { plan, reflection, discussion, prayer }
 
 extension on StudySpace {
   String get wireName => switch (this) {
-    StudySpace.plan => 'plan',
-    StudySpace.reflection => 'reflection',
-    StudySpace.discussion => 'discussion',
-    StudySpace.prayer => 'prayer',
-  };
+        StudySpace.plan => 'plan',
+        StudySpace.reflection => 'reflection',
+        StudySpace.discussion => 'discussion',
+        StudySpace.prayer => 'prayer',
+      };
 
   String get label => switch (this) {
-    StudySpace.plan => 'Plan',
-    StudySpace.reflection => 'Reflections',
-    StudySpace.discussion => 'Discussion',
-    StudySpace.prayer => 'Prayer',
-  };
+        StudySpace.plan => 'Plan',
+        StudySpace.reflection => 'Reflections',
+        StudySpace.discussion => 'Discussion',
+        StudySpace.prayer => 'Prayer',
+      };
 
   IconData get icon => switch (this) {
-    StudySpace.plan => Icons.route_outlined,
-    StudySpace.reflection => Icons.lightbulb_outline_rounded,
-    StudySpace.discussion => Icons.forum_outlined,
-    StudySpace.prayer => Icons.volunteer_activism_outlined,
-  };
+        StudySpace.plan => Icons.route_outlined,
+        StudySpace.reflection => Icons.lightbulb_outline_rounded,
+        StudySpace.discussion => Icons.forum_outlined,
+        StudySpace.prayer => Icons.volunteer_activism_outlined,
+      };
 }
 
 class StudyRoomScreen extends StatefulWidget {
@@ -293,8 +293,8 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
     setState(() {
       _selectedSpace = widget.initialSpace == null
           ? restoredSpace == StudySpace.plan
-                ? StudySpace.discussion
-                : restoredSpace
+              ? StudySpace.discussion
+              : restoredSpace
           : _selectedSpace;
       _textController.text = draft.text;
       _draftParts = List.of(draft.parts);
@@ -829,7 +829,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
                             '${group.members.length} members • ${_lifecycleText(group)}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelSmall
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
                                 ?.copyWith(
                                   color: Theme.of(
                                     context,
@@ -907,6 +909,14 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
     final endLabel = group.endDate == null
         ? 'No end date'
         : DateFormat('MMM d, yyyy').format(group.endDate!);
+    final isBible = group.groupType == 'Bible';
+    final totalSteps = group.totalChapters > 0
+        ? group.totalChapters
+        : (group.startDate != null && group.endDate != null
+            ? (StudyDateRangePolicy.calendarDurationDays(
+                    group.startDate!, group.endDate!) +
+                1)
+            : 0);
 
     return ListView(
       key: const PageStorageKey('study-plan'),
@@ -928,8 +938,8 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
                             ? group.studyBook ?? 'Bible study'
                             : group.topic ?? 'Topic study',
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
+                              fontWeight: FontWeight.w800,
+                            ),
                       ),
                     ),
                     Chip(label: Text(_lifecycleText(group))),
@@ -978,16 +988,18 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
           ),
         ],
         const SizedBox(height: 22),
-        if (group.groupType == 'Bible' && group.totalChapters > 0) ...[
+        if (totalSteps > 0) ...[
           Text(
-            'Your reading progress',
+            isBible ? 'Your reading progress' : 'Your study progress',
             style: Theme.of(
               context,
             ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
           Text(
-            'Mark a chapter after you finish it. This is personal progress, not a competition.',
+            isBible
+                ? 'Mark a chapter after you finish it. This is personal progress, not a competition.'
+                : 'Mark a day after you finish it. This is personal progress, not a competition.',
             style: TextStyle(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -1001,23 +1013,25 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
               mainAxisSpacing: 8,
               crossAxisSpacing: 8,
             ),
-            itemCount: group.totalChapters,
+            itemCount: totalSteps,
             itemBuilder: (context, index) {
-              final chapter = index + 1;
-              final selected = completed.contains(chapter);
-              final saving = _savingChapters.contains(chapter);
+              final step = index + 1;
+              final selected = completed.contains(step);
+              final saving = _savingChapters.contains(step);
+              final stepLabel = isBible ? 'Chapter $step' : 'Day $step';
               return Semantics(
                 button: true,
                 selected: selected,
-                label:
-                    'Chapter $chapter, ${selected ? 'complete' : 'not complete'}'
+                label: '$stepLabel, ${selected ? 'complete' : 'not complete'}'
                     '${saving ? ', saving' : ''}',
                 child: FilterChip(
                   selected: selected,
                   showCheckmark: false,
-                  label: Text('$chapter'),
+                  label: Text('$step'),
+                  tooltip: stepLabel,
                   onSelected: group.lifecycle == 'active' && !saving
-                      ? (_) => _toggleChapter(group, chapter)
+                      ? (_) =>
+                          _toggleChapter(group, step, totalChapters: totalSteps)
                       : null,
                 ),
               );
@@ -1051,13 +1065,18 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
     );
   }
 
-  Future<void> _toggleChapter(GroupModel group, int chapter) async {
+  Future<void> _toggleChapter(
+    GroupModel group,
+    int chapter, {
+    int? totalChapters,
+  }) async {
+    final effectiveTotal = totalChapters ?? group.totalChapters;
     setState(() => _savingChapters.add(chapter));
     try {
       await _chatService.toggleGroupStudyChapter(
         group.id,
         chapter: chapter,
-        totalChapters: group.totalChapters,
+        totalChapters: effectiveTotal,
       );
     } catch (_) {
       _showMessage('Progress could not be updated yet.');
@@ -1112,50 +1131,52 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
           child: _controller.loadingMessages(space) && messages.isEmpty
               ? const Center(child: CircularProgressIndicator())
               : messageError != null && messages.isEmpty
-              ? _RoomLoadError(onRetry: () => _controller.retryMessages(space))
-              : messages.isEmpty
-              ? _EmptyStudySpace(
-                  space: _selectedSpace,
-                  onLoadOlder: _controller.hasMore(space)
-                      ? () => _controller.loadOlder(space)
-                      : null,
-                )
-              : ListView.builder(
-                  key: PageStorageKey(_selectedSpace.wireName),
-                  controller: _messageScrollController,
-                  reverse: true,
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
-                  itemCount:
-                      messages.length +
-                      (_controller.loadingOlder(space) ? 1 : 0),
-                  itemBuilder: (context, index) {
-                    if (index == messages.length) {
-                      return const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                  ? _RoomLoadError(
+                      onRetry: () => _controller.retryMessages(space))
+                  : messages.isEmpty
+                      ? _EmptyStudySpace(
+                          space: _selectedSpace,
+                          onLoadOlder: _controller.hasMore(space)
+                              ? () => _controller.loadOlder(space)
+                              : null,
+                        )
+                      : ListView.builder(
+                          key: PageStorageKey(_selectedSpace.wireName),
+                          controller: _messageScrollController,
+                          reverse: true,
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+                          itemCount: messages.length +
+                              (_controller.loadingOlder(space) ? 1 : 0),
+                          itemBuilder: (context, index) {
+                            if (index == messages.length) {
+                              return const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Center(
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              );
+                            }
+                            final message = messages[index];
+                            final card = _MessageCard(
+                              message: message,
+                              isMine: message.senderId == _uid,
+                              reply: _findReply(message),
+                              onReply: () {
+                                setState(() {
+                                  _replyToMessageId = message.id;
+                                  _replyToMessage = message;
+                                });
+                                _scheduleDraftSave();
+                              },
+                              onMore: () => _showMessageActions(message),
+                            );
+                            return message.id == widget.targetMessageId
+                                ? KeyedSubtree(
+                                    key: _targetMessageKey, child: card)
+                                : card;
+                          },
                         ),
-                      );
-                    }
-                    final message = messages[index];
-                    final card = _MessageCard(
-                      message: message,
-                      isMine: message.senderId == _uid,
-                      reply: _findReply(message),
-                      onReply: () {
-                        setState(() {
-                          _replyToMessageId = message.id;
-                          _replyToMessage = message;
-                        });
-                        _scheduleDraftSave();
-                      },
-                      onMore: () => _showMessageActions(message),
-                    );
-                    return message.id == widget.targetMessageId
-                        ? KeyedSubtree(key: _targetMessageKey, child: card)
-                        : card;
-                  },
-                ),
         ),
         if (group.lifecycle == 'active')
           _buildComposer()
@@ -1201,9 +1222,9 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
                   Text(
                     'Visible to ${_controller.group.name}',
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: semantic?.groupAudience,
-                      fontWeight: FontWeight.w700,
-                    ),
+                          color: semantic?.groupAudience,
+                          fontWeight: FontWeight.w700,
+                        ),
                   ),
                 ],
               ),
@@ -1225,7 +1246,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.only(top: 8),
                     itemCount: _draftParts.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
                     itemBuilder: (context, index) {
                       final part = _draftParts[index];
                       return Column(
@@ -1279,15 +1300,15 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
                         minLines: 1,
                         maxLines: 6,
                         maxLength: 8000,
-                        buildCounter:
-                            (
-                              context, {
-                              required currentLength,
-                              required isFocused,
-                              required maxLength,
-                            }) => currentLength > 7600
-                            ? Text('$currentLength/$maxLength')
-                            : null,
+                        buildCounter: (
+                          context, {
+                          required currentLength,
+                          required isFocused,
+                          required maxLength,
+                        }) =>
+                            currentLength > 7600
+                                ? Text('$currentLength/$maxLength')
+                                : null,
                         textCapitalization: TextCapitalization.sentences,
                         decoration: InputDecoration(
                           hintText: switch (_selectedSpace) {
@@ -1310,8 +1331,7 @@ class _StudyRoomScreenState extends State<StudyRoomScreen>
                     ValueListenableBuilder<TextEditingValue>(
                       valueListenable: _textController,
                       builder: (context, value, _) {
-                        final enabled =
-                            value.text.trim().isNotEmpty ||
+                        final enabled = value.text.trim().isNotEmpty ||
                             _draftParts.isNotEmpty;
                         return IconButton.filled(
                           tooltip: 'Send to ${_selectedSpace.label}',
@@ -1450,7 +1470,7 @@ String _lifecycleText(GroupModel group) {
       return group.startDate == null
           ? 'scheduled'
           : 'starts ${DateFormat('MMM d, h:mm a').format(group.startDate!)} '
-                '${group.startDate!.timeZoneName}';
+              '${group.startDate!.timeZoneName}';
     case 'completed':
       return 'completed';
     case 'archived':
@@ -1474,7 +1494,7 @@ class _StudySpaceSelector extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         scrollDirection: Axis.horizontal,
         itemCount: StudySpace.values.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 6),
+        separatorBuilder: (_, __) => const SizedBox(width: 6),
         itemBuilder: (context, index) {
           final space = StudySpace.values[index];
           return ChoiceChip(
@@ -1515,9 +1535,8 @@ class _MessageCard extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 12),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: isMine
-              ? MainAxisAlignment.end
-              : MainAxisAlignment.start,
+          mainAxisAlignment:
+              isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
           children: [
             if (!isMine) ...[
               BraidAvatar(
@@ -1843,7 +1862,7 @@ class _DraftPartPreview extends StatelessWidget {
                   File.fromUri(uri!),
                   fit: BoxFit.cover,
                   cacheWidth: 240,
-                  errorBuilder: (_, _, _) =>
+                  errorBuilder: (_, __, ___) =>
                       const Icon(Icons.broken_image_outlined),
                 )
               : Icon(
@@ -1921,8 +1940,7 @@ class _RecordingBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final duration =
-        '${(seconds ~/ 60).toString().padLeft(2, '0')}:'
+    final duration = '${(seconds ~/ 60).toString().padLeft(2, '0')}:'
         '${(seconds % 60).toString().padLeft(2, '0')}';
     return Semantics(
       liveRegion: true,
@@ -1984,11 +2002,11 @@ class _OutboxStrip extends StatelessWidget {
                     sendingIds.contains(entry.id)
                         ? 'Sending saved reflection…'
                         : !entry.retryable
-                        ? entry.lastError ??
-                              'Saved upload needs to be discarded'
-                        : entry.status == OutboxStatus.failed
-                        ? 'Saved locally • retry waiting'
-                        : 'Saved locally • waiting to send',
+                            ? entry.lastError ??
+                                'Saved upload needs to be discarded'
+                            : entry.status == OutboxStatus.failed
+                                ? 'Saved locally • retry waiting'
+                                : 'Saved locally • waiting to send',
                   ),
                 ),
                 if (sendingIds.contains(entry.id))
@@ -2108,7 +2126,7 @@ class _CompletedRecap extends StatelessWidget {
     final average = group.readingProgress.values.isEmpty
         ? 0
         : group.readingProgress.values.reduce((a, b) => a + b) /
-              group.readingProgress.values.length;
+            group.readingProgress.values.length;
     return Card(
       elevation: 0,
       child: Padding(

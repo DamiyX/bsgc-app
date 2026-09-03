@@ -1,9 +1,13 @@
-[{
-  "relation": ["delegate_permission/common.handle_all_urls"],
-  "target": {
-    "namespace": "android_app",
-    "package_name": "com.bsgc.bsgc_app",
-    "sha256_cert_fingerprints":
-    ["REPLACE_WITH_PRODUCTION_UPLOAD_CERTIFICATE_SHA256"]
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.bsgc.bsgc_app",
+      "sha256_cert_fingerprints": [
+        "REPLACE_WITH_PLAY_APP_SIGNING_CERTIFICATE_SHA256",
+        "REPLACE_WITH_UPLOAD_CERTIFICATE_SHA256_OPTIONAL"
+      ]
+    }
   }
-}]
+]

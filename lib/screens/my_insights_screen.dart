@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../theme.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -26,34 +28,118 @@ ViewInsightScreen buildSelectedInsightViewer(
   );
 }
 
-class MyInsightsScreen extends StatelessWidget {
+typedef SelectedInsightViewerBuilder = Widget Function(
+  List<InsightModel> insights,
+  InsightModel selectedInsight, {
+  Set<String> seenInsightIds,
+});
+
+class MyInsightsScreen extends StatefulWidget {
   MyInsightsScreen({
     super.key,
     MyInsightsDataSource? dataSource,
     String? currentUserId,
     String? currentUserDisplayName,
     String? currentUserPhotoUrl,
-  }) : _dataSource = dataSource ?? InsightService(),
-       _currentUserId =
-           currentUserId ?? FirebaseAuth.instance.currentUser?.uid ?? '',
-       _currentUserDisplayName =
-           currentUserDisplayName ??
-           (dataSource == null
-               ? FirebaseAuth.instance.currentUser?.displayName
-               : null) ??
-           'You',
-       _currentUserPhotoUrl =
-           currentUserPhotoUrl ??
-           (dataSource == null
-               ? FirebaseAuth.instance.currentUser?.photoURL
-               : null),
-       _useCanonicalProfile = dataSource == null;
+    this.viewerBuilder,
+  })  : dataSource = dataSource ?? InsightService(),
+        currentUserId =
+            currentUserId ?? FirebaseAuth.instance.currentUser?.uid ?? '',
+        currentUserDisplayName = currentUserDisplayName ??
+            (dataSource == null
+                ? FirebaseAuth.instance.currentUser?.displayName
+                : null) ??
+            'You',
+        currentUserPhotoUrl = currentUserPhotoUrl ??
+            (dataSource == null
+                ? FirebaseAuth.instance.currentUser?.photoURL
+                : null),
+        useCanonicalProfile = dataSource == null;
 
-  final MyInsightsDataSource _dataSource;
-  final String _currentUserId;
-  final String _currentUserDisplayName;
-  final String? _currentUserPhotoUrl;
-  final bool _useCanonicalProfile;
+  final MyInsightsDataSource dataSource;
+  final String currentUserId;
+  final String currentUserDisplayName;
+  final String? currentUserPhotoUrl;
+  final bool useCanonicalProfile;
+  final SelectedInsightViewerBuilder? viewerBuilder;
+
+  @override
+  State<MyInsightsScreen> createState() => _MyInsightsScreenState();
+}
+
+class _MyInsightsScreenState extends State<MyInsightsScreen> {
+  StreamSubscription<List<InsightModel>>? _insightsSubscription;
+  StreamSubscription<Set<String>>? _seenSubscription;
+  List<InsightModel>? _insights;
+  Set<String> _seenInsightIds = const {};
+  bool _isLoading = true;
+  Object? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscribe();
+  }
+
+  @override
+  void didUpdateWidget(MyInsightsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.dataSource != widget.dataSource ||
+        oldWidget.currentUserId != widget.currentUserId) {
+      _unsubscribe();
+      _subscribe();
+    }
+  }
+
+  void _subscribe() {
+    _isLoading = true;
+    _error = null;
+    _insightsSubscription =
+        widget.dataSource.getActiveInsightsForUser(widget.currentUserId).listen(
+      (data) {
+        if (mounted) {
+          setState(() {
+            _insights = data;
+            _isLoading = false;
+            _error = null;
+          });
+        }
+      },
+      onError: (error) {
+        if (mounted) {
+          setState(() {
+            _error = error;
+            _isLoading = false;
+          });
+        }
+      },
+    );
+    _seenSubscription = widget.dataSource.getSeenInsightIds().listen(
+      (seen) {
+        if (mounted) {
+          setState(() {
+            _seenInsightIds = seen;
+          });
+        }
+      },
+      onError: (_) {
+        // Keep default empty set if read status fails
+      },
+    );
+  }
+
+  void _unsubscribe() {
+    _insightsSubscription?.cancel();
+    _insightsSubscription = null;
+    _seenSubscription?.cancel();
+    _seenSubscription = null;
+  }
+
+  @override
+  void dispose() {
+    _unsubscribe();
+    super.dispose();
+  }
 
   void _deleteInsight(BuildContext context, InsightModel insight) async {
     final confirm = await showDialog<bool>(
@@ -79,7 +165,7 @@ class MyInsightsScreen extends StatelessWidget {
 
     if (confirm == true) {
       try {
-        await _dataSource.deleteInsight(insight.id);
+        await widget.dataSource.deleteInsight(insight.id);
       } catch (_) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -133,20 +219,19 @@ class MyInsightsScreen extends StatelessWidget {
         child: Column(
           children: [
             Expanded(
-              child: StreamBuilder<List<InsightModel>>(
-                stream: _dataSource.getActiveInsightsForUser(_currentUserId),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
+              child: Builder(
+                builder: (context) {
+                  if (_isLoading) {
                     return Center(
                       child: CircularProgressIndicator(color: scheme.primary),
                     );
                   }
-                  if (snapshot.hasError) {
+                  if (_error != null) {
                     return const Center(
                       child: Text('Reflections are unavailable'),
                     );
                   }
-                  final insights = snapshot.data ?? [];
+                  final insights = _insights ?? [];
 
                   if (insights.isEmpty) {
                     return Center(
@@ -168,40 +253,43 @@ class MyInsightsScreen extends StatelessWidget {
                         Divider(height: 1, indent: 76),
                     itemBuilder: (context, index) {
                       final insight = insights[index];
+                      final isUnseen = !_seenInsightIds.contains(insight.id);
                       return ListTile(
                         contentPadding: EdgeInsets.symmetric(
                           horizontal: 16,
                           vertical: 4,
                         ),
                         onTap: () {
+                          final builder = widget.viewerBuilder ??
+                              buildSelectedInsightViewer;
                           Navigator.push(
                             context,
                             PageRouteBuilder(
                               opaque: false,
                               pageBuilder:
                                   (context, animation, secondaryAnimation) =>
-                                      buildSelectedInsightViewer(
-                                        insights,
-                                        insight,
-                                      ),
-                              transitionsBuilder:
-                                  (
-                                    context,
-                                    animation,
-                                    secondaryAnimation,
-                                    child,
-                                  ) {
-                                    if (MediaQuery.maybeOf(
-                                          context,
-                                        )?.disableAnimations ==
-                                        true) {
-                                      return child;
-                                    }
-                                    return FadeTransition(
-                                      opacity: animation,
-                                      child: child,
-                                    );
-                                  },
+                                      builder(
+                                insights,
+                                insight,
+                                seenInsightIds: _seenInsightIds,
+                              ),
+                              transitionsBuilder: (
+                                context,
+                                animation,
+                                secondaryAnimation,
+                                child,
+                              ) {
+                                if (MediaQuery.maybeOf(
+                                      context,
+                                    )?.disableAnimations ==
+                                    true) {
+                                  return child;
+                                }
+                                return FadeTransition(
+                                  opacity: animation,
+                                  child: child,
+                                );
+                              },
                             ),
                           );
                         },
@@ -218,27 +306,47 @@ class MyInsightsScreen extends StatelessWidget {
                               color: scheme.surface,
                             ),
                             child: CurrentUserAvatar(
-                              userId: _currentUserId,
-                              fallbackDisplayName: _currentUserDisplayName,
-                              fallbackPhotoUrl: _currentUserPhotoUrl,
+                              userId: widget.currentUserId,
+                              fallbackDisplayName:
+                                  widget.currentUserDisplayName,
+                              fallbackPhotoUrl: widget.currentUserPhotoUrl,
                               radius: 22,
-                              useCanonicalProfile: _useCanonicalProfile,
+                              useCanonicalProfile: widget.useCanonicalProfile,
                             ),
                           ),
                         ),
-                        title: Text(
-                          insight.title.isEmpty
-                              ? 'Untitled Note'
-                              : insight.title,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withValues(alpha: 0.87),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        title: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                insight.title.isEmpty
+                                    ? 'Untitled Note'
+                                    : insight.title,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
+                                  color: Theme.of(
+                                    context,
+                                  )
+                                      .colorScheme
+                                      .onSurface
+                                      .withValues(alpha: 0.87),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (isUnseen)
+                              Container(
+                                width: 8,
+                                height: 8,
+                                margin: const EdgeInsets.only(left: 8),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: scheme.primary,
+                                ),
+                              ),
+                          ],
                         ),
                         subtitle: Padding(
                           padding: EdgeInsets.only(top: 4),
@@ -259,8 +367,8 @@ class MyInsightsScreen extends StatelessWidget {
                               context,
                             ).colorScheme.onSurface.withValues(alpha: 0.54),
                           ),
-                          onSelected: (val) {
-                            if (val == 'delete') {
+                          onSelected: (value) {
+                            if (value == 'delete') {
                               _deleteInsight(context, insight);
                             }
                           },

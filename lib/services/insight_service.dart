@@ -61,9 +61,10 @@ List<InsightCommentModel> commentThreadRoots(
       .toList(growable: false);
 }
 
-abstract interface class MyInsightsDataSource {
+abstract class MyInsightsDataSource {
   Stream<List<InsightModel>> getActiveInsightsForUser(String userId);
   Future<void> deleteInsight(String insightId);
+  Stream<Set<String>> getSeenInsightIds() => const Stream.empty();
 }
 
 class InsightService implements MyInsightsDataSource {
@@ -75,9 +76,9 @@ class InsightService implements MyInsightsDataSource {
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
     FirebaseAuth? auth,
-  }) : _firestore = firestore ?? FirebaseFirestore.instance,
-       _functions = functions ?? FirebaseFunctions.instance,
-       _auth = auth ?? FirebaseAuth.instance;
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _functions = functions ?? FirebaseFunctions.instance,
+        _auth = auth ?? FirebaseAuth.instance;
 
   String _requireUserId() {
     final uid = _auth.currentUser?.uid;
@@ -100,7 +101,7 @@ class InsightService implements MyInsightsDataSource {
   }
 
   Future<Map<String, DocumentSnapshot<Map<String, dynamic>>>>
-  _loadLegacyInsights(Iterable<String> insightIds) async {
+      _loadLegacyInsights(Iterable<String> insightIds) async {
     final ids = insightIds.toSet().toList(growable: false);
     if (ids.isEmpty) return const {};
     final documents = await Future.wait(
@@ -126,36 +127,35 @@ class InsightService implements MyInsightsDataSource {
         .limit(boundedLimit)
         .snapshots()
         .asyncMap((snapshot) async {
-          final legacyIds = snapshot.docs
-              .where((pointer) => !_hasFeedSnapshot(pointer.data()))
-              .map(
-                (pointer) =>
-                    pointer.data()['insightId']?.toString() ?? pointer.id,
-              );
-          final legacyDocuments = await _loadLegacyInsights(legacyIds);
-          final now = DateTime.now();
-          final models = <InsightModel>[];
-          for (final pointer in snapshot.docs) {
-            final data = pointer.data();
-            try {
-              final legacyDocument =
-                  legacyDocuments[data['insightId']?.toString() ?? pointer.id];
-              final model = _hasFeedSnapshot(data)
-                  ? InsightModel.fromMap(pointer.id, data)
-                  : legacyDocument == null
+      final legacyIds = snapshot.docs
+          .where((pointer) => !_hasFeedSnapshot(pointer.data()))
+          .map(
+            (pointer) => pointer.data()['insightId']?.toString() ?? pointer.id,
+          );
+      final legacyDocuments = await _loadLegacyInsights(legacyIds);
+      final now = DateTime.now();
+      final models = <InsightModel>[];
+      for (final pointer in snapshot.docs) {
+        final data = pointer.data();
+        try {
+          final legacyDocument =
+              legacyDocuments[data['insightId']?.toString() ?? pointer.id];
+          final model = _hasFeedSnapshot(data)
+              ? InsightModel.fromMap(pointer.id, data)
+              : legacyDocument == null
                   ? null
                   : InsightModel.fromFirestore(legacyDocument);
-              if (model != null &&
-                  model.status == 'active' &&
-                  model.expiresAt.isAfter(now)) {
-                models.add(model);
-              }
-            } catch (_) {
-              // A malformed or legacy pointer should not break the entire feed.
-            }
+          if (model != null &&
+              model.status == 'active' &&
+              model.expiresAt.isAfter(now)) {
+            models.add(model);
           }
-          return models;
-        });
+        } catch (_) {
+          // A malformed or legacy pointer should not break the entire feed.
+        }
+      }
+      return models;
+    });
   }
 
   @override
@@ -175,16 +175,15 @@ class InsightService implements MyInsightsDataSource {
         .limit(limit.clamp(1, 50).toInt())
         .snapshots()
         .map((snapshot) {
-          final now = DateTime.now();
-          return snapshot.docs
-              .map(InsightModel.fromFirestore)
-              .where(
-                (insight) =>
-                    insight.status == 'active' &&
-                    insight.expiresAt.isAfter(now),
-              )
-              .toList(growable: false);
-        });
+      final now = DateTime.now();
+      return snapshot.docs
+          .map(InsightModel.fromFirestore)
+          .where(
+            (insight) =>
+                insight.status == 'active' && insight.expiresAt.isAfter(now),
+          )
+          .toList(growable: false);
+    });
   }
 
   Future<void> createInsight(InsightModel insight) async {
@@ -225,12 +224,13 @@ class InsightService implements MyInsightsDataSource {
         .collection('insight_state')
         .doc(insightId)
         .set({
-          'insightId': insightId,
-          'seenAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+      'insightId': insightId,
+      'seenAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
+  @override
   Stream<Set<String>> getSeenInsightIds({int limit = 100}) {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return Stream.value(const {});
@@ -314,14 +314,14 @@ class InsightService implements MyInsightsDataSource {
         .limit(boundedLimit)
         .snapshots()
         .asyncMap((snapshot) async {
-          final comments = snapshot.docs
-              .map(InsightCommentModel.fromFirestore)
-              .toList(growable: false);
-          return mergeCommentPages(
-            await _includeMissingCommentParents(insightId, comments),
-            const [],
-          );
-        });
+      final comments = snapshot.docs
+          .map(InsightCommentModel.fromFirestore)
+          .toList(growable: false);
+      return mergeCommentPages(
+        await _includeMissingCommentParents(insightId, comments),
+        const [],
+      );
+    });
   }
 
   Future<int> getCommentCount(String insightId) async {
@@ -466,7 +466,7 @@ class InsightService implements MyInsightsDataSource {
     await awaitInsightMutation(
       _functions.httpsCallable('setInsightReaction').call({
         'insightId': insightId,
-        'commentId': ?commentId,
+        if (commentId != null) 'commentId': commentId,
         'active': isLiking,
       }),
     );
@@ -570,8 +570,8 @@ class InsightService implements MyInsightsDataSource {
         final insight = _hasFeedSnapshot(data)
             ? InsightModel.fromMap(saved.id, data)
             : legacyDocument == null
-            ? null
-            : InsightModel.fromFirestore(legacyDocument);
+                ? null
+                : InsightModel.fromFirestore(legacyDocument);
         if (insight == null ||
             insight.status != 'active' ||
             !insight.expiresAt.isAfter(now)) {

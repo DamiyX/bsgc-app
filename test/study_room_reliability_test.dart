@@ -323,9 +323,72 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     expect(errors, hasLength(1));
 
+    pager.hasMore = false;
     await pager.retry();
 
     expect(pageSource.watchCount, 2);
+    expect(pager.hasMore, isTrue);
+  });
+
+  test(
+    'message pager restores hasMore when new messages arrive after an empty start',
+    () async {
+      final pageSource = _RetryableMessagePageSource();
+      final pager = GroupMessagePager.fromSource(
+        pageSource,
+        groupId: 'group-1',
+        space: 'discussion',
+      );
+      final emitted = <List<MessageModel>>[];
+      final subscription = pager.stream.listen(emitted.add);
+      addTearDown(subscription.cancel);
+      addTearDown(pager.dispose);
+
+      pageSource.emitCurrent(
+        const GroupMessagePage(items: [], oldestCursor: null, hasMore: false),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(pager.hasMore, isFalse);
+
+      final timestamp = DateTime.now();
+      final items = List.generate(
+        30,
+        (i) => GroupMessagePageItem(
+          message: _message(id: 'msg-$i', timestamp: timestamp),
+          sortMillis: timestamp.millisecondsSinceEpoch,
+        ),
+      );
+      pageSource.emitCurrent(
+        GroupMessagePage(
+          items: items,
+          oldestCursor: 'cursor-30',
+          hasMore: true,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(pager.hasMore, isTrue);
+      expect(emitted.last, hasLength(30));
+    },
+  );
+
+  test('topic study days toggle computes valid day progress and completion',
+      () {
+    final days = ChapterProgressMutation.toggle(
+      current: const [1],
+      chapter: 2,
+      totalChapters: 7,
+    );
+    expect(days.completedChapters, [1, 2]);
+    expect((days.progress * 100).round(), 29);
+
+    final untoggle = ChapterProgressMutation.toggle(
+      current: days.completedChapters,
+      chapter: 1,
+      totalChapters: 7,
+    );
+    expect(untoggle.completedChapters, [2]);
+    expect((untoggle.progress * 100).round(), 14);
   });
 
   test('main group retry replaces the failed stream', () {
@@ -394,6 +457,8 @@ class _RetryableMessagePageSource implements GroupMessagePageSource {
   int get watchCount => _controllers.length;
 
   void failCurrent(Object error) => _controllers.last.addError(error);
+
+  void emitCurrent(GroupMessagePage page) => _controllers.last.add(page);
 
   @override
   Stream<GroupMessagePage> watchLatest({

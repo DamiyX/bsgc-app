@@ -97,6 +97,93 @@ void main() {
         expect(markedInsightIds, ['adjacent', 'next-insight']);
       },
     );
+
+    testWidgets(
+      'MyInsightsScreen renders reflections and builds viewer with seen state',
+      (tester) async {
+        final insights = [
+          _insight(id: 'insight-1', body: 'First body'),
+          _insight(id: 'insight-2', body: 'Second body'),
+        ];
+        final fakeSource = _FakeJournalInsightsDataSource(
+          insights: insights,
+          seenIds: {'insight-1'},
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MyInsightsScreen(
+              dataSource: fakeSource,
+              currentUserId: 'author',
+            ),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('insight-1'), findsOneWidget);
+        expect(find.text('insight-2'), findsOneWidget);
+
+        final viewer = buildSelectedInsightViewer(
+          insights,
+          insights[1],
+          seenInsightIds: fakeSource.seenIds,
+        );
+        expect(viewer.initialInsightId, 'insight-2');
+        expect(viewer.seenInsightIds, contains('insight-1'));
+        expect(
+          resolveInitialInsightIndex(
+            viewer.userInsightsGroups.single,
+            initialInsightId: viewer.initialInsightId,
+            seenInsightIds: viewer.seenInsightIds,
+          ),
+          1,
+        );
+      },
+    );
+
+    testWidgets(
+      'tapping a reflection row opens viewer targeting selected insight and seen state',
+      (tester) async {
+        final insights = [
+          _insight(id: 'insight-1', body: 'First body'),
+          _insight(id: 'insight-2', body: 'Second body'),
+        ];
+        final fakeSource = _FakeJournalInsightsDataSource(
+          insights: insights,
+          seenIds: {'insight-1'},
+        );
+        InsightModel? openedInsight;
+        Set<String>? openedSeenIds;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MyInsightsScreen(
+              dataSource: fakeSource,
+              currentUserId: 'author',
+              viewerBuilder: (
+                insightsList,
+                selectedInsight, {
+                seenInsightIds = const {},
+              }) {
+                openedInsight = selectedInsight;
+                openedSeenIds = seenInsightIds;
+                return Scaffold(
+                  body: Text('Viewer for ${selectedInsight.id}'),
+                );
+              },
+            ),
+          ),
+        );
+        await tester.pump();
+
+        await tester.tap(find.text('insight-2'));
+        await tester.pumpAndSettle();
+
+        expect(openedInsight?.id, 'insight-2');
+        expect(openedSeenIds, contains('insight-1'));
+        expect(find.text('Viewer for insight-2'), findsOneWidget);
+      },
+    );
   });
 
   group('Saved Insight bookmark contract', () {
@@ -232,6 +319,56 @@ void main() {
       expect(find.text('Persisted body', findRichText: true), findsOneWidget);
       expect(writer.savedNotes.single.body, 'Persisted body');
     });
+
+    testWidgets(
+      'canceling edit mode reverts changes after discard confirmation',
+      (tester) async {
+        final writer = _FakeNoteWriter();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: ViewNoteScreen(note: _note(), noteWriter: writer),
+          ),
+        );
+
+        await tester.tap(find.byTooltip('Edit note'));
+        await tester.pump();
+        await tester.enterText(
+          find.byKey(const ValueKey('note-body-field')),
+          'Draft that will be cancelled',
+        );
+        await tester.tap(find.byTooltip('Cancel editing'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Discard changes?'), findsOneWidget);
+        await tester.tap(find.text('Discard'));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const ValueKey('note-body-field')), findsNothing);
+        expect(find.text('Original body', findRichText: true), findsOneWidget);
+        expect(writer.savedNotes, isEmpty);
+      },
+    );
+
+    testWidgets(
+      'canceling edit mode without unsaved changes exits immediately',
+      (tester) async {
+        final writer = _FakeNoteWriter();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: ViewNoteScreen(note: _note(), noteWriter: writer),
+          ),
+        );
+
+        await tester.tap(find.byTooltip('Edit note'));
+        await tester.pump();
+        await tester.tap(find.byTooltip('Cancel editing'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Discard changes?'), findsNothing);
+        expect(find.byKey(const ValueKey('note-body-field')), findsNothing);
+        expect(find.text('Original body', findRichText: true), findsOneWidget);
+      },
+    );
   });
 }
 
@@ -279,4 +416,27 @@ NoteModel _note() {
     createdAt: createdAt,
     updatedAt: createdAt,
   );
+}
+
+class _FakeJournalInsightsDataSource implements MyInsightsDataSource {
+  _FakeJournalInsightsDataSource({
+    required this.insights,
+    this.seenIds = const {},
+  });
+
+  final List<InsightModel> insights;
+  final Set<String> seenIds;
+
+  @override
+  Future<void> deleteInsight(String insightId) async {}
+
+  @override
+  Stream<List<InsightModel>> getActiveInsightsForUser(String userId) {
+    return Stream.value(insights);
+  }
+
+  @override
+  Stream<Set<String>> getSeenInsightIds() {
+    return Stream.value(seenIds);
+  }
 }
